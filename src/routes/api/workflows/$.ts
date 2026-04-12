@@ -41,6 +41,7 @@ import { upscaleShotVariantWorkflow } from '@/lib/workflows/upscale-shot-variant
 import { generateShotVariantWorkflow } from '@/lib/workflows/shot-variant-workflow';
 import { visualPromptSceneWorkflow } from '@/lib/workflows/visual-prompt-scene-workflow';
 import { visualPromptWorkflow } from '@/lib/workflows/visual-prompt-workflow';
+import { jsonWorkflowExecutor } from '@/lib/json-workflows/executor';
 import { createFileRoute } from '@tanstack/react-router';
 import { serveMany } from '@upstash/workflow/tanstack';
 
@@ -82,6 +83,7 @@ function getHandler() {
         'variant-image': generateShotVariantWorkflow,
         'visual-prompt-scene': visualPromptSceneWorkflow,
         'visual-prompts': visualPromptWorkflow,
+        'json-workflow': jsonWorkflowExecutor,
       },
       {
         qstashClient: getQStashClient(),

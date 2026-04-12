@@ -358,3 +358,22 @@ export function getLocationChannel(locationId?: string) {
     ? getRealtime().channel(`location:${locationId}`)
     : noopChannel('location');
 }
+
+/**
+ * Emit a dynamic event on a generation channel without strict type checking.
+ * Used by JSON workflow actions where event names are determined at runtime.
+ *
+ * The channel.emit() is strictly typed to only accept known event paths from
+ * the realtime schema. For JSON workflows, event names are user-defined strings
+ * resolved at runtime, so we use Reflect.apply to bypass the type constraint.
+ */
+export async function emitDynamicEvent(
+  sequenceId: string,
+  event: string,
+  data: unknown
+): Promise<void> {
+  const channel = getGenerationChannel(sequenceId);
+  // Use Function.prototype.call to bypass strict event type checking
+  // since JSON workflow event names are user-defined strings
+  await Function.prototype.apply.call(channel.emit, channel, [event, data]);
+}

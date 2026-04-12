@@ -267,4 +267,27 @@ export const relations = defineRelations(schema, (r) => ({
       alias: 'giftTokenRedemptions_user',
     }),
   },
+
+  // ---- Workflow Definitions & Runs ----
+  workflowDefinitions: {
+    team: r.one.teams({
+      from: r.workflowDefinitions.teamId,
+      to: r.teams.id,
+    }),
+    createdByUser: r.one.user({
+      from: r.workflowDefinitions.createdBy,
+      to: r.user.id,
+    }),
+    runs: r.many.workflowRuns(),
+  },
+  workflowRuns: {
+    definition: r.one.workflowDefinitions({
+      from: r.workflowRuns.workflowDefinitionId,
+      to: r.workflowDefinitions.id,
+    }),
+    team: r.one.teams({
+      from: r.workflowRuns.teamId,
+      to: r.teams.id,
+    }),
+  },
 }));

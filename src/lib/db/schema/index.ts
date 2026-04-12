@@ -57,6 +57,10 @@ import { teamApiKeys } from './team-api-keys';
 
 import { giftTokenRedemptions, giftTokens } from './gift-tokens';
 
+import { workflowDefinitions } from './workflow-definitions';
+
+import { workflowRuns } from './workflow-runs';
+
 // Better Auth tables
 export { account, passkey, session, user, verification };
 
@@ -277,6 +281,21 @@ export type {
   NewGiftTokenRedemption,
 } from './gift-tokens';
 
+// Workflow Definitions & Runs
+export { workflowDefinitions, workflowRuns };
+
+export type {
+  NewWorkflowDefinition,
+  WorkflowDefinition,
+  WorkflowTriggerType,
+} from './workflow-definitions';
+
+export type {
+  NewWorkflowRun,
+  WorkflowRun,
+  WorkflowRunStatus,
+} from './workflow-runs';
+
 /**
  * Complete schema object for Drizzle client initialization (tables only).
  * Relations are defined separately in ./relations.ts using defineRelations().
@@ -343,4 +362,8 @@ export const schema = {
   // Gift Tokens
   giftTokens,
   giftTokenRedemptions,
+
+  // Workflow Definitions & Runs
+  workflowDefinitions,
+  workflowRuns,
 };

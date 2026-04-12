@@ -54,6 +54,11 @@ import {
   createTeamManagementMethods,
   createTeamManagementReadMethods,
 } from '@/lib/db/scoped/team-management';
+import {
+  createWorkflowDefinitionsMethods,
+  createWorkflowDefinitionsReadMethods,
+} from '@/lib/db/scoped/workflow-definitions';
+import { createWorkflowRunsMethods } from '@/lib/db/scoped/workflow-runs';
 import { and, eq, sql } from 'drizzle-orm';
 
 export type {
@@ -260,6 +265,9 @@ export function createScopedDb(teamId: string, userId: string) {
     billing: createBillingMethods(db, teamId, userId),
     apiKeys: createApiKeysMethods(db, teamId, userId),
     teamManagement: createTeamManagementMethods(db, teamId, userId),
+
+    workflowDefinitions: createWorkflowDefinitionsMethods(db, teamId, userId),
+    workflowRuns: createWorkflowRunsMethods(db, teamId),
   };
 }
 
@@ -300,6 +308,8 @@ export function createReadOnlyScopedDb(teamId: string) {
     billing: createBillingReadMethods(db, teamId),
     apiKeys: createApiKeysReadMethods(db, teamId),
     teamManagement: createTeamManagementReadMethods(db, teamId),
+
+    workflowDefinitions: createWorkflowDefinitionsReadMethods(db, teamId),
   };
 }
 
