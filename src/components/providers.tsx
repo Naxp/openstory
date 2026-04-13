@@ -70,7 +70,7 @@ const ObservabilityProvider: FC<{ children: React.ReactNode }> = ({
         api_host: apiHost,
         defaults: '2025-05-24',
         capture_exceptions: true,
-        debug: import.meta.env.DEV,
+        debug: false,
       }}
     >
       {children}

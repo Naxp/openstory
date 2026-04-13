@@ -6,9 +6,13 @@
 import { getEnv } from '#env';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { propagateAttributes, startActiveObservation } from '@langfuse/tracing';
+import { PostHogTraceExporter } from '@posthog/ai/otel';
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeSDK } from '@opentelemetry/sdk-node';
+import type { SpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 let processor: LangfuseSpanProcessor | null = null;
+let posthogProcessor: BatchSpanProcessor | null = null;
 let sdk: NodeSDK | null = null;
 
 /** Whether Langfuse is enabled — derived from both keys being set. */
@@ -30,26 +34,45 @@ export function isLangfusePromptsEnabled(): boolean {
  */
 export function initTracing(): void {
   const env = getEnv();
-  const publicKey = env.LANGFUSE_PUBLIC_KEY;
-  const secretKey = env.LANGFUSE_SECRET_KEY;
+  const spanProcessors: SpanProcessor[] = [];
 
-  if (!publicKey || !secretKey) {
-    console.log('[Langfuse] Tracing disabled - credentials not configured');
+  // Langfuse
+  const langfusePublicKey = env.LANGFUSE_PUBLIC_KEY;
+  const langfuseSecretKey = env.LANGFUSE_SECRET_KEY;
+
+  if (langfusePublicKey && langfuseSecretKey) {
+    processor = new LangfuseSpanProcessor({
+      publicKey: langfusePublicKey,
+      secretKey: langfuseSecretKey,
+      baseUrl: env.LANGFUSE_BASE_URL ?? 'https://cloud.langfuse.com',
+    });
+    spanProcessors.push(processor);
+    console.log('[Tracing] Langfuse enabled');
+  }
+
+  // PostHog LLM observability
+  const posthogToken = env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
+
+  if (posthogToken) {
+    const host = env.VITE_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
+    posthogProcessor = new BatchSpanProcessor(
+      new PostHogTraceExporter({ apiKey: posthogToken, host })
+    );
+    spanProcessors.push(posthogProcessor);
+    console.log('[Tracing] PostHog LLM observability enabled');
+  }
+
+  if (spanProcessors.length === 0) {
+    console.log('[Tracing] Disabled - no providers configured');
     return;
   }
 
-  processor = new LangfuseSpanProcessor({
-    publicKey,
-    secretKey,
-    baseUrl: env.LANGFUSE_BASE_URL ?? 'https://cloud.langfuse.com',
-  });
-
-  sdk = new NodeSDK({
-    spanProcessors: [processor],
-  });
-
+  sdk = new NodeSDK({ spanProcessors });
   sdk.start();
-  console.log('[Langfuse] Tracing initialized');
+  console.log(
+    '[Tracing] Initialized with %d provider(s)',
+    spanProcessors.length
+  );
 }
 
 /**
@@ -57,9 +80,10 @@ export function initTracing(): void {
  * Call at the end of request handling in serverless environments.
  */
 export async function flushTracing(): Promise<void> {
-  if (processor) {
-    await processor.forceFlush();
-  }
+  const flushes: Promise<void>[] = [];
+  if (processor) flushes.push(processor.forceFlush());
+  if (posthogProcessor) flushes.push(posthogProcessor.forceFlush());
+  await Promise.all(flushes);
 }
 
 /**
