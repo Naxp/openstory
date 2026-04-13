@@ -259,13 +259,23 @@ export function useGenerationStream(
     getChannelHistoryFn({ data: { channel: sequenceId } })
       .then((events: { event: string; data: string }[]) => {
         for (const evt of events) {
-          const parsed = JSON.parse(evt.data);
-          const action = mapEventToAction(evt.event, parsed);
-          if (action) dispatch(action);
+          try {
+            const parsed = JSON.parse(evt.data);
+            const action = mapEventToAction(evt.event, parsed);
+            if (action) dispatch(action);
+          } catch (e) {
+            console.error(
+              `[useGenerationStream] Failed to parse history event "${evt.event}":`,
+              e
+            );
+          }
         }
       })
-      .catch(() => {
-        // Best-effort: if history fetch fails, live events still work
+      .catch((error: Error) => {
+        console.error(
+          `[useGenerationStream] Failed to fetch history for "${sequenceId}":`,
+          error
+        );
       });
   }, [sequenceId]);
 
