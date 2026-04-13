@@ -3,9 +3,7 @@
   "main": "@tanstack/react-start/server-entry",
   "name": "openstory",
   "compatibility_date": "2025-11-18",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
+  "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
