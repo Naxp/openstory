@@ -21,6 +21,7 @@ import {
 import { analyzeFailures } from '@/lib/failures/failure-analysis';
 import type { GenerationPhaseConfig } from '@/lib/realtime/generation-stream.reducer';
 import { useGenerationStream } from '@/lib/realtime/use-generation-stream';
+import { usePostHog } from '@posthog/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -78,6 +79,7 @@ function isInsufficientCreditsError(error: unknown): boolean {
 export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const posthog = usePostHog();
 
   const [selectedFrameId, setSelectedFrameId] = useState<string | undefined>();
   const [selectedTab, setSelectedTab] = useState<TabValue>('scene-variants');
@@ -256,6 +258,12 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
       setRegeneratingMotion((prev) => addAllToSet(prev, eligibleFrameIds));
       setMotionStartedAt(Date.now());
       setMotionIncludesMusic(includeMusic);
+
+      posthog.capture('motion_generation_started', {
+        sequence_id: sequenceId,
+        include_music: includeMusic,
+        eligible_frame_count: eligibleFrameIds.length,
+      });
 
       try {
         await batchGenerateMotionFn({

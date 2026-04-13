@@ -6,6 +6,7 @@ import { SITE_CONFIG } from '@/lib/marketing/constants';
 import { getProductionDeploymentAppUrl } from '@/lib/utils/environment';
 import appCss from '@/styles/global.css?url';
 import type { QueryClient } from '@tanstack/react-query';
+import type { ErrorComponentProps } from '@tanstack/react-router';
 import {
   createRootRouteWithContext,
   HeadContent,
@@ -15,7 +16,6 @@ import {
   Scripts,
   useRouter,
 } from '@tanstack/react-router';
-import type { ErrorComponentProps } from '@tanstack/react-router';
 import { createIsomorphicFn } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 

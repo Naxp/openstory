@@ -9,6 +9,7 @@ import {
 } from '@/functions/middleware';
 import { microsToDisplayUsd, usdToMicros } from '@/lib/billing/money';
 import { getStripeOrThrow } from '@/lib/billing/stripe';
+import { getPostHogClient } from '@/lib/posthog-server';
 import { createFileRoute } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/api/billing/webhook')({
@@ -107,6 +108,19 @@ export const Route = createFileRoute('/api/billing/webhook')({
               console.log(
                 `[Webhook] Added $${amountUsd} credits to team ${teamId}`
               );
+
+              if (teamId) {
+                const posthog = getPostHogClient();
+                posthog?.capture({
+                  distinctId: teamId,
+                  event: 'credits_added',
+                  properties: {
+                    amount_usd: amountUsd,
+                    stripe_session_id: session.id,
+                    source: 'stripe_webhook',
+                  },
+                });
+              }
               break;
             }
 

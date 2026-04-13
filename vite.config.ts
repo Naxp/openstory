@@ -46,6 +46,14 @@ export default defineConfig({
     port: 3000,
     host: true, // Listen on all interfaces for QStash Docker to reach via host.docker.internal
     allowedHosts: ['localhost', '127.0.0.1', 'host.docker.internal'],
+    proxy: {
+      '/ingest': {
+        target: 'https://us.i.posthog.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ingest/, ''),
+        secure: false,
+      },
+    },
     watch: {
       ignored: [
         '**/e2e/.auth/**',
