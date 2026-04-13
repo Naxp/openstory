@@ -7,8 +7,12 @@
 import { micros, microsToUsd, usdToMicros } from '@/lib/billing/money';
 import type { Database } from '@/lib/db/client';
 import { generateId } from '@/lib/db/id';
+import { user } from '@/lib/db/schema/auth';
+import { credits, transactions } from '@/lib/db/schema/credits';
 import { giftTokenRedemptions, giftTokens } from '@/lib/db/schema/gift-tokens';
 import type { GiftToken } from '@/lib/db/schema/gift-tokens';
+import { sequences } from '@/lib/db/schema/sequences';
+import { teamMembers, teams } from '@/lib/db/schema/teams';
 import { ValidationError } from '@/lib/errors';
 import { count, desc, eq, sql } from 'drizzle-orm';
 
@@ -38,6 +42,20 @@ export type GiftTokenWithStatus = GiftToken & {
   status: GiftTokenStatus;
   amountUsd: number;
   redemptionCount: number;
+};
+
+export type UserActivityRow = {
+  userId: string;
+  name: string;
+  email: string;
+  createdAt: Date;
+  status: string | null;
+  teamId: string;
+  teamName: string;
+  sequenceCount: number;
+  creditsSpentMicros: number;
+  creditsToppedUpMicros: number;
+  currentBalanceMicros: number;
 };
 
 export function createAdminMethods(db: Database) {
@@ -106,8 +124,62 @@ export function createAdminMethods(db: Database) {
     }));
   }
 
+  async function listUserActivity(): Promise<UserActivityRow[]> {
+    // Subquery: sequence count per team
+    const seqCountSq = db
+      .select({
+        teamId: sequences.teamId,
+        count: count().as('seq_count'),
+      })
+      .from(sequences)
+      .groupBy(sequences.teamId)
+      .as('seq_counts');
+
+    // Subquery: credit spending and top-ups per team
+    const txSumsSq = db
+      .select({
+        teamId: transactions.teamId,
+        spent:
+          sql<number>`coalesce(sum(case when ${transactions.type} = 'credit_usage' then abs(${transactions.amount}) else 0 end), 0)`.as(
+            'spent'
+          ),
+        toppedUp:
+          sql<number>`coalesce(sum(case when ${transactions.type} in ('credit_purchase', 'credit_adjustment') then ${transactions.amount} else 0 end), 0)`.as(
+            'topped_up'
+          ),
+      })
+      .from(transactions)
+      .groupBy(transactions.teamId)
+      .as('tx_sums');
+
+    const rows = await db
+      .select({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: user.createdAt,
+        status: user.status,
+        teamId: teams.id,
+        teamName: teams.name,
+        sequenceCount: sql<number>`coalesce(${seqCountSq.count}, 0)`,
+        creditsSpentMicros: sql<number>`coalesce(${txSumsSq.spent}, 0)`,
+        creditsToppedUpMicros: sql<number>`coalesce(${txSumsSq.toppedUp}, 0)`,
+        currentBalanceMicros: sql<number>`coalesce(${credits.balance}, 0)`,
+      })
+      .from(user)
+      .innerJoin(teamMembers, eq(user.id, teamMembers.userId))
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .leftJoin(seqCountSq, eq(teams.id, seqCountSq.teamId))
+      .leftJoin(txSumsSq, eq(teams.id, txSumsSq.teamId))
+      .leftJoin(credits, eq(teams.id, credits.teamId))
+      .orderBy(desc(user.createdAt));
+
+    return rows;
+  }
+
   return {
     createGiftToken,
     listGiftTokens,
+    listUserActivity,
   };
 }
