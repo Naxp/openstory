@@ -11,7 +11,11 @@ import {
   type ImageSize,
 } from '@/lib/constants/aspect-ratios';
 import { type ImageDto, imagesCreate, imagesGet } from '@/lib/letzai/sdk';
-import { startObservation } from '@langfuse/tracing';
+import {
+  endSpanError,
+  endSpanSuccess,
+  startGenAISpan,
+} from '@/lib/observability/tracer';
 
 import { getEnv } from '#env';
 import type { ScopedDb } from '@/lib/db/scoped';
@@ -120,42 +124,29 @@ export async function generateImageWithProvider(
 ): Promise<ImageGenerationResult> {
   const modelId = getTextToImageModelId(params.model);
 
-  const span = startObservation(
-    params.traceName ?? 'fal-image',
-    {
-      model: params.model,
-      input: {
-        prompt: params.prompt,
-        imageSize: params.imageSize,
-        ...(params.referenceImageUrls?.length && {
-          referenceImageUrls: params.referenceImageUrls,
-        }),
-      },
+  const span = startGenAISpan(params.traceName ?? 'fal-image', {
+    model: params.model,
+    provider: 'fal',
+    operation: 'generate_content',
+    input: {
+      prompt: params.prompt,
+      imageSize: params.imageSize,
+      ...(params.referenceImageUrls?.length && {
+        referenceImageUrls: params.referenceImageUrls,
+      }),
     },
-    { asType: 'generation' }
-  );
+  });
 
   try {
     const result = await generateImageInternal(params, modelId, options);
 
-    span
-      .update({
-        output: {
-          imageUrls: result.imageUrls,
-        },
-        costDetails: result.metadata.cost
-          ? { total: microsToUsd(result.metadata.cost) }
-          : undefined,
-      })
-      .end();
+    if (result.metadata.cost) {
+      span.setAttribute('gen_ai.usage.cost', microsToUsd(result.metadata.cost));
+    }
+    endSpanSuccess(span, { imageUrls: result.imageUrls });
     return result;
   } catch (error) {
-    span
-      .update({
-        level: 'ERROR',
-        statusMessage: error instanceof Error ? error.message : String(error),
-      })
-      .end();
+    endSpanError(span, error);
     throw error;
   }
 }
