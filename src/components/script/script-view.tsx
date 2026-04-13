@@ -54,6 +54,7 @@ import {
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { cn } from '@/lib/utils';
 import type { Sequence } from '@/types/database';
+import { usePostHog } from '@posthog/react';
 import { Loader2, Sparkles, Square, Undo2 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { ScriptEditor } from './script-editor';
@@ -166,6 +167,8 @@ export const ScriptView: FC<{
   });
   const { talentIds: selectedTalentIds, locationIds: selectedLocationIds } =
     selections;
+
+  const posthog = usePostHog();
 
   const { data: styles = [], isLoading: isLoadingStyles } = useStyles();
 
@@ -300,6 +303,16 @@ export const ScriptView: FC<{
   const handleCancel = onCancel;
 
   const executeRegeneration = () => {
+    posthog.capture('sequence_generated', {
+      is_editing: isEditing,
+      aspect_ratio: aspectRatio,
+      image_model: imageModel,
+      motion_model: motionModel,
+      auto_generate_motion: autoGenerateMotion,
+      auto_generate_music: autoGenerateMusic,
+      analysis_model_count: analysisModels.length,
+      script_length: (script ?? sequence?.script ?? '').length,
+    });
     createSequenceMutation.mutate(
       {
         title: undefined,
@@ -362,6 +375,11 @@ export const ScriptView: FC<{
       return;
     }
 
+    posthog.capture('script_enhanced', {
+      target_duration: targetDuration,
+      script_length: scriptValue.length,
+      aspect_ratio: aspectRatio,
+    });
     setEnhanceUI((s) => ({ ...s, isEnhancing: true, error: null }));
     previousScriptRef.current = scriptValue;
     setScript('');

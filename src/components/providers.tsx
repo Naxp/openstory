@@ -1,6 +1,7 @@
 import { Toaster } from '@/components/ui/sonner';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { PostHogProvider } from '@posthog/react';
 import type { QueryClient } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { RealtimeProvider } from '@upstash/realtime/client';
 import { lazy, type FC } from 'react';
 
@@ -48,17 +49,48 @@ type ProvidersProps = {
   queryClient: QueryClient;
 };
 
+const ObservabilityProvider: FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const posthogToken =
+    process.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN ||
+    import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
+  const apiHost =
+    process.env.VITE_PUBLIC_POSTHOG_HOST ||
+    import.meta.env.VITE_PUBLIC_POSTHOG_HOST ||
+    'https://us.posthog.com';
+
+  if (!posthogToken || !apiHost) {
+    return children;
+  }
+  return (
+    <PostHogProvider
+      apiKey={posthogToken}
+      options={{
+        api_host: apiHost,
+        defaults: '2025-05-24',
+        capture_exceptions: true,
+        debug: false,
+      }}
+    >
+      {children}
+    </PostHogProvider>
+  );
+};
+
 export function Providers({ children, queryClient }: ProvidersProps) {
   return (
-    <QueryClientProvider client={queryClient}>
-      <RealtimeProvider
-        api={{ url: '/api/realtime' }}
-        maxReconnectAttempts={10}
-      >
-        {children}
-      </RealtimeProvider>
-      <TanStackDevtoolsLazy />
-      <Toaster />
-    </QueryClientProvider>
+    <ObservabilityProvider>
+      <QueryClientProvider client={queryClient}>
+        <RealtimeProvider
+          api={{ url: '/api/realtime' }}
+          maxReconnectAttempts={10}
+        >
+          {children}
+        </RealtimeProvider>
+        <TanStackDevtoolsLazy />
+        <Toaster />
+      </QueryClientProvider>
+    </ObservabilityProvider>
   );
 }

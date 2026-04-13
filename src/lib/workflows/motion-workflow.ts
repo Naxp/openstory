@@ -27,7 +27,7 @@ import type {
   MergeVideoWorkflowInput,
   MotionWorkflowInput,
 } from '@/lib/workflow/types';
-import { startObservation } from '@langfuse/tracing';
+import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { WorkflowNonRetryableError } from '@upstash/workflow';
 
 /** Each batch polls in a tight loop for ~30s, then checkpoints for durability */
@@ -47,24 +47,18 @@ function recordMotionObservation(params: {
   videoDuration: number;
   generationTimeMs: number;
 }) {
-  const span = startObservation(
-    'fal-motion',
-    {
-      model: params.model,
-      input: { prompt: params.prompt, imageUrl: params.imageUrl },
+  const span = startGenAISpan('fal-motion', {
+    model: params.model,
+    provider: 'fal',
+    operation: 'generate_content',
+    input: { prompt: params.prompt, imageUrl: params.imageUrl },
+    metadata: {
+      videoDuration: params.videoDuration,
+      generationTimeMs: params.generationTimeMs,
     },
-    { asType: 'generation' }
-  );
-  span
-    .update({
-      output: { videoUrl: params.videoUrl },
-      costDetails: { total: microsToUsd(params.cost) },
-      metadata: {
-        videoDuration: params.videoDuration,
-        generationTimeMs: params.generationTimeMs,
-      },
-    })
-    .end();
+  });
+  span.setAttribute('gen_ai.usage.cost', microsToUsd(params.cost));
+  endSpanSuccess(span, { videoUrl: params.videoUrl });
 }
 
 export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(

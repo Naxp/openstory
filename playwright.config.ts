@@ -62,6 +62,6 @@ export default defineConfig({
       'E2E_TEST=true PORT=3001 DATABASE_URL=file:test.db VITE_APP_URL=http://localhost:3001 bun dev:e2e',
     url: 'http://localhost:3001',
     reuseExistingServer: true,
-    timeout: 120_000,
+    timeout: 180_000,
   },
 });

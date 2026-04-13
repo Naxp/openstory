@@ -11,7 +11,11 @@ import {
 import { microsToUsd, type Microdollars } from '@/lib/billing/money';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { createFalClient } from '@fal-ai/client';
-import { startObservation } from '@langfuse/tracing';
+import {
+  endSpanError,
+  endSpanSuccess,
+  startGenAISpan,
+} from '@/lib/observability/tracer';
 import { z } from 'zod';
 
 export const generateMusicOptionsSchema = z.object({
@@ -141,40 +145,29 @@ export async function generateMusic(
     throw new Error(`Invalid audio model: ${modelKey}`);
   }
 
-  const span = startObservation(
-    options.traceName ?? 'fal-music',
-    {
-      model: modelKey,
-      input: {
-        prompt: options.prompt,
-        tags: options.tags,
-        duration: options.duration,
-        instrumental: options.instrumental,
-      },
+  const span = startGenAISpan(options.traceName ?? 'fal-music', {
+    model: modelKey,
+    provider: 'fal',
+    operation: 'generate_content',
+    input: {
+      prompt: options.prompt,
+      tags: options.tags,
+      duration: options.duration,
+      instrumental: options.instrumental,
     },
-    { asType: 'generation' }
-  );
+  });
 
   try {
     const result = await callFalAudio(options, modelConfig);
 
-    span
-      .update({
-        output: { audioUrl: result.audioUrl },
-        costDetails: result.metadata?.cost
-          ? { total: microsToUsd(result.metadata.cost) }
-          : undefined,
-      })
-      .end();
+    if (result.metadata?.cost) {
+      span.setAttribute('gen_ai.usage.cost', microsToUsd(result.metadata.cost));
+    }
+    endSpanSuccess(span, { audioUrl: result.audioUrl });
 
     return result;
   } catch (error) {
-    span
-      .update({
-        level: 'ERROR',
-        statusMessage: extractFalErrorMessage(error),
-      })
-      .end();
+    endSpanError(span, extractFalErrorMessage(error));
     throw error;
   }
 }
