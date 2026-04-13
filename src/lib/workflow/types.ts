@@ -171,6 +171,8 @@ export interface CharacterSheetWorkflowInput extends SequenceWorkflowContext {
   talentMetadata?: CharacterBibleEntry;
   /** Talent description to include in prompt */
   talentDescription?: string;
+  /** Sequence style config to apply to the character sheet */
+  styleConfig?: StyleConfig;
 }
 
 /**
@@ -207,6 +209,8 @@ export interface RecastCharacterWorkflowInput extends SequenceWorkflowContext {
   talentDescription?: string;
   /** Frame IDs to regenerate after sheet generation */
   affectedFrameIds: string[];
+  /** Sequence style config to apply to the character sheet */
+  styleConfig?: StyleConfig;
 }
 
 /**
@@ -263,6 +267,9 @@ export interface CharacterBibleWorkflowInput extends SequenceWorkflowContext {
 
   /** Matched talent data for characters that should use talent references */
   talentMatches?: TalentCharacterMatch[];
+
+  /** Sequence style config to apply to character sheets */
+  styleConfig?: StyleConfig;
 }
 
 export type FrameMapping = Array<{ sceneId: string; frameId: string }>;

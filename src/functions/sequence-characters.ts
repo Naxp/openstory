@@ -7,6 +7,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
+import { StyleConfigSchema } from '@/lib/db/schema';
 import { buildCastingAttributes } from '@/lib/prompts/character-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
@@ -50,6 +51,17 @@ export const recastCharacterFn = createServerFn({ method: 'POST' })
     if (!character) {
       throw new Error('Character not found');
     }
+
+    // Fetch the sequence's style for character sheet generation
+    const sequence = await context.scopedDb.sequences.getForUser({
+      sequenceId: character.sequenceId,
+    });
+    const style = sequence.styleId
+      ? await context.scopedDb.styles.getById(sequence.styleId)
+      : null;
+    const styleConfig = style
+      ? StyleConfigSchema.parse(style.config)
+      : undefined;
 
     const talentWithSheets = await context.scopedDb.talent.getWithRelations(
       data.talentId
@@ -134,6 +146,7 @@ export const recastCharacterFn = createServerFn({ method: 'POST' })
       talentDescription:
         `This character must look exactly like ${talentWithSheets.name}. ${talentWithSheets.description ?? ''}`.trim(),
       affectedFrameIds,
+      styleConfig,
     };
 
     const workflowRunId = await triggerWorkflow(

@@ -112,14 +112,22 @@ export const characterBibleWorkflow = createScopedWorkflow<
               })
             : null;
 
-          // Generate character sheet (with talent appearance as reference)
+          // Generate character sheet (with talent appearance as reference + sequence style)
           const { prompt, referenceUrls } = talentMatch
-            ? buildCharacterSheetPrompt(character, {
-                sheetMetadata: talentMatch.sheetMetadata,
-                description: `This character must look exactly like ${talentMatch.talentName}`,
-                sheetImageUrl: talentMatch.sheetImageUrl,
-              })
-            : buildCharacterSheetPrompt(character);
+            ? buildCharacterSheetPrompt(
+                character,
+                {
+                  sheetMetadata: talentMatch.sheetMetadata,
+                  description: `This character must look exactly like ${talentMatch.talentName}`,
+                  sheetImageUrl: talentMatch.sheetImageUrl,
+                },
+                input.styleConfig
+              )
+            : buildCharacterSheetPrompt(
+                character,
+                undefined,
+                input.styleConfig
+              );
 
           const model = input.imageModel ?? DEFAULT_IMAGE_MODEL;
 

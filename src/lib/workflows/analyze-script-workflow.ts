@@ -158,6 +158,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
           characterBible,
           talentMatches: talentCharacterMatches,
           imageModel,
+          styleConfig,
         },
         flowControl: getFalFlowControl(),
       }),
