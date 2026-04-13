@@ -9,12 +9,14 @@ import type { Database } from '@/lib/db/client';
 import { generateId } from '@/lib/db/id';
 import { user } from '@/lib/db/schema/auth';
 import { credits, transactions } from '@/lib/db/schema/credits';
+import { frames } from '@/lib/db/schema/frames';
 import { giftTokenRedemptions, giftTokens } from '@/lib/db/schema/gift-tokens';
 import type { GiftToken } from '@/lib/db/schema/gift-tokens';
 import { sequences } from '@/lib/db/schema/sequences';
+import type { Frame, Sequence } from '@/lib/db/schema';
 import { teamMembers, teams } from '@/lib/db/schema/teams';
 import { ValidationError } from '@/lib/errors';
-import { count, desc, eq, sql } from 'drizzle-orm';
+import { asc, count, desc, eq, not, sql } from 'drizzle-orm';
 
 // Ambiguity-free alphabet (no 0/O/1/I) -- 32 chars -> 32^6 ~ 1B combinations
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -127,6 +129,44 @@ export function createAdminMethods(db: Database) {
     }));
   }
 
+  // ---- Support: cross-team sequence/frame access ----
+
+  type SequenceWithCreator = Sequence & { creatorName: string | null };
+
+  async function getAllSequences(opts?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<SequenceWithCreator[]> {
+    const { limit = 50, offset = 0 } = opts ?? {};
+
+    const rows = await db
+      .select({
+        sequence: sequences,
+        creatorName: user.name,
+      })
+      .from(sequences)
+      .leftJoin(user, eq(sequences.createdBy, user.id))
+      .where(not(eq(sequences.status, 'archived')))
+      .orderBy(desc(sequences.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return rows.map(({ sequence, creatorName }) => ({
+      ...sequence,
+      creatorName,
+    }));
+  }
+
+  async function getFramesForSequence(sequenceId: string): Promise<Frame[]> {
+    return await db
+      .select()
+      .from(frames)
+      .where(eq(frames.sequenceId, sequenceId))
+      .orderBy(asc(frames.orderIndex));
+  }
+
+  // ---- User activity reporting ----
+
   async function listUserActivity(): Promise<UserActivityRow[]> {
     // Subquery: sequence stats per team (count, failures, avg duration)
     const seqStatsSq = db
@@ -200,6 +240,8 @@ export function createAdminMethods(db: Database) {
   return {
     createGiftToken,
     listGiftTokens,
+    getAllSequences,
+    getFramesForSequence,
     listUserActivity,
   };
 }
