@@ -70,10 +70,11 @@ export const characterSheetWorkflow = createScopedWorkflow<
             }
           : undefined;
 
-        // Build prompt with character identity + talent appearance
+        // Build prompt with character identity + talent appearance + sequence style
         const { prompt, referenceUrls } = buildCharacterSheetPrompt(
           input.characterMetadata,
-          talentOverrides
+          talentOverrides,
+          input.styleConfig
         );
         const model = input.imageModel ?? DEFAULT_IMAGE_MODEL;
 

@@ -42,6 +42,7 @@ export const recastCharacterWorkflow =
             referenceImageUrl: input.referenceImageUrl,
             talentMetadata: input.talentMetadata,
             talentDescription: input.talentDescription,
+            styleConfig: input.styleConfig,
           },
         }
       );
