@@ -41,6 +41,15 @@ function formatImageModels(models: string[]): string {
   return `${getImageModelDisplayName(models[0])} + ${models.length - 1} others`;
 }
 
+function resolveModelList(
+  models: string[] | undefined,
+  model: string | undefined
+): string[] {
+  if (models && models.length > 0) return models;
+  if (model) return [model];
+  return [];
+}
+
 export const ImageModelBadge = ({
   model,
   models,
@@ -48,7 +57,7 @@ export const ImageModelBadge = ({
   model?: string;
   models?: string[];
 }) => {
-  const allModels = models && models.length > 0 ? models : model ? [model] : [];
+  const allModels = resolveModelList(models, model);
 
   if (allModels.length === 0) {
     return <Skeleton className="w-[100px] h-[20px]" />;

@@ -142,7 +142,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
 
   // Fetch frames — only poll when processing AND realtime has failed.
   // Otherwise realtime events keep the cache fresh via updateQueryCacheFromEvent.
-  const { data: rawFrames } = useFramesBySequence(
+  const { data: frames } = useFramesBySequence(
     sequenceId,
     shouldPoll ? { refetchInterval: 2000 } : undefined
   );
@@ -154,8 +154,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     staleTime: 30_000,
     enabled: !!sequenceId,
   });
-
-  const frames = rawFrames;
 
   const curSelectedFrameId = selectedFrameId || frames?.[0]?.id;
   const selectedFrame = useMemo(

@@ -463,7 +463,6 @@ export function useSelectVariant() {
   >({
     mutationFn: async (input: SelectVariantInput) => {
       const { sequenceId, frameId, variantIndex } = input;
-      console.log('useSelectVariant', input);
       const result = await selectFrameVariantFn({
         data: {
           sequenceId,
@@ -537,14 +536,14 @@ export function useSetImageFromVariant() {
         queryKey: frameKeys.list(sequenceId),
       });
     },
-    onSuccess: async (data, { sequenceId, frameId }) => {
+    onSuccess: async (data, { sequenceId, frameId, model }) => {
       queryClient.setQueryData<Frame>(frameKeys.detail(frameId), (oldFrame) => {
         if (!oldFrame) return oldFrame;
         return {
           ...oldFrame,
           thumbnailUrl: data.thumbnailUrl,
           thumbnailStatus: 'completed' as const,
-          imageModel: oldFrame.imageModel,
+          imageModel: model,
           videoUrl: null,
           videoStatus: 'pending' as const,
         };
@@ -560,6 +559,7 @@ export function useSetImageFromVariant() {
                   ...f,
                   thumbnailUrl: data.thumbnailUrl,
                   thumbnailStatus: 'completed' as const,
+                  imageModel: model,
                   videoUrl: null,
                   videoStatus: 'pending' as const,
                 }
