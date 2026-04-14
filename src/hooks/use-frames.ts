@@ -16,6 +16,7 @@ import {
   generateFrameImageFn,
   generateFrameVariantsFn,
   selectFrameVariantFn,
+  setImageFromVariantFn,
 } from '@/functions/frame-image';
 import type { GenerateVariantInput as SchemaGenerateVariantInput } from '@/lib/schemas/frame.schemas';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
@@ -69,6 +70,8 @@ export const frameKeys = {
   list: (sequenceId: string) => [...frameKeys.lists(), sequenceId] as const,
   details: () => [...frameKeys.all, 'detail'] as const,
   detail: (id: string) => [...frameKeys.details(), id] as const,
+  imageModels: (sequenceId: string) =>
+    [...frameKeys.all, 'image-models', sequenceId] as const,
 };
 
 // Hook for listing frames by sequence with optional auto-refresh
@@ -462,7 +465,6 @@ export function useSelectVariant() {
   >({
     mutationFn: async (input: SelectVariantInput) => {
       const { sequenceId, frameId, variantIndex } = input;
-      console.log('useSelectVariant', input);
       const result = await selectFrameVariantFn({
         data: {
           sequenceId,
@@ -509,6 +511,68 @@ export function useSelectVariant() {
         queryKey: frameKeys.detail(frameId),
       });
 
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+    },
+  });
+}
+
+// Hook for setting a frame's image from an existing variant
+export function useSetImageFromVariant() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { frameId: string; thumbnailUrl: string },
+    Error,
+    { sequenceId: string; frameId: string; model: string }
+  >({
+    mutationFn: async (input) => {
+      return setImageFromVariantFn({ data: input });
+    },
+    onMutate: async ({ sequenceId, frameId }) => {
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.detail(frameId),
+      });
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+    },
+    onSuccess: async (data, { sequenceId, frameId, model }) => {
+      queryClient.setQueryData<Frame>(frameKeys.detail(frameId), (oldFrame) => {
+        if (!oldFrame) return oldFrame;
+        return {
+          ...oldFrame,
+          thumbnailUrl: data.thumbnailUrl,
+          thumbnailStatus: 'completed' as const,
+          imageModel: model,
+          videoUrl: null,
+          videoStatus: 'pending' as const,
+        };
+      });
+
+      queryClient.setQueryData<Frame[]>(
+        frameKeys.list(sequenceId),
+        (oldFrames) => {
+          if (!oldFrames) return oldFrames;
+          return oldFrames.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  thumbnailUrl: data.thumbnailUrl,
+                  thumbnailStatus: 'completed' as const,
+                  imageModel: model,
+                  videoUrl: null,
+                  videoStatus: 'pending' as const,
+                }
+              : f
+          );
+        }
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.detail(frameId),
+      });
       await queryClient.invalidateQueries({
         queryKey: frameKeys.list(sequenceId),
       });

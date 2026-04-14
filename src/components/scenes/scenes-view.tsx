@@ -11,11 +11,11 @@ import { FailureSummaryBanner } from '@/components/sequence/failure-summary-bann
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { batchGenerateMotionFn } from '@/functions/motion-functions';
 import { smartRetryFn } from '@/functions/smart-retry';
-import { useActiveImageModel } from '@/hooks/use-active-model';
 import { BILLING_BALANCE_KEY } from '@/hooks/use-billing-balance';
 import { useFramesBySequence } from '@/hooks/use-frames';
 import { useSequence } from '@/hooks/use-sequences';
 import { useStyle } from '@/hooks/use-styles';
+import { safeTextToImageModel, DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import {
   DEFAULT_ASPECT_RATIO,
   type AspectRatio,
@@ -98,6 +98,10 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     Set<string>
   >(() => new Set());
 
+  const [imageModelOverride, setImageModelOverride] = useState<string | null>(
+    null
+  );
+
   const [motionStartedAt, setMotionStartedAt] = useState<number | null>(null);
   const [motionIncludesMusic, setMotionIncludesMusic] = useState(false);
 
@@ -139,7 +143,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
 
   // Fetch frames — only poll when processing AND realtime has failed.
   // Otherwise realtime events keep the cache fresh via updateQueryCacheFromEvent.
-  const { data: rawFrames } = useFramesBySequence(
+  const { data: frames } = useFramesBySequence(
     sequenceId,
     shouldPoll ? { refetchInterval: 2000 } : undefined
   );
@@ -152,45 +156,68 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     enabled: !!sequenceId,
   });
 
-  const { activeModel } = useActiveImageModel(sequenceId);
-
-  // Resolve frames: overlay active model's variant data onto frame fields
-  const frames = useMemo(() => {
-    if (!rawFrames) return rawFrames;
-    if (!imageVariants || !activeModel) return rawFrames;
-
-    // Build lookup: frameId → variant for the active model
-    const variantMap = new Map<string, FrameVariant>();
-    for (const v of imageVariants) {
-      if (v.model === activeModel) {
-        variantMap.set(v.frameId, v);
-      }
-    }
-
-    // If no variants match (e.g. single-model legacy), return frames as-is
-    if (variantMap.size === 0) return rawFrames;
-
-    return rawFrames.map((frame) => {
-      const variant = variantMap.get(frame.id);
-      if (!variant) return frame;
-      return {
-        ...frame,
-        thumbnailUrl: variant.url ?? frame.thumbnailUrl,
-        thumbnailPath: variant.storagePath ?? frame.thumbnailPath,
-        thumbnailStatus: variant.status ?? frame.thumbnailStatus,
-        previewThumbnailUrl: variant.previewUrl ?? frame.previewThumbnailUrl,
-        variantImageUrl: variant.shotVariantUrl ?? frame.variantImageUrl,
-        variantImageStatus:
-          variant.shotVariantStatus ?? frame.variantImageStatus,
-      };
-    });
-  }, [rawFrames, imageVariants, activeModel]);
-
   const curSelectedFrameId = selectedFrameId || frames?.[0]?.id;
   const selectedFrame = useMemo(
     () => frames?.find((frame) => frame.id === curSelectedFrameId),
     [frames, curSelectedFrameId]
   );
+
+  // Filter variants for the currently selected frame
+  const selectedFrameVariants = useMemo(() => {
+    if (!imageVariants || !curSelectedFrameId) return undefined;
+    return imageVariants.filter(
+      (v) => v.frameId === curSelectedFrameId && v.variantType === 'image'
+    );
+  }, [imageVariants, curSelectedFrameId]);
+
+  // Reset model override when switching frames
+  useEffect(() => {
+    setImageModelOverride(null);
+  }, [curSelectedFrameId]);
+
+  // Derive variant preview state from model override + variants
+  const effectiveImageModel =
+    imageModelOverride ??
+    safeTextToImageModel(selectedFrame?.imageModel, DEFAULT_IMAGE_MODEL);
+
+  const variantForSelectedModel = useMemo(() => {
+    if (!selectedFrameVariants) return undefined;
+    return selectedFrameVariants.find((v) => v.model === effectiveImageModel);
+  }, [selectedFrameVariants, effectiveImageModel]);
+
+  const { previewVariantUrl, playerBadgeMessage } = useMemo(() => {
+    const none = { previewVariantUrl: null, playerBadgeMessage: null };
+    if (selectedTab !== 'image-prompt' || !selectedFrame) return none;
+
+    if (
+      variantForSelectedModel?.status === 'completed' &&
+      variantForSelectedModel.url &&
+      variantForSelectedModel.url !== selectedFrame.thumbnailUrl
+    ) {
+      return {
+        previewVariantUrl: variantForSelectedModel.url,
+        playerBadgeMessage: 'Click Set Image to use',
+      };
+    }
+
+    const frameImageModel = safeTextToImageModel(
+      selectedFrame.imageModel,
+      DEFAULT_IMAGE_MODEL
+    );
+    if (effectiveImageModel !== frameImageModel && !variantForSelectedModel) {
+      return {
+        previewVariantUrl: null,
+        playerBadgeMessage: 'Click Generate Image to create',
+      };
+    }
+
+    return none;
+  }, [
+    selectedTab,
+    selectedFrame,
+    effectiveImageModel,
+    variantForSelectedModel,
+  ]);
 
   const setterForType = useCallback((type: RegenerationType) => {
     switch (type) {
@@ -421,6 +448,8 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
               aspectRatio={aspectRatio}
               onSelectFrame={setSelectedFrameId}
               selectedTab={selectedTab}
+              overrideImageUrl={previewVariantUrl}
+              badgeMessage={playerBadgeMessage}
               progressMessage={
                 generationState.phases.find((p) => p.status === 'active')
                   ?.phaseName
@@ -440,6 +469,8 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             regeneratingSceneVariants={regeneratingSceneVariants}
             onRegenerateStart={handleRegenerateStart}
             aspectRatio={aspectRatio}
+            variantForSelectedModel={variantForSelectedModel}
+            onImageModelChange={setImageModelOverride}
             styleCategory={styleCategory}
           />
         </ScrollArea>

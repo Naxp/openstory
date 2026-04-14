@@ -16,7 +16,9 @@ import {
   frameKeys,
   useGenerateVariants,
   useSelectVariant,
+  useSetImageFromVariant,
 } from '@/hooks/use-frames';
+import type { FrameVariant } from '@/lib/db/schema';
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_VIDEO_MODEL,
@@ -33,6 +35,7 @@ import type { Frame } from '@/types/database';
 import { useQueryClient } from '@tanstack/react-query';
 import { CopyIcon, Loader2, Minimize2 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { SceneCastTab } from './scene-cast-tab';
 import { SceneLocationTab } from './scene-location-tab';
 import { VariantSelector } from './variant-selector';
@@ -79,6 +82,8 @@ type SceneScriptPromptsProps = {
     type: 'image' | 'motion' | 'scene-variants'
   ) => void;
   aspectRatio?: AspectRatio;
+  variantForSelectedModel?: FrameVariant;
+  onImageModelChange?: (model: string) => void;
   /** Current style category, used to show/hide style-restricted motion models */
   styleCategory?: string;
 };
@@ -153,6 +158,8 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   regeneratingSceneVariants,
   onRegenerateStart,
   aspectRatio,
+  variantForSelectedModel,
+  onImageModelChange,
   styleCategory,
 }) => {
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
@@ -184,6 +191,14 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const setSelectedMotionModel = (v: ImageToVideoModel | undefined) =>
     setEditPrompts((s) => ({ ...s, motionModel: v }));
 
+  const handleImageModelChange = useCallback(
+    (model: TextToImageModel) => {
+      setSelectedImageModel(model);
+      onImageModelChange?.(model);
+    },
+    [onImageModelChange]
+  );
+
   // Previous value tracking for prop-to-state sync (refs avoid extra re-renders)
   const prevImagePromptRef = useRef<string | undefined>(undefined);
   const prevImageModelRef = useRef<string | undefined>(undefined);
@@ -193,6 +208,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const queryClient = useQueryClient();
   const generateVariants = useGenerateVariants();
   const selectVariant = useSelectVariant();
+  const setImageFromVariant = useSetImageFromVariant();
   const {
     needsBillingSetup: falNeedsBillingSetup,
     showGate: showFalGate,
@@ -223,6 +239,29 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   );
   const imagePrompt =
     frame?.imagePrompt || frame?.metadata?.prompts?.visual?.fullPrompt;
+
+  const variantIsCompleted =
+    variantForSelectedModel?.status === 'completed' &&
+    !!variantForSelectedModel.url;
+  const variantIsGenerating = variantForSelectedModel?.status === 'generating';
+  const variantAlreadySet =
+    variantIsCompleted && variantForSelectedModel.url === frame?.thumbnailUrl;
+
+  const handleSetImageFromVariant = useCallback(async () => {
+    if (!frame?.id || !frame?.sequenceId || !selectedImageModel) return;
+
+    try {
+      await setImageFromVariant.mutateAsync({
+        sequenceId: frame.sequenceId,
+        frameId: frame.id,
+        model: selectedImageModel,
+      });
+    } catch (error) {
+      toast.error('Failed to set image', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }, [frame, selectedImageModel, setImageFromVariant]);
 
   const handleShortenPrompt = useCallback(async () => {
     setShortenStatus({ loading: false, error: null, success: null });
@@ -423,7 +462,6 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const handleVariantSelect = useCallback(
     async (index: number) => {
       if (!frame?.id || !frame?.sequenceId) return;
-      console.log('handleVariantSelect', index);
       try {
         await selectVariant.mutateAsync({
           sequenceId: frame.sequenceId,
@@ -619,7 +657,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             <span className="text-sm font-medium">Model</span>
             <ImageModelSelector
               selectedModel={selectedImageModel || imageModel}
-              onModelChange={setSelectedImageModel}
+              onModelChange={handleImageModelChange}
               disabled={isGenerating}
             />
           </div>
@@ -643,25 +681,40 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             {shortenStatus.loading ? 'Shortening…' : 'Shorten Prompt'}
           </Button>
 
-          {/* Regenerate button */}
-          <Button
-            onClick={() => {
-              if (falNeedsBillingSetup) {
-                showFalGate();
-                return;
-              }
-              void handleRegenerate();
-            }}
-            disabled={isGenerating || !frame}
-            className="w-full"
-          >
-            {isGenerating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isGenerating
-              ? 'Generating…'
-              : frame?.thumbnailUrl
-                ? 'Regenerate Image'
-                : 'Generate Image'}
-          </Button>
+          {/* Image action button — variant-aware */}
+          {variantIsCompleted && !variantAlreadySet ? (
+            <Button
+              onClick={() => void handleSetImageFromVariant()}
+              disabled={setImageFromVariant.isPending || !frame}
+              className="w-full"
+            >
+              {setImageFromVariant.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {setImageFromVariant.isPending ? 'Setting…' : 'Set Image'}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                if (falNeedsBillingSetup) {
+                  showFalGate();
+                  return;
+                }
+                void handleRegenerate();
+              }}
+              disabled={isGenerating || variantIsGenerating || !frame}
+              className="w-full"
+            >
+              {(isGenerating || variantIsGenerating) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isGenerating || variantIsGenerating
+                ? 'Generating…'
+                : variantAlreadySet
+                  ? 'Regenerate Image'
+                  : 'Generate Image'}
+            </Button>
+          )}
 
           {/* Copy button for current prompt */}
           <Button
@@ -817,7 +870,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             <span className="text-sm font-medium">Model</span>
             <ImageModelSelector
               selectedModel={selectedImageModel || imageModel}
-              onModelChange={setSelectedImageModel}
+              onModelChange={handleImageModelChange}
               disabled={isGenerating || isGeneratingSceneVariants}
             />
           </div>

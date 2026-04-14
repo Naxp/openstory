@@ -1,10 +1,12 @@
 import { RouteErrorFallback } from '@/components/error/route-error-fallback';
-import { ImageModelDropdown } from '@/components/model/image-model-dropdown';
 import {
+  ImageModelBadge,
   ModelBadge,
   MusicModelBadge,
   VideoModelBadge,
 } from '@/components/model/model-badge';
+import { getSequenceImageModelsFn } from '@/functions/frames';
+import { frameKeys } from '@/hooks/use-frames';
 import {
   SequenceTabs,
   useSequenceTabItems,
@@ -16,6 +18,7 @@ import { sequenceKeys, useSequence } from '@/hooks/use-sequences';
 import { useSwipeNavigation } from '@/hooks/use-swipe-navigation';
 import { useUser } from '@/hooks/use-user';
 import { isValidId } from '@/lib/db/id';
+import { useQuery } from '@tanstack/react-query';
 import {
   createFileRoute,
   isNotFound,
@@ -54,6 +57,12 @@ function SequenceLayout() {
 
   const { data: sequence } = useSequence(sequenceId);
 
+  const { data: imageModels } = useQuery({
+    queryKey: frameKeys.imageModels(sequenceId),
+    queryFn: () => getSequenceImageModelsFn({ data: { sequenceId } }),
+    staleTime: 30_000,
+  });
+
   const tabs = useSequenceTabItems(sequenceId);
   const currentPath = useRouterState({
     select: (s) => s.location.pathname,
@@ -70,7 +79,10 @@ function SequenceLayout() {
           <PageHeading>{sequence?.title}</PageHeading>
           <div className="hidden md:flex flex-row flex-wrap items-center gap-2">
             <ModelBadge model={sequence?.analysisModel} />
-            <ImageModelDropdown sequenceId={sequenceId} />
+            <ImageModelBadge
+              models={imageModels}
+              model={sequence?.imageModel}
+            />
             <VideoModelBadge model={sequence?.videoModel} />
             <MusicModelBadge model={sequence?.musicModel ?? undefined} />
           </div>
