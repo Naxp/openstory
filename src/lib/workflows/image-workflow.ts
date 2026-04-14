@@ -8,6 +8,7 @@ import {
 import { uploadImageToStorage } from '@/lib/image/image-storage';
 import { buildReferenceImagePrompt } from '@/lib/prompts/reference-image-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
+import { simpleHash } from '@/lib/utils/hash';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
@@ -29,7 +30,7 @@ export const generateImageWorkflow = createScopedWorkflow<
     const generationParams = await context.run(
       'set-generating-status',
       async (): Promise<ImageGenerationParams | null> => {
-        if (!input.prompt?.trim()) {
+        if (!input.prompt.trim()) {
           throw new WorkflowValidationError(
             'Prompt is required for image generation'
           );
@@ -62,9 +63,21 @@ export const generateImageWorkflow = createScopedWorkflow<
             return null;
           }
 
-          await getGenerationChannel(input.sequenceId)?.emit(
+          // Dual-write: upsert frame_variants row
+          if (input.sequenceId) {
+            await scopedDb.frameVariants.upsert({
+              frameId: input.frameId,
+              sequenceId: input.sequenceId,
+              variantType: 'image',
+              model,
+              status: 'generating',
+              workflowRunId: context.workflowRunId,
+            });
+          }
+
+          await getGenerationChannel(input.sequenceId).emit(
             'generation.image:progress',
-            { frameId: input.frameId, status: 'generating' }
+            { frameId: input.frameId, status: 'generating', model }
           );
         }
 
@@ -163,9 +176,29 @@ export const generateImageWorkflow = createScopedWorkflow<
           return;
         }
 
-        await getGenerationChannel(sequenceId)?.emit(
+        // Dual-write: update frame_variants row (returns null if row doesn't exist)
+        await scopedDb.frameVariants.updateByFrameAndModel(
+          frameId,
+          'image',
+          generationParams.model,
+          {
+            url: result.url,
+            storagePath: result.path || null,
+            status: 'completed',
+            generatedAt: new Date(),
+            error: null,
+            promptHash: input.prompt ? simpleHash(input.prompt) : null,
+          }
+        );
+
+        await getGenerationChannel(sequenceId).emit(
           'generation.image:progress',
-          { frameId, status: 'completed', thumbnailUrl: result.url }
+          {
+            frameId,
+            status: 'completed',
+            thumbnailUrl: result.url,
+            model: generationParams.model,
+          }
         );
 
         console.log('[ImageWorkflow]', `Uploaded to storage: ${result.path}`);
@@ -195,7 +228,7 @@ export const generateImageWorkflow = createScopedWorkflow<
         }
 
         if (sequenceId) {
-          await getGenerationChannel(sequenceId)?.emit(
+          await getGenerationChannel(sequenceId).emit(
             'generation.image:progress',
             { frameId, previewThumbnailUrl: imageUrl }
           );
@@ -223,11 +256,22 @@ export const generateImageWorkflow = createScopedWorkflow<
             { throwOnMissing: false }
           );
 
+          // Dual-write: update frame_variants row (returns null if row doesn't exist)
+          const model = input.model ?? DEFAULT_IMAGE_MODEL;
+          if (input.sequenceId) {
+            await scopedDb.frameVariants.updateByFrameAndModel(
+              input.frameId,
+              'image',
+              model,
+              { status: 'failed', error }
+            );
+          }
+
           if (input.sequenceId) {
             try {
-              await getGenerationChannel(input.sequenceId)?.emit(
+              await getGenerationChannel(input.sequenceId).emit(
                 'generation.image:progress',
-                { frameId: input.frameId, status: 'failed' }
+                { frameId: input.frameId, status: 'failed', model }
               );
             } catch {
               // Ignore emit errors in failure handler
