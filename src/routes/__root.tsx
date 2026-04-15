@@ -17,7 +17,7 @@ import {
   useRouter,
 } from '@tanstack/react-router';
 import { createIsomorphicFn } from '@tanstack/react-start';
-import { getRequestHeaders } from '@tanstack/react-start/server';
+import { getRequest } from '@tanstack/react-start/server';
 
 type RouterContext = {
   queryClient: QueryClient;
@@ -31,8 +31,9 @@ const getIsPreviewFn = createIsomorphicFn()
   .client(() => false);
 
 const getCanonicalOriginFn = createIsomorphicFn().server(() => {
-  const headers = getRequestHeaders();
-  const host = headers.get('x-forwarded-host') ?? headers.get('host');
+  const request = getRequest();
+  const host =
+    request.headers.get('x-forwarded-host') ?? request.headers.get('host');
   if (!host) return null;
 
   // Don't redirect localhost or IP addresses (local/network dev access)
@@ -41,7 +42,7 @@ const getCanonicalOriginFn = createIsomorphicFn().server(() => {
     return null;
   }
 
-  const canonical = new URL(getProductionDeploymentAppUrl(headers));
+  const canonical = new URL(getProductionDeploymentAppUrl(request));
   if (host === canonical.host) return null;
   return canonical.origin;
 });
