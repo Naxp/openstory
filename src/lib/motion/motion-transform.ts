@@ -38,7 +38,8 @@ export function getDurationValues<T extends MotionJSONSchema>(
   const dur = props.duration as JSONProp;
 
   const withEnum = unwrapAnyOf(dur, 'enum');
-  if (withEnum && Array.isArray(withEnum.enum)) return withEnum.enum;
+  if (withEnum && Array.isArray(withEnum.enum))
+    return withEnum.enum.filter((v) => !Number.isNaN(numericOf(v)));
 
   const withRange = unwrapAnyOf(dur, 'minimum');
   if (withRange) {
@@ -85,7 +86,8 @@ export function snapTo(
   n: number,
   values: readonly (string | number)[]
 ): string | number {
-  return values.reduce((prev, curr) =>
+  const numeric = values.filter((v) => !Number.isNaN(numericOf(v)));
+  return numeric.reduce((prev, curr) =>
     Math.abs(numericOf(curr) - n) < Math.abs(numericOf(prev) - n) ? curr : prev
   );
 }

@@ -7,13 +7,10 @@
  * with correctly-typed duration values.
  */
 
-import type {
-  ImageToVideoModel,
-  ImageToVideoModelConfig,
-} from '@/lib/ai/models';
-import { MOTION_TRANSFORMS, type MotionEndpointId } from './endpoint-map';
+import type { IMAGE_TO_VIDEO_MODELS, ImageToVideoModel } from '@/lib/ai/models';
+import type { z } from 'zod';
+import { MOTION_TRANSFORMS } from './endpoint-map';
 import type { GenerateMotionOptions } from './motion-generation';
-
 /** Intentional deviations from API defaults */
 const QUALITY_OVERRIDES: Partial<
   Record<ImageToVideoModel, Record<string, unknown>>
@@ -23,24 +20,30 @@ const QUALITY_OVERRIDES: Partial<
   seedance_v2: { resolution: '720p' },
 };
 
-export function buildModelInput(
+type ModelOutputMap = {
+  [K in ImageToVideoModel]: z.output<
+    (typeof MOTION_TRANSFORMS)[(typeof IMAGE_TO_VIDEO_MODELS)[K]['id']]
+  >;
+};
+
+export function buildModelInput<T extends ImageToVideoModel>(
   options: GenerateMotionOptions,
-  modelConfig: ImageToVideoModelConfig,
-  modelKey: ImageToVideoModel
-) {
-  const endpointId = modelConfig.id satisfies MotionEndpointId;
+  modelConfig: (typeof IMAGE_TO_VIDEO_MODELS)[T],
+  modelKey: T
+): ModelOutputMap[T] {
+  const endpointId: (typeof IMAGE_TO_VIDEO_MODELS)[T]['id'] = modelConfig.id;
   const transform = MOTION_TRANSFORMS[endpointId];
   if (!transform) {
     throw new Error(`No transform found for model: ${modelConfig.id}`);
   }
-
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion safe to cast here because we know the transform is valid
   const result = transform.parse({
     prompt: options.prompt,
     duration: options.duration,
     imageUrl: options.imageUrl,
     aspectRatio: options.aspectRatio,
     ...QUALITY_OVERRIDES[modelKey],
-  });
+  }) as ModelOutputMap[T];
 
   const outputPrompt =
     'prompt' in result && typeof result.prompt === 'string'
