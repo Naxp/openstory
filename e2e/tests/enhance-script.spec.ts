@@ -70,13 +70,13 @@ testWithUser.describe('Enhance Script Flow', () => {
     // Verify "Undo" button appeared
     await expect(page.getByRole('button', { name: /Undo/i })).toBeVisible();
 
-    // Verify "Generate Sequence" is enabled
+    // Verify "Generate" is enabled
     const generateButton = page.getByRole('button', {
-      name: /Generate Sequence/i,
+      name: /^Generate$/i,
     });
     await expect(generateButton).toBeEnabled({ timeout: 10000 });
 
-    // Click "Generate Sequence"
+    // Click "Generate"
     await generateButton.click();
 
     // Verify navigation to sequence scenes page
