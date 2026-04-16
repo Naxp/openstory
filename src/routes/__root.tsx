@@ -3,7 +3,6 @@ import { DefaultNotFound } from '@/components/error/default-not-found';
 import { Providers } from '@/components/providers';
 import { Button } from '@/components/ui/button';
 import { SITE_CONFIG } from '@/lib/marketing/constants';
-import { getProductionDeploymentAppUrl } from '@/lib/utils/environment';
 import appCss from '@/styles/global.css?url';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ErrorComponentProps } from '@tanstack/react-router';
@@ -41,7 +40,9 @@ const getCanonicalOriginFn = createIsomorphicFn().server(() => {
     return null;
   }
 
-  const canonical = new URL(getProductionDeploymentAppUrl(headers));
+  const envAppUrl = getEnv().VITE_APP_URL;
+  if (!envAppUrl) return null;
+  const canonical = new URL(envAppUrl.replace(/\/$/, ''));
   if (host === canonical.host) return null;
   return canonical.origin;
 });

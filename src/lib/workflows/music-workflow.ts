@@ -22,8 +22,7 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
     const { sequenceId, teamId } = input;
     const model = input.model || DEFAULT_MUSIC_MODEL;
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-    if (scopedDb && sequenceId) {
+    if (sequenceId) {
       await context.run('set-generating-status', async () => {
         await scopedDb.sequence(sequenceId).updateMusicFields({
           musicStatus: 'generating',
@@ -94,8 +93,7 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
       throw new Error('Audio URL missing from generation result');
     }
     let audioUrl = audioResult.audioUrl;
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-    if (sequenceId && scopedDb) {
+    if (sequenceId) {
       const storageResult = await context.run('upload-to-storage', async () => {
         const result = await uploadAudioToStorage({
           audioUrl,

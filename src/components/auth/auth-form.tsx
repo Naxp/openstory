@@ -54,7 +54,7 @@ export function AuthForm({
         autoFill: true,
       });
 
-      if (result.data) {
+      if (!cancelled && result.data) {
         void navigate({ to: redirectTo });
       }
     };

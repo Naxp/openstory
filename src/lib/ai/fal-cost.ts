@@ -40,7 +40,12 @@ export type ImageCostParams = {
 
 export function calculateImageCost(params: ImageCostParams): Microdollars {
   const pricing = IMAGE_PRICING[params.endpointId] as ImagePricing | undefined;
-  if (!pricing) return ZERO_MICROS;
+  if (!pricing) {
+    console.error(
+      `[fal-cost] No image pricing data for endpoint: ${params.endpointId}`
+    );
+    return ZERO_MICROS;
+  }
 
   // Quality/size matrix (e.g. GPT Image 1.5)
   if (pricing.qualitySizeMatrix && params.quality && params.imageSize) {
@@ -103,7 +108,12 @@ export type VideoCostParams = {
 
 export function calculateVideoCost(params: VideoCostParams): Microdollars {
   const pricing = VIDEO_PRICING[params.endpointId] as VideoPricing | undefined;
-  if (!pricing) return ZERO_MICROS;
+  if (!pricing) {
+    console.error(
+      `[fal-cost] No video pricing data for endpoint: ${params.endpointId}`
+    );
+    return ZERO_MICROS;
+  }
 
   if (pricing.mode === 'per_token') {
     return calculateTokenBasedVideoCost(pricing, params);
@@ -180,7 +190,12 @@ export type AudioCostParams = {
 
 export function calculateAudioCost(params: AudioCostParams): Microdollars {
   const pricing = AUDIO_PRICING[params.endpointId] as AudioPricing | undefined;
-  if (!pricing) return ZERO_MICROS;
+  if (!pricing) {
+    console.error(
+      `[fal-cost] No audio pricing data for endpoint: ${params.endpointId}`
+    );
+    return ZERO_MICROS;
+  }
 
   if (pricing.roundUpToMinute) {
     return multiplyMicros(

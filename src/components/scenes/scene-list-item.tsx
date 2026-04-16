@@ -205,7 +205,8 @@ const areEqual = (
   if (
     prevMetadata.sceneNumber !== nextMetadata.sceneNumber ||
     prevMetadata.metadata?.title !== nextMetadata.metadata?.title ||
-    prevMetadata.originalScript.extract !== nextMetadata.originalScript.extract
+    prevMetadata.originalScript?.extract !==
+      nextMetadata.originalScript?.extract
   ) {
     return false;
   }

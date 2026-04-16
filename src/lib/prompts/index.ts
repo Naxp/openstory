@@ -121,6 +121,12 @@ export async function getChatPrompt(
 
   // Fall back to local prompts
   const localMessages = WORKFLOW_CHAT_PROMPTS[name];
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- Record<string, T> lookup returns undefined for missing keys
+  if (!localMessages) {
+    throw new Error(
+      `Chat prompt "${name}" not found in local prompts. Run \`bun scripts/pull-prompts.ts\` to populate.`
+    );
+  }
 
   const messages: ChatMessage[] = variables
     ? localMessages.map((msg) => ({

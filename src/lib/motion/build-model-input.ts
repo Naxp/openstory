@@ -30,6 +30,11 @@ export function buildModelInput(
 ) {
   const endpointId = modelConfig.id satisfies MotionEndpointId;
   const transform = MOTION_TRANSFORMS[endpointId];
+  if (!transform) {
+    throw new Error(
+      `No motion transform registered for endpoint: ${endpointId}`
+    );
+  }
 
   const result = transform.parse({
     prompt: options.prompt,

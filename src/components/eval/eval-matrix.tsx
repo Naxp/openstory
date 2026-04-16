@@ -49,7 +49,7 @@ export const EvalMatrix: React.FC<EvalMatrixProps> = ({
   const lastItemIndex = virtualItems[virtualItems.length - 1]?.index;
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
-    if (lastItemIndex >= sequences.length - 5) {
+    if (lastItemIndex == null || lastItemIndex >= sequences.length - 5) {
       onLoadMore();
     }
   }, [lastItemIndex, sequences.length, onLoadMore, hasMore]);

@@ -336,6 +336,7 @@ export const sceneSplitWorkflow = createScopedWorkflow<
 
         const reconciledFrames = await scopedDb.frames.bulkUpsert(frameInserts);
         const reconciledMapping = reconciledFrames.map((f) => ({
+          // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: metadata is JSONB, can be null despite Drizzle types
           sceneId: f.metadata?.sceneId || '',
           frameId: f.id,
         }));

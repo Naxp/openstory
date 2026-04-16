@@ -13,12 +13,12 @@ let _db: Database | undefined;
 
 function buildLibsqlClient(): LibsqlClient {
   const env = getEnv();
-  const url = env.TURSO_DATABASE_URL.trim();
+  const url = env.TURSO_DATABASE_URL?.trim();
   if (!url) {
     throw new Error('TURSO_DATABASE_URL env var is not defined');
   }
 
-  const authToken = env.TURSO_AUTH_TOKEN.trim();
+  const authToken = env.TURSO_AUTH_TOKEN?.trim();
   if (!authToken) {
     throw new Error('TURSO_AUTH_TOKEN env var is not defined');
   }
