@@ -1,7 +1,7 @@
 import { Card } from '@/components/ui/card';
 import type { LibraryLocation } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
-import { MapPin } from 'lucide-react';
+import { Loader2, MapPin } from 'lucide-react';
 
 type LocationLibraryCardProps = {
   location: LibraryLocation;
@@ -35,6 +35,23 @@ export const LocationLibraryCard: React.FC<LocationLibraryCardProps> = ({
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <MapPin className="h-12 w-12 text-muted-foreground/30" />
+          </div>
+        )}
+
+        {/* Generating overlay */}
+        {isGenerating && (
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="text-xs font-medium">Generating sheet…</span>
+            </div>
+          </div>
+        )}
+
+        {/* System badge */}
+        {location.isPublic && (
+          <div className="absolute top-2 left-2 rounded bg-background/80 px-2 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm">
+            System
           </div>
         )}
       </div>

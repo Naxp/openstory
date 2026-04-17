@@ -1,5 +1,6 @@
-import { EditLocationDialog } from '@/components/location-library/edit-location-dialog';
 import { PageContainer } from '@/components/layout/page-container';
+import { EditLocationDialog } from '@/components/location-library/edit-location-dialog';
+import { LocationMediaUpload } from '@/components/location-library/location-media-upload';
 import { PageDescription } from '@/components/typography/page-description';
 import { PageHeader } from '@/components/typography/page-header';
 import { PageHeading } from '@/components/typography/page-heading';
@@ -7,15 +8,23 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  useLibraryLocationById,
-  useDeleteLibraryLocation,
   useAddLocationSheets,
+  useDeleteLibraryLocation,
   useDeleteLocationSheet,
+  useLibraryLocationById,
 } from '@/hooks/use-location-library';
+import { useLocationSheetRealtime } from '@/hooks/use-location-realtime';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, MapPin, Pencil, Plus, Trash2, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Loader2,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
-import { LocationMediaUpload } from '@/components/location-library/location-media-upload';
 
 export const Route = createFileRoute('/_protected/locations/$locationId')({
   component: LocationDetailPage,
@@ -32,6 +41,8 @@ function LocationDetailPage() {
   const deleteLocation = useDeleteLibraryLocation();
   const addSheets = useAddLocationSheets();
   const deleteSheet = useDeleteLocationSheet();
+  const { isGenerating: isGeneratingSheet, error: sheetError } =
+    useLocationSheetRealtime(locationId);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
   const [isAddingImages, setIsAddingImages] = useState(false);
@@ -153,22 +164,46 @@ function LocationDetailPage() {
             Location Sheet
           </h2>
 
-          {location.referenceImageUrl ? (
-            <Card className="overflow-hidden">
-              <img
-                src={location.referenceImageUrl}
-                alt={`${location.name} location sheet`}
-                className="w-full h-auto"
-              />
-            </Card>
-          ) : (
-            <Card className="p-8 text-center">
-              <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
-              <p className="text-muted-foreground">
-                Upload reference images to generate a location sheet.
-              </p>
-            </Card>
-          )}
+          {(() => {
+            const defaultSheet = location.sheets?.find((s) => s.isDefault);
+            const sheetImageUrl =
+              defaultSheet?.imageUrl ?? location.referenceImageUrl;
+
+            return sheetImageUrl ? (
+              <Card className="overflow-hidden relative">
+                <img
+                  src={sheetImageUrl}
+                  alt={`${location.name} location sheet`}
+                  className="w-full h-auto"
+                />
+                {isGeneratingSheet && (
+                  <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <span className="text-sm font-medium">
+                        Generating location sheet…
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            ) : (
+              <Card className="p-8 text-center">
+                <MapPin className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+                <p className="text-muted-foreground">
+                  {isGeneratingSheet
+                    ? 'Generating location sheet…'
+                    : 'Upload reference images to generate a location sheet.'}
+                </p>
+                {isGeneratingSheet && (
+                  <Loader2 className="h-6 w-6 animate-spin text-primary mx-auto mt-3" />
+                )}
+                {sheetError && (
+                  <p className="text-destructive text-sm mt-3">{sheetError}</p>
+                )}
+              </Card>
+            );
+          })()}
         </section>
 
         {/* Reference Images Section */}
@@ -223,10 +258,11 @@ function LocationDetailPage() {
           )}
 
           {/* eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- runtime guard */}
-          {location.sheets && location.sheets.some((s) => s.imageUrl) ? (
+          {location.sheets &&
+          location.sheets.some((s) => s.imageUrl && !s.isDefault) ? (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {location.sheets
-                .filter((sheet) => !!sheet.imageUrl)
+                .filter((sheet) => !!sheet.imageUrl && !sheet.isDefault)
                 .map((sheet) => (
                   <Card key={sheet.id} className="overflow-hidden group">
                     <div className="aspect-video bg-muted relative">

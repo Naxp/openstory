@@ -2,60 +2,52 @@ import { getChannelHistoryFn } from '@/functions/realtime-history';
 import { useRealtime } from '@/lib/realtime/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { talentKeys } from './use-talent';
+import { locationLibraryKeys } from './use-location-library';
+import { libraryLocationKeys } from './use-sequence-locations';
 
 type SheetProgressEvent = {
   event: string;
   data: {
-    talentId: string;
-    status: 'generating' | 'sheet_ready' | 'completed' | 'failed';
-    sheetId?: string;
+    locationId: string;
+    status: 'generating' | 'completed' | 'failed';
     sheetImageUrl?: string;
-    headshotImageUrl?: string;
     error?: string;
   };
 };
 
 /**
- * Hook for subscribing to real-time talent sheet generation events for multiple talent.
- * Tracks generating status for all provided talent IDs.
- * Replays channel history on mount for each talent to catch in-flight generations.
- *
- * @param talentIds - Array of talent IDs to subscribe to
- * @returns Map of talentId -> generating status
+ * Hook for subscribing to real-time location sheet generation events for multiple locations.
+ * Replays channel history on mount for each location to catch in-flight generations.
  */
-export function useTalentSheetsRealtime(talentIds: string[] = []) {
+export function useLocationSheetsRealtime(locationIds: string[] = []) {
   const queryClient = useQueryClient();
   const [generatingStatus, setGeneratingStatus] = useState<
     Map<string, boolean>
   >(new Map());
 
-  // Track which talent IDs we've already fetched history for
   const checkedIds = useRef(new Set<string>());
 
-  // Build channels array: ['talent:id1', 'talent:id2', ...]
   const channels = useMemo(
-    () => talentIds.map((id) => `talent:${id}`),
-    [talentIds]
+    () => locationIds.map((id) => `location:${id}`),
+    [locationIds]
   );
 
-  // Replay channel history for newly added talent IDs
+  // Replay channel history for newly added location IDs
   useEffect(() => {
-    const newIds = talentIds.filter((id) => !checkedIds.current.has(id));
+    const newIds = locationIds.filter((id) => !checkedIds.current.has(id));
     if (newIds.length === 0) return;
 
     for (const id of newIds) {
       checkedIds.current.add(id);
 
-      getChannelHistoryFn({ data: { channel: `talent:${id}` } })
+      getChannelHistoryFn({ data: { channel: `location:${id}` } })
         .then((events) => {
-          // Find the last status for this talent
           let lastStatus: string | null = null;
           for (const evt of events) {
-            if (evt.event !== 'talent.sheet:progress') continue;
+            if (evt.event !== 'location.sheet:progress') continue;
             try {
               const parsed = JSON.parse(evt.data);
-              if (parsed.talentId !== id) continue;
+              if (parsed.locationId !== id) continue;
               lastStatus = parsed.status;
             } catch {
               // skip
@@ -72,74 +64,64 @@ export function useTalentSheetsRealtime(talentIds: string[] = []) {
         })
         .catch((err: Error) => {
           console.error(
-            `[useTalentSheetsRealtime] Failed to fetch history for talent:${id}:`,
+            `[useLocationSheetsRealtime] Failed to fetch history for location:${id}:`,
             err
           );
         });
     }
-  }, [talentIds]);
+  }, [locationIds]);
 
   const handleEvent = useCallback(
     (event: SheetProgressEvent) => {
       const { event: eventName, data } = event;
 
-      if (eventName !== 'talent.sheet:progress') return;
-      if (!talentIds.includes(data.talentId)) return;
+      if (eventName !== 'location.sheet:progress') return;
+      if (!locationIds.includes(data.locationId)) return;
 
       switch (data.status) {
         case 'generating':
           setGeneratingStatus((prev) => {
             const next = new Map(prev);
-            next.set(data.talentId, true);
+            next.set(data.locationId, true);
             return next;
-          });
-          break;
-
-        case 'sheet_ready':
-          // Sheet image is ready but headshot still generating - refresh list to show sheet
-          void queryClient.invalidateQueries({
-            queryKey: talentKeys.lists(),
           });
           break;
 
         case 'completed':
           setGeneratingStatus((prev) => {
             const next = new Map(prev);
-            next.delete(data.talentId);
+            next.delete(data.locationId);
             return next;
           });
-          // Invalidate queries to refresh sheets and headshot
           void queryClient.invalidateQueries({
-            queryKey: talentKeys.detail(data.talentId),
+            queryKey: locationLibraryKeys.detail(data.locationId),
           });
-          // Also invalidate list to show new headshot in talent grid
           void queryClient.invalidateQueries({
-            queryKey: talentKeys.lists(),
+            queryKey: libraryLocationKeys.all,
           });
           break;
 
         case 'failed':
           setGeneratingStatus((prev) => {
             const next = new Map(prev);
-            next.delete(data.talentId);
+            next.delete(data.locationId);
             return next;
           });
           break;
       }
     },
-    [talentIds, queryClient]
+    [locationIds, queryClient]
   );
 
   const { status } = useRealtime({
     channels,
-    events: ['talent.sheet:progress'] as const,
+    events: ['location.sheet:progress'] as const,
     onData: handleEvent,
-    enabled: talentIds.length > 0,
+    enabled: locationIds.length > 0,
   });
 
-  // Helper to check if a specific talent is generating
   const isGenerating = useCallback(
-    (talentId: string) => generatingStatus.get(talentId) ?? false,
+    (locationId: string) => generatingStatus.get(locationId) ?? false,
     [generatingStatus]
   );
 

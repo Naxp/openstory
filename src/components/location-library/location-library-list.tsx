@@ -1,6 +1,7 @@
 import { LocationLibraryCard } from '@/components/location-library/location-library-card';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { useLocationSheetsRealtime } from '@/hooks/use-location-sheets-realtime';
 import type { LibraryLocation } from '@/lib/db/schema';
 import { useNavigate } from '@tanstack/react-router';
 
@@ -16,6 +17,10 @@ export const LocationLibraryList: React.FC<LocationLibraryListProps> = ({
   error,
 }) => {
   const navigate = useNavigate();
+
+  // Subscribe to realtime events for all locations
+  const locationIds = locations?.map((l) => l.id) ?? [];
+  const { isGenerating } = useLocationSheetsRealtime(locationIds);
 
   if (isLoading) {
     return (
@@ -54,6 +59,7 @@ export const LocationLibraryList: React.FC<LocationLibraryListProps> = ({
         <LocationLibraryCard
           key={location.id}
           location={location}
+          isGenerating={isGenerating(location.id)}
           onClick={() =>
             void navigate({
               to: '/locations/$locationId',

@@ -18,9 +18,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTalent } from '@/hooks/use-talent';
 import type { TalentWithSheets } from '@/lib/db/schema';
+import { AddTalentDialog } from '@/components/talent-library/add-talent-dialog';
 import { cn } from '@/lib/utils';
-import { Link } from '@tanstack/react-router';
-import { Check, Search, User, Users, X } from 'lucide-react';
+import { Check, Plus, Search, User, Users, X } from 'lucide-react';
 import { useState } from 'react';
 
 type TalentSuggestionSelectorProps = {
@@ -68,6 +68,11 @@ const TalentPickerCard: React.FC<TalentPickerCardProps> = ({
         )}
       </div>
       <span className="text-sm font-medium truncate w-full">{talent.name}</span>
+      {talent.isPublic && (
+        <div className="absolute left-2 top-2 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur-sm">
+          System
+        </div>
+      )}
       {isSelected && (
         <div className="absolute right-2 top-2 rounded-full bg-primary p-1">
           <Check className="h-3 w-3 text-primary-foreground" />
@@ -233,12 +238,14 @@ export const TalentSuggestionSelector: React.FC<
                     : 'Your talent library is empty'}
                 </p>
                 {!searchQuery && (
-                  <Link
-                    to="/talent"
-                    className="mt-2 text-sm text-primary hover:underline"
-                  >
-                    Go to Talent Library to add talent
-                  </Link>
+                  <AddTalentDialog
+                    trigger={
+                      <Button variant="outline" size="sm" className="mt-3">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Talent
+                      </Button>
+                    }
+                  />
                 )}
               </div>
             ) : (
@@ -255,8 +262,16 @@ export const TalentSuggestionSelector: React.FC<
             )}
           </ScrollArea>
 
-          {/* Done button */}
-          <div className="flex justify-end">
+          {/* Footer */}
+          <div className="flex justify-between">
+            <AddTalentDialog
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Talent
+                </Button>
+              }
+            />
             <Button onClick={() => setIsDialogOpen(false)}>Done</Button>
           </div>
         </DialogContent>

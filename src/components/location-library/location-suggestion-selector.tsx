@@ -18,9 +18,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLibraryLocations } from '@/hooks/use-sequence-locations';
 import type { LibraryLocation } from '@/lib/db/schema';
+import { AddLocationDialog } from '@/components/location-library/add-location-dialog';
 import { cn } from '@/lib/utils';
-import { Link } from '@tanstack/react-router';
-import { Check, MapPin, Search, X } from 'lucide-react';
+import { Check, MapPin, Plus, Search, X } from 'lucide-react';
 import { useState } from 'react';
 
 type LocationSuggestionSelectorProps = {
@@ -67,6 +67,11 @@ const LocationPickerCard: React.FC<LocationPickerCardProps> = ({
       <span className="text-sm font-medium truncate w-full">
         {location.name}
       </span>
+      {location.isPublic && (
+        <div className="absolute left-2 top-2 rounded bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground backdrop-blur-sm">
+          System
+        </div>
+      )}
       {isSelected && (
         <div className="absolute right-2 top-2 rounded-full bg-primary p-1">
           <Check className="h-3 w-3 text-primary-foreground" />
@@ -236,12 +241,14 @@ export const LocationSuggestionSelector: React.FC<
                     : 'Your location library is empty'}
                 </p>
                 {!searchQuery && (
-                  <Link
-                    to="/locations"
-                    className="mt-2 text-sm text-primary hover:underline"
-                  >
-                    Go to Location Library to add locations
-                  </Link>
+                  <AddLocationDialog
+                    trigger={
+                      <Button variant="outline" size="sm" className="mt-3">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Location
+                      </Button>
+                    }
+                  />
                 )}
               </div>
             ) : (
@@ -258,8 +265,16 @@ export const LocationSuggestionSelector: React.FC<
             )}
           </ScrollArea>
 
-          {/* Done button */}
-          <div className="flex justify-end">
+          {/* Footer */}
+          <div className="flex justify-between">
+            <AddLocationDialog
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Location
+                </Button>
+              }
+            />
             <Button onClick={() => setIsDialogOpen(false)}>Done</Button>
           </div>
         </DialogContent>
