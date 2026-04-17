@@ -28,22 +28,28 @@ export const locationMatchingWorkflow = createScopedWorkflow<
       teamId,
     };
 
-    const { locationBible } = await durableLLMCall(
-      context,
-      {
-        name: 'location-extraction',
-        phase: { number: 2, name: 'Finding locations…' },
+    // Use pre-extracted bible from scene splitting, or fall back to LLM extraction
+    const locationBible =
+      input.locationBible && input.locationBible.length > 0
+        ? input.locationBible
+        : (
+            await durableLLMCall(
+              context,
+              {
+                name: 'location-extraction',
+                phase: { number: 2, name: 'Finding locations…' },
 
-        promptName: 'phase/location-extraction-chat',
-        promptVariables: {
-          scenes: JSON.stringify(scenes, null, 2),
-        },
+                promptName: 'phase/location-extraction-chat',
+                promptVariables: {
+                  scenes: JSON.stringify(scenes, null, 2),
+                },
 
-        modelId: analysisModelId,
-        responseSchema: locationExtractionResultSchema,
-      },
-      llmCallContext
-    );
+                modelId: analysisModelId,
+                responseSchema: locationExtractionResultSchema,
+              },
+              llmCallContext
+            )
+          ).locationBible;
 
     // Location matching (conditional)
     const { libraryLocationList, locationMatchingPromptVariables } =

@@ -9,6 +9,10 @@
 import { parse } from 'partial-json';
 import { z } from 'zod';
 import {
+  type CharacterBibleEntry,
+  characterBibleEntrySchema,
+  type LocationBibleEntry,
+  locationBibleEntrySchema,
   originalScriptSchema,
   sceneMetadataSchema,
 } from './scene-analysis.schema';
@@ -29,7 +33,9 @@ export type SceneSplittingScene = z.infer<typeof sceneSplittingSceneSchema>;
 export type StreamedSceneEvent =
   | { type: 'title'; title: string }
   | { type: 'scene'; scene: SceneSplittingScene; index: number }
-  | { type: 'scene:updated'; scene: SceneSplittingScene; index: number };
+  | { type: 'scene:updated'; scene: SceneSplittingScene; index: number }
+  | { type: 'characterBible'; bible: CharacterBibleEntry[] }
+  | { type: 'locationBible'; bible: LocationBibleEntry[] };
 
 /**
  * Strip markdown code fences that some models wrap around JSON output.
@@ -46,6 +52,8 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 export function createStreamingSceneParser() {
   let lastEmittedSceneCount = 0;
   let titleEmitted = false;
+  let characterBibleEmitted = false;
+  let locationBibleEmitted = false;
   let emittedTitles: Map<number, string> = new Map();
 
   return {
@@ -110,6 +118,28 @@ export function createStreamingSceneParser() {
         }
       }
 
+      // Check for character bible (streams after scenes)
+      if (!characterBibleEmitted && Array.isArray(raw.characterBible)) {
+        const parsed = z
+          .array(characterBibleEntrySchema)
+          .safeParse(raw.characterBible);
+        if (parsed.success && parsed.data.length > 0) {
+          characterBibleEmitted = true;
+          events.push({ type: 'characterBible', bible: parsed.data });
+        }
+      }
+
+      // Check for location bible (streams after scenes)
+      if (!locationBibleEmitted && Array.isArray(raw.locationBible)) {
+        const parsed = z
+          .array(locationBibleEntrySchema)
+          .safeParse(raw.locationBible);
+        if (parsed.success && parsed.data.length > 0) {
+          locationBibleEmitted = true;
+          events.push({ type: 'locationBible', bible: parsed.data });
+        }
+      }
+
       return events;
     },
 
@@ -117,6 +147,8 @@ export function createStreamingSceneParser() {
     reset() {
       lastEmittedSceneCount = 0;
       titleEmitted = false;
+      characterBibleEmitted = false;
+      locationBibleEmitted = false;
       emittedTitles = new Map();
     },
   };

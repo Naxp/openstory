@@ -709,11 +709,47 @@ Extract with character name (null if unknown) and exact text.
 
 - Dialogue: ~150 words/minute
 - Simple action: 2-3s | Moderate: 3-5s | Complex: 5-8s
-- Quick cuts: 1-2s | Contemplative: 3-6s`,
+- Quick cuts: 1-2s | Contemplative: 3-6s
+
+## Character Bible
+
+While splitting scenes, also build a complete character bible. For each character:
+- Name (from script or inferred)
+- Age (exact or range like "30s")
+- Gender, ethnicity (if relevant)
+- Physical: height, build, hair color/style, eye color, skin tone, age markers
+- Clothing: complete outfit that defines the character
+- Distinguishing features: scars, tattoos, jewelry, accessories
+- Consistency tag: short unique reference (e.g., "Jack-denim-weathered")
+
+Track first mentions:
+- "a man walks in" → the character first appears as "a man"
+- "JACK (30s) enters" → first appears as "JACK (30s)"
+- Link generic references to identity when revealed later
+
+## Location Bible
+
+Also build a complete location bible. For each unique location:
+- Name as written in the script (e.g., "INT. OFFICE - DAY")
+- Type: interior, exterior, or both
+- Time of day: day, night, dusk, dawn, etc.
+- Description: detailed visual description including layout, size, atmosphere
+- Architectural style and design aesthetic
+- Key visual features that define the space
+- Color palette and dominant colors
+- Lighting characteristics
+- Mood and ambiance
+- Consistency tag for image generation (e.g., "office_modern_steel_glass")
+- First mention: scene ID, original text, and line number
+
+Notes:
+- Combine variations of the same location (e.g., "INT. OFFICE - DAY" and "INT. OFFICE - NIGHT" are the same location)
+- Extract the core location name without time-of-day suffixes
+- Describe the location in its most commonly seen state`,
     },
     {
       role: 'user',
-      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags.
+      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags. Also extract a complete character bible and location bible.
 
 <ASPECT_RATIO>
 {{aspectRatio}}
@@ -724,6 +760,19 @@ Extract with character name (null if unknown) and exact text.
 </USER_SCRIPT>
 
 IMPORTANT: Extract EXACT original script text for each scene. Do NOT modify or enhance user's words.
+
+For each character that appears:
+1. Provide COMPLETE physical descriptions for visual consistency
+2. Include clothing details that define the character
+3. Add distinguishing features
+4. Create a short consistency_tag for quick reference
+
+For each unique location:
+1. Provide COMPLETE visual descriptions for visual consistency
+2. Include architectural style and design details
+3. Identify key visual features that define the location
+4. Specify the color palette and lighting setup
+5. Create a short consistency_tag for quick reference
 
 Respond with ONLY valid JSON matching the schema.`,
     },

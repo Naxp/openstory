@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import {
+  characterBibleEntrySchema,
   continuitySchema,
   locationBibleEntrySchema,
   motionPromptSchema,
@@ -68,6 +69,14 @@ export const sceneSplittingResultSchema = z.object({
         .required()
     )
     .meta({ description: 'Array of scenes split from the script' }),
+  characterBible: z.array(characterBibleEntrySchema).catch([]).meta({
+    description:
+      'Character descriptions extracted from the script for visual consistency',
+  }),
+  locationBible: z.array(locationBibleEntrySchema).catch([]).meta({
+    description:
+      'Location descriptions extracted from the script for visual consistency',
+  }),
 });
 
 /**

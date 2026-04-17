@@ -28,23 +28,28 @@ export const talentMatchingWorkflow = createScopedWorkflow<
       teamId,
     };
 
-    // Phase 2: Character and location extraction
-    const { characterBible } = await durableLLMCall(
-      context,
-      {
-        name: 'character-extraction',
-        phase: { number: 2, name: 'Finding characters…' },
+    // Use pre-extracted bible from scene splitting, or fall back to LLM extraction
+    const characterBible =
+      input.characterBible && input.characterBible.length > 0
+        ? input.characterBible
+        : (
+            await durableLLMCall(
+              context,
+              {
+                name: 'character-extraction',
+                phase: { number: 2, name: 'Finding characters…' },
 
-        promptName: 'phase/character-extraction-chat',
-        promptVariables: {
-          scenes: JSON.stringify(scenes, null, 2),
-        },
+                promptName: 'phase/character-extraction-chat',
+                promptVariables: {
+                  scenes: JSON.stringify(scenes, null, 2),
+                },
 
-        modelId: analysisModelId,
-        responseSchema: characterExtractionResultSchema,
-      },
-      llmCallContext
-    );
+                modelId: analysisModelId,
+                responseSchema: characterExtractionResultSchema,
+              },
+              llmCallContext
+            )
+          ).characterBible;
 
     // Talent matching (conditional)
     const { talentList, matchingPromptVariables } = await context.run(

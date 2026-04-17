@@ -93,17 +93,19 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
       throw new Error('Scene split workflow failed');
     }
 
-    const { scenes, frameMapping } = sceneSplitResult.body;
-
-    // Phase 2 START
-    await context.run('phase-2-start', async () => {
-      await getGenerationChannel(sequenceId).emit('generation.phase:start', {
-        phase: 2,
-        phaseName: 'Casting characters & locations\u2026',
-      });
-    });
+    const {
+      scenes,
+      frameMapping,
+      characterBible: extractedCharacterBible,
+      locationBible: extractedLocationBible,
+    } = sceneSplitResult.body;
 
     // Phase 2: Talent + location matching in parallel
+    // Pass pre-extracted bibles to skip redundant extraction LLM calls
+    // Phase 2 start event is emitted from scene-split-workflow when the
+    // characterBible starts streaming. If bibles are empty (fallback path
+    // or script has no characters), phase 3 start marks phase 2 complete
+    // in the reducer — no separate emit needed.
     const [characterMatchingResult, locationMatchingResult] = await Promise.all(
       [
         context.invoke('talent-matching', {
@@ -116,6 +118,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
             scenes,
             analysisModelId,
             suggestedTalentIds,
+            characterBible: extractedCharacterBible,
           },
         }),
         context.invoke('location-matching', {
@@ -128,6 +131,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
             scenes,
             analysisModelId,
             suggestedLocationIds,
+            locationBible: extractedLocationBible,
           },
         }),
       ]

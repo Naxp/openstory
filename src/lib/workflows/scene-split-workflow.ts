@@ -95,7 +95,7 @@ export const sceneSplitWorkflow = createScopedWorkflow<
         for await (const chunk of callLLMStream({
           model: modelId,
           messages: messages,
-          max_tokens: Math.floor(getContextWindow(modelId) * 0.5),
+          max_tokens: Math.floor(getContextWindow(modelId) * 0.65),
           responseSchema: sceneSplittingResultSchema,
           apiKey: openRouterApiKeyInfo.key,
           observationName: logName,
@@ -122,6 +122,19 @@ export const sceneSplitWorkflow = createScopedWorkflow<
               await getGenerationChannel(sequenceId).emit(
                 'generation.updated',
                 { title: event.title }
+              );
+            }
+
+            if (event.type === 'characterBible' && sequenceId) {
+              console.log(
+                `[Stream:${logName}] Character bible detected (${event.bible.length} entries), advancing to phase 2`
+              );
+              await getGenerationChannel(sequenceId).emit(
+                'generation.phase:start',
+                {
+                  phase: 2,
+                  phaseName: 'Casting characters & locations\u2026',
+                }
               );
             }
 
@@ -295,14 +308,15 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           scenes: parsed.scenes,
           projectMetadata: parsed.projectMetadata,
           frameMapping,
+          characterBible: parsed.characterBible,
+          locationBible: parsed.locationBible,
         };
       }
     );
 
     // Step 3: Reconcile — ensure all frames exist (handles QStash cached result replay)
-    const { scenes, title, frameMapping } = await context.run(
-      'reconcile-frames',
-      async () => {
+    const { scenes, title, frameMapping, characterBible, locationBible } =
+      await context.run('reconcile-frames', async () => {
         const { scenes, projectMetadata } = streamResult;
         // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
         const resolvedTitle = projectMetadata?.title || 'Untitled';
@@ -312,6 +326,8 @@ export const sceneSplitWorkflow = createScopedWorkflow<
             scenes,
             title: resolvedTitle,
             frameMapping: streamResult.frameMapping,
+            characterBible: streamResult.characterBible,
+            locationBible: streamResult.locationBible,
           };
         }
 
@@ -371,9 +387,10 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           scenes,
           title: resolvedTitle,
           frameMapping: reconciledMapping,
+          characterBible: streamResult.characterBible,
+          locationBible: streamResult.locationBible,
         };
-      }
-    );
+      });
 
     // Step 4: Deduct credits
     const openRouterKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');
@@ -393,7 +410,7 @@ export const sceneSplitWorkflow = createScopedWorkflow<
       });
     });
 
-    return { scenes, title, frameMapping };
+    return { scenes, title, frameMapping, characterBible, locationBible };
   },
   {
     failureFunction: async ({ context, failResponse }) => {
