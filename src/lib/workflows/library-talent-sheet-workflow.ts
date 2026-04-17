@@ -59,6 +59,7 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
       );
 
       // Emit generating status
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       await getTalentChannel(input.talentId)?.emit('talent.sheet:progress', {
         talentId: input.talentId,
         status: 'generating',
@@ -277,6 +278,7 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
         `Talent sheet workflow completed for ${input.talentName}`
       );
 
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       await getTalentChannel(input.talentId)?.emit('talent.sheet:progress', {
         talentId: input.talentId,
         status: 'completed',
@@ -305,6 +307,7 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
       );
 
       // Emit failed status
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       await getTalentChannel(input.talentId)?.emit('talent.sheet:progress', {
         talentId: input.talentId,
         status: 'failed',

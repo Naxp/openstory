@@ -251,6 +251,7 @@ export function createTalentMethods(
       const result = await db
         .delete(talent)
         .where(and(eq(talent.id, talentId), eq(talent.teamId, teamId)));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
       return (result.rowsAffected ?? 0) > 0;
     },
 
@@ -329,6 +330,7 @@ export function createTalentMethods(
           .delete(talentSheets)
           .where(eq(talentSheets.id, sheetId));
 
+        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
         if ((result.rowsAffected ?? 0) === 0) return false;
 
         if (sheet.isDefault) {
@@ -361,6 +363,7 @@ export function createTalentMethods(
         const result = await db
           .delete(talentMedia)
           .where(eq(talentMedia.id, mediaId));
+        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
         return (result.rowsAffected ?? 0) > 0;
       },
     },
