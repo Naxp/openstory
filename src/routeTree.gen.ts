@@ -17,6 +17,7 @@ import { Route as ProtectedRouteRouteImport } from './routes/_protected/route'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
 import { Route as MarketingIndexRouteImport } from './routes/_marketing/index'
 import { Route as MetaOgLinkedinRouteImport } from './routes/meta/og-linkedin'
+import { Route as MetaOgGithubRouteImport } from './routes/meta/og-github'
 import { Route as MetaOgRouteImport } from './routes/meta/og'
 import { Route as GiftCodeRouteImport } from './routes/gift/$code'
 import { Route as ApiRealtimeRouteImport } from './routes/api/realtime'
@@ -90,6 +91,11 @@ const MarketingIndexRoute = MarketingIndexRouteImport.update({
 const MetaOgLinkedinRoute = MetaOgLinkedinRouteImport.update({
   id: '/meta/og-linkedin',
   path: '/meta/og-linkedin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MetaOgGithubRoute = MetaOgGithubRouteImport.update({
+  id: '/meta/og-github',
+  path: '/meta/og-github',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MetaOgRoute = MetaOgRouteImport.update({
@@ -306,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/api/realtime': typeof ApiRealtimeRoute
   '/gift/$code': typeof GiftCodeRoute
   '/meta/og': typeof MetaOgRoute
+  '/meta/og-github': typeof MetaOgGithubRoute
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
   '/admin/usage': typeof ProtectedAdminUsageRoute
@@ -349,6 +356,7 @@ export interface FileRoutesByTo {
   '/api/realtime': typeof ApiRealtimeRoute
   '/gift/$code': typeof GiftCodeRoute
   '/meta/og': typeof MetaOgRoute
+  '/meta/og-github': typeof MetaOgGithubRoute
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
   '/admin/usage': typeof ProtectedAdminUsageRoute
@@ -396,6 +404,7 @@ export interface FileRoutesById {
   '/api/realtime': typeof ApiRealtimeRoute
   '/gift/$code': typeof GiftCodeRoute
   '/meta/og': typeof MetaOgRoute
+  '/meta/og-github': typeof MetaOgGithubRoute
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/_marketing/': typeof MarketingIndexRoute
   '/_protected/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
@@ -443,6 +452,7 @@ export interface FileRouteTypes {
     | '/api/realtime'
     | '/gift/$code'
     | '/meta/og'
+    | '/meta/og-github'
     | '/meta/og-linkedin'
     | '/sequences/$id'
     | '/admin/usage'
@@ -486,6 +496,7 @@ export interface FileRouteTypes {
     | '/api/realtime'
     | '/gift/$code'
     | '/meta/og'
+    | '/meta/og-github'
     | '/meta/og-linkedin'
     | '/sequences/$id'
     | '/admin/usage'
@@ -532,6 +543,7 @@ export interface FileRouteTypes {
     | '/api/realtime'
     | '/gift/$code'
     | '/meta/og'
+    | '/meta/og-github'
     | '/meta/og-linkedin'
     | '/_marketing/'
     | '/_protected/sequences/$id'
@@ -572,6 +584,7 @@ export interface RootRouteChildren {
   ApiRealtimeRoute: typeof ApiRealtimeRoute
   GiftCodeRoute: typeof GiftCodeRoute
   MetaOgRoute: typeof MetaOgRoute
+  MetaOgGithubRoute: typeof MetaOgGithubRoute
   MetaOgLinkedinRoute: typeof MetaOgLinkedinRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
@@ -638,6 +651,13 @@ declare module '@tanstack/react-router' {
       path: '/meta/og-linkedin'
       fullPath: '/meta/og-linkedin'
       preLoaderRoute: typeof MetaOgLinkedinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/meta/og-github': {
+      id: '/meta/og-github'
+      path: '/meta/og-github'
+      fullPath: '/meta/og-github'
+      preLoaderRoute: typeof MetaOgGithubRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/meta/og': {
@@ -1034,6 +1054,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRealtimeRoute: ApiRealtimeRoute,
   GiftCodeRoute: GiftCodeRoute,
   MetaOgRoute: MetaOgRoute,
+  MetaOgGithubRoute: MetaOgGithubRoute,
   MetaOgLinkedinRoute: MetaOgLinkedinRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
