@@ -26,8 +26,17 @@ function setReturnPath(returnTo?: string) {
   localStorage.setItem(RETURN_KEY, path);
 }
 
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 type OptionCardProps = {
-  to: string;
+  to?: string;
+  href?: string;
   search?: Record<string, string>;
   icon: React.ReactNode;
   title: string;
@@ -38,8 +47,57 @@ type OptionCardProps = {
   children?: React.ReactNode;
 };
 
+const cardClassName = (variant: 'primary' | 'warm' | 'muted') =>
+  cn(
+    'group relative flex items-center gap-3.5 rounded-xl border p-3.5 transition-all duration-200',
+    variant === 'primary' &&
+      'border-primary/20 bg-primary/[0.03] hover:border-primary/40 hover:bg-primary/[0.06]',
+    variant === 'warm' &&
+      'border-amber-500/20 bg-amber-500/[0.03] hover:border-amber-500/40 hover:bg-amber-500/[0.06] dark:border-amber-400/15 dark:bg-amber-400/[0.03] dark:hover:border-amber-400/30 dark:hover:bg-amber-400/[0.05]',
+    variant === 'muted' &&
+      'border-border/60 bg-transparent hover:border-border hover:bg-accent/50'
+  );
+
+const OptionCardContent: React.FC<
+  Pick<
+    OptionCardProps,
+    'icon' | 'title' | 'description' | 'badge' | 'variant' | 'children'
+  >
+> = ({ icon, title, description, badge, variant = 'muted', children }) => (
+  <>
+    <div
+      className={cn(
+        'flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200',
+        variant === 'primary' &&
+          'bg-primary/10 text-primary group-hover:bg-primary/15',
+        variant === 'warm' &&
+          'bg-amber-500/10 text-amber-600 group-hover:bg-amber-500/15 dark:text-amber-400',
+        variant === 'muted' &&
+          'bg-muted text-muted-foreground group-hover:bg-muted/80'
+      )}
+    >
+      {icon}
+    </div>
+    <div className="flex-1 space-y-0.5">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{title}</span>
+        {badge}
+      </div>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      {children}
+    </div>
+    <ArrowRight
+      className={cn(
+        'size-3.5 shrink-0 -translate-x-1 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-60',
+        variant === 'muted' && 'text-muted-foreground'
+      )}
+    />
+  </>
+);
+
 const OptionCard: React.FC<OptionCardProps> = ({
   to,
+  href,
   search,
   icon,
   title,
@@ -48,49 +106,39 @@ const OptionCard: React.FC<OptionCardProps> = ({
   variant = 'muted',
   onClick,
   children,
-}) => (
-  <Link to={to} search={search} onClick={onClick}>
-    <div
-      className={cn(
-        'group relative flex items-center gap-3.5 rounded-xl border p-3.5 transition-all duration-200',
-        variant === 'primary' &&
-          'border-primary/20 bg-primary/[0.03] hover:border-primary/40 hover:bg-primary/[0.06]',
-        variant === 'warm' &&
-          'border-amber-500/20 bg-amber-500/[0.03] hover:border-amber-500/40 hover:bg-amber-500/[0.06] dark:border-amber-400/15 dark:bg-amber-400/[0.03] dark:hover:border-amber-400/30 dark:hover:bg-amber-400/[0.05]',
-        variant === 'muted' &&
-          'border-border/60 bg-transparent hover:border-border hover:bg-accent/50'
-      )}
+}) => {
+  const content = (
+    <OptionCardContent
+      icon={icon}
+      title={title}
+      description={description}
+      badge={badge}
+      variant={variant}
     >
-      <div
-        className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors duration-200',
-          variant === 'primary' &&
-            'bg-primary/10 text-primary group-hover:bg-primary/15',
-          variant === 'warm' &&
-            'bg-amber-500/10 text-amber-600 group-hover:bg-amber-500/15 dark:text-amber-400',
-          variant === 'muted' &&
-            'bg-muted text-muted-foreground group-hover:bg-muted/80'
-        )}
+      {children}
+    </OptionCardContent>
+  );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onClick}
+        className={cardClassName(variant)}
       >
-        {icon}
-      </div>
-      <div className="flex-1 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">{title}</span>
-          {badge}
-        </div>
-        <p className="text-xs text-muted-foreground">{description}</p>
-        {children}
-      </div>
-      <ArrowRight
-        className={cn(
-          'size-3.5 shrink-0 -translate-x-1 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-60',
-          variant === 'muted' && 'text-muted-foreground'
-        )}
-      />
-    </div>
-  </Link>
-);
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <Link to={to ?? '/'} search={search} onClick={onClick}>
+      <div className={cardClassName(variant)}>{content}</div>
+    </Link>
+  );
+};
 
 type BillingGateDialogProps = {
   open: boolean;
@@ -141,18 +189,37 @@ export const BillingGateDialog: React.FC<BillingGateDialogProps> = ({
         </DialogHeader>
 
         <div className="flex flex-col gap-2 pt-1">
+          {context === 'onboarding' && (
+            <OptionCard
+              href="https://twitter.com/openstory"
+              icon={<XIcon className="size-4" />}
+              title="Follow us on X"
+              description="Follow @openstory and we'll DM you a $10 gift code"
+              variant="primary"
+              badge={
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  <Sparkles className="size-2.5" />
+                  Free credits
+                </span>
+              }
+              onClick={() => {}}
+            />
+          )}
+
           {stripeEnabled && (
             <OptionCard
               to="/credits"
               icon={<CreditCard className="size-4" />}
               title="Add Credits"
               description="Pay as you go. Auto top-up keeps you generating."
-              variant="primary"
+              variant={context === 'onboarding' ? 'warm' : 'primary'}
               badge={
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  <Sparkles className="size-2.5" />
-                  Recommended
-                </span>
+                context !== 'onboarding' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    <Sparkles className="size-2.5" />
+                    Recommended
+                  </span>
+                ) : undefined
               }
               onClick={handleNav}
             />
