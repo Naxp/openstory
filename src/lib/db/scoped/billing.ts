@@ -143,12 +143,12 @@ export function createBillingReadMethods(db: Database, teamId: string) {
 
   async function hasRedeemedGiftCode(): Promise<boolean> {
     const [row] = await db
-      .select({ value: count() })
+      .select({ id: giftTokenRedemptions.id })
       .from(giftTokenRedemptions)
       .where(eq(giftTokenRedemptions.teamId, teamId))
       .limit(1);
 
-    return (row?.value ?? 0) > 0;
+    return !!row;
   }
 
   return {

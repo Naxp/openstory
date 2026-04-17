@@ -1,3 +1,4 @@
+import { XIcon } from '@/components/icons/x-icon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,14 +60,6 @@ export function GiftCodeSettings() {
   );
 }
 
-function XIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
-
 function FollowOnXCard() {
   return (
     <Card className="border-primary/20 bg-primary/[0.02]">
@@ -84,7 +77,7 @@ function FollowOnXCard() {
               </span>
             </div>
             <CardDescription>
-              Follow @openstory_so on X and we'll DM you a gift code worth $10
+              Follow @openstory_so on X and DM us to get a gift code worth $10
             </CardDescription>
           </div>
         </div>

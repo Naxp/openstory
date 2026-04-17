@@ -3,6 +3,7 @@
  * Prompts users to add credits or configure BYOK API keys
  */
 
+import { XIcon } from '@/components/icons/x-icon';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,14 +27,6 @@ function setReturnPath(returnTo?: string) {
   localStorage.setItem(RETURN_KEY, path);
 }
 
-function XIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
-
 type OptionCardProps = {
   to?: string;
   href?: string;
@@ -43,7 +36,7 @@ type OptionCardProps = {
   description: string;
   badge?: React.ReactNode;
   variant?: 'primary' | 'warm' | 'muted';
-  onClick: () => void;
+  onClick?: () => void;
   children?: React.ReactNode;
 };
 
@@ -145,7 +138,6 @@ type BillingGateDialogProps = {
   onOpenChange: (open: boolean) => void;
   hasFalKey?: boolean;
   hasOpenRouterKey?: boolean;
-  hasCredits?: boolean;
   stripeEnabled?: boolean;
   returnTo?: string;
   context?: 'generation' | 'onboarding';
@@ -193,7 +185,7 @@ export const BillingGateDialog: React.FC<BillingGateDialogProps> = ({
             href="https://x.com/openstory_so"
             icon={<XIcon className="size-4" />}
             title="Follow us on X"
-            description="Follow @openstory_so and we'll DM you a $10 gift code"
+            description="Follow @openstory_so and DM us for a $10 gift code"
             variant="primary"
             badge={
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
@@ -201,7 +193,6 @@ export const BillingGateDialog: React.FC<BillingGateDialogProps> = ({
                 Free credits
               </span>
             }
-            onClick={() => {}}
           />
 
           {stripeEnabled && (
