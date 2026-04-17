@@ -125,6 +125,19 @@ export const sceneSplitWorkflow = createScopedWorkflow<
               );
             }
 
+            if (event.type === 'characterBible' && sequenceId) {
+              console.log(
+                `[Stream:${logName}] Character bible detected (${event.bible.length} entries), advancing to phase 2`
+              );
+              await getGenerationChannel(sequenceId).emit(
+                'generation.phase:start',
+                {
+                  phase: 2,
+                  phaseName: 'Casting characters & locations\u2026',
+                }
+              );
+            }
+
             if (event.type === 'scene:updated') {
               console.log(
                 // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
