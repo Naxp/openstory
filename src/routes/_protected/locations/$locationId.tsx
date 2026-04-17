@@ -1,5 +1,6 @@
-import { EditLocationDialog } from '@/components/location-library/edit-location-dialog';
 import { PageContainer } from '@/components/layout/page-container';
+import { EditLocationDialog } from '@/components/location-library/edit-location-dialog';
+import { LocationMediaUpload } from '@/components/location-library/location-media-upload';
 import { PageDescription } from '@/components/typography/page-description';
 import { PageHeader } from '@/components/typography/page-header';
 import { PageHeading } from '@/components/typography/page-heading';
@@ -7,10 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  useLibraryLocationById,
-  useDeleteLibraryLocation,
   useAddLocationSheets,
+  useDeleteLibraryLocation,
   useDeleteLocationSheet,
+  useLibraryLocationById,
 } from '@/hooks/use-location-library';
 import { useLocationSheetRealtime } from '@/hooks/use-location-realtime';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
@@ -24,7 +25,6 @@ import {
   X,
 } from 'lucide-react';
 import { useState } from 'react';
-import { LocationMediaUpload } from '@/components/location-library/location-media-upload';
 
 export const Route = createFileRoute('/_protected/locations/$locationId')({
   component: LocationDetailPage,
