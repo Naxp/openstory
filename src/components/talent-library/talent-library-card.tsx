@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { useToggleTalentFavorite } from '@/hooks/use-talent';
 import type { TalentWithSheets } from '@/lib/db/schema';
 import { cn } from '@/lib/utils';
-import { ImageIcon, Loader2, Star, User } from 'lucide-react';
+import { ImageIcon, Loader2, Sparkles, Star, User } from 'lucide-react';
 import type React from 'react';
 
 type TalentLibraryCardProps = {
@@ -90,7 +90,12 @@ export const TalentLibraryCard: React.FC<TalentLibraryCardProps> = ({
           <div className="absolute top-2 left-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded text-xs font-medium">
             Human
           </div>
-        ) : null}
+        ) : (
+          <div className="absolute top-2 left-2 px-2 py-1 bg-background/80 backdrop-blur-sm rounded text-xs font-medium flex items-center gap-1">
+            <Sparkles className="h-3 w-3" />
+            AI
+          </div>
+        )}
       </div>
 
       {/* Info section */}

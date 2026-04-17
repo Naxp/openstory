@@ -41,6 +41,7 @@ function TalentDetailPage() {
   const setDefaultSheet = useSetDefaultSheet();
   const {
     isGenerating: isGeneratingSheet,
+    phase: generatingPhase,
     error: sheetError,
     startGenerating,
   } = useTalentSheetRealtime(id);
@@ -147,9 +148,14 @@ function TalentDetailPage() {
         >
           <div className="flex items-center gap-3">
             <PageHeading>{talent.name}</PageHeading>
-            {talent.isHuman && (
+            {talent.isHuman ? (
               <span className="px-2 py-1 bg-muted rounded text-xs font-medium">
                 Human
+              </span>
+            ) : (
+              <span className="px-2 py-1 bg-muted rounded text-xs font-medium flex items-center gap-1">
+                <Sparkles className="h-3 w-3" />
+                AI
               </span>
             )}
           </div>
@@ -204,7 +210,11 @@ function TalentDetailPage() {
                   disabled={isGeneratingSheet}
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
-                  {isGeneratingSheet ? 'Generating…' : 'Generate Sheet'}
+                  {isGeneratingSheet
+                    ? generatingPhase === 'portrait'
+                      ? 'Generating portrait…'
+                      : 'Generating sheet…'
+                    : 'Generate Sheet'}
                 </Button>
               )}
           </div>
@@ -217,7 +227,9 @@ function TalentDetailPage() {
                 <div>
                   <p className="text-muted-foreground mb-3">
                     {isGeneratingSheet
-                      ? 'Generating talent sheet from your reference images…'
+                      ? generatingPhase === 'portrait'
+                        ? 'Generating portrait from talent sheet…'
+                        : 'Generating talent sheet…'
                       : 'No talent sheets yet. Generate one from your reference images.'}
                   </p>
                   {sheetError && (
@@ -230,7 +242,11 @@ function TalentDetailPage() {
                     disabled={isGeneratingSheet}
                   >
                     <Sparkles className="h-4 w-4 mr-2" />
-                    {isGeneratingSheet ? 'Generating…' : 'Generate Sheet'}
+                    {isGeneratingSheet
+                      ? generatingPhase === 'portrait'
+                        ? 'Generating portrait…'
+                        : 'Generating sheet…'
+                      : 'Generate Sheet'}
                   </Button>
                 </div>
               ) : (

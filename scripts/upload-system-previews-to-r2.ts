@@ -35,10 +35,17 @@ async function processImage(
   const inputImage = PhotonImage.new_from_byteslice(inputBytes);
 
   try {
+    // Maintain aspect ratio: scale so the longest edge fits targetSize
+    const srcW = inputImage.get_width();
+    const srcH = inputImage.get_height();
+    const scale = targetSize / Math.max(srcW, srcH);
+    const targetW = Math.round(srcW * scale);
+    const targetH = Math.round(srcH * scale);
+
     const resized = resize(
       inputImage,
-      targetSize,
-      targetSize,
+      targetW,
+      targetH,
       SamplingFilter.Lanczos3
     );
 

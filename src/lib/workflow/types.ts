@@ -460,6 +460,10 @@ export interface LibraryLocationSheetWorkflowResult {
   sheetImageUrl: string;
   /** Storage path */
   sheetImagePath?: string;
+  /** Generated preview image URL */
+  previewImageUrl?: string;
+  /** Preview storage path */
+  previewImagePath?: string;
   /** Location ID */
   locationDbId: string;
 }

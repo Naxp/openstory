@@ -19,6 +19,10 @@ export function getTalentPreviewUrl(name: string): string {
   return `https://${getPublicAssetsDomain()}/talent/${sanitizeName(name)}/thumbnail.webp`;
 }
 
+export function getTalentSheetUrl(name: string): string {
+  return `https://${getPublicAssetsDomain()}/talent/${sanitizeName(name)}/sheet.webp`;
+}
+
 // Default talent templates available to all teams
 export const DEFAULT_TALENT_TEMPLATES: Array<
   Omit<Talent, 'id' | 'teamId' | 'createdAt' | 'updatedAt' | 'createdBy'>

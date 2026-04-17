@@ -2,8 +2,8 @@
  * Library Location Sheet Generation Workflow
  *
  * Generates a 3x3 grid reference sheet for library locations based on
- * user-uploaded reference images. The generated sheet is stored and used
- * as the main reference for the location.
+ * user-uploaded reference images, plus a preview establishing shot
+ * for the location card thumbnail.
  */
 
 import { uploadResponse } from '@/lib/storage/upload-response';
@@ -17,7 +17,11 @@ import {
   generateImageWithProvider,
   type ImageGenerationParams,
 } from '@/lib/image/image-generation';
-import { buildLibraryLocationSheetPrompt } from '@/lib/prompts/location-prompt';
+import {
+  buildLibraryLocationSheetPrompt,
+  buildLocationPreviewPrompt,
+} from '@/lib/prompts/location-prompt';
+import { getLocationChannel } from '@/lib/realtime';
 import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
@@ -32,6 +36,17 @@ export const libraryLocationSheetWorkflow = createScopedWorkflow<
 >(
   async (context, scopedDb) => {
     const input = context.requestPayload;
+
+    // Emit generating status
+    await context.run('emit-generating', async () => {
+      await getLocationChannel(input.locationDbId)?.emit(
+        'location.sheet:progress',
+        {
+          locationId: input.locationDbId,
+          status: 'generating',
+        }
+      );
+    });
 
     // Step 1: Build the prompt
     const generationParams: ImageGenerationParams = await context.run(
@@ -74,7 +89,7 @@ export const libraryLocationSheetWorkflow = createScopedWorkflow<
     });
 
     // Deduct credits for image generation (skip if team used own fal key)
-    await context.run('deduct-credits', async () => {
+    await context.run('deduct-credits-sheet', async () => {
       await deductWorkflowCredits({
         scopedDb,
         costMicros: extractImageCost(imageResult.metadata),
@@ -89,7 +104,7 @@ export const libraryLocationSheetWorkflow = createScopedWorkflow<
       });
     });
 
-    // Step 3: Upload to R2 storage
+    // Step 3: Upload sheet to R2 storage
     const storageResult = await context.run('upload-to-storage', async () => {
       const imageUrl = imageResult.imageUrls[0];
       if (!imageUrl) {
@@ -140,14 +155,124 @@ export const libraryLocationSheetWorkflow = createScopedWorkflow<
       );
     });
 
-    console.log(
-      '[LibraryLocationSheetWorkflow]',
-      `Library location sheet workflow completed for ${input.locationName}`
+    // Step 5: Generate preview establishing shot for card thumbnail
+    const hasReferenceImages = input.referenceImageUrls.length > 0;
+    const previewResult = await context.run(
+      'generate-preview-image',
+      async () => {
+        const model = input.imageModel ?? DEFAULT_IMAGE_MODEL;
+        const prompt = buildLocationPreviewPrompt(
+          input.locationName,
+          input.locationDescription,
+          hasReferenceImages
+        );
+
+        console.log(
+          '[LibraryLocationSheetWorkflow]',
+          `Generating preview establishing shot for ${input.locationName}`
+        );
+
+        const previewParams: ImageGenerationParams = {
+          model,
+          prompt,
+          imageSize: 'landscape_16_9',
+          numImages: 1,
+          traceName: 'location-preview-image',
+        } satisfies ImageGenerationParams;
+
+        if (hasReferenceImages) {
+          previewParams.referenceImageUrls = input.referenceImageUrls;
+        }
+
+        return await generateImageWithProvider(previewParams, { scopedDb });
+      }
     );
+
+    // Deduct credits for preview generation
+    await context.run('deduct-credits-preview', async () => {
+      await deductWorkflowCredits({
+        scopedDb,
+        costMicros: extractImageCost(previewResult.metadata),
+        usedOwnKey: previewResult.metadata.usedOwnKey,
+        description: `Location preview (${input.imageModel ?? DEFAULT_IMAGE_MODEL})`,
+        metadata: { locationDbId: input.locationDbId, type: 'preview' },
+        workflowName: 'LibraryLocationSheetWorkflow',
+      });
+    });
+
+    const previewUrl = previewResult.imageUrls[0];
+    if (!previewUrl) {
+      throw new Error('No preview URL returned from generation');
+    }
+
+    // Step 6: Upload preview to R2 storage
+    const previewStorageResult = await context.run(
+      'upload-preview-to-storage',
+      async () => {
+        console.log(
+          '[LibraryLocationSheetWorkflow]',
+          `Uploading preview to storage for ${input.locationName}`
+        );
+
+        const response = await fetch(previewUrl);
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch generated preview: ${response.status}`
+          );
+        }
+
+        const previewPath = `${input.teamId}/${input.sequenceId}/${input.locationDbId}/preview.png`;
+
+        const result = await uploadResponse(
+          response,
+          STORAGE_BUCKETS.LOCATIONS,
+          previewPath,
+          { contentType: 'image/png' }
+        );
+
+        return {
+          url: result.publicUrl,
+          path: result.path,
+        };
+      }
+    );
+
+    // Step 7: Update location with preview as the referenceImageUrl
+    await context.run('update-location-preview', async () => {
+      console.log(
+        '[LibraryLocationSheetWorkflow]',
+        `Updating location with preview image`
+      );
+
+      await scopedDb.locations.updateReference(
+        input.locationDbId,
+        previewStorageResult.url,
+        previewStorageResult.path
+      );
+    });
+
+    // Emit completed status
+    await context.run('emit-completed', async () => {
+      console.log(
+        '[LibraryLocationSheetWorkflow]',
+        `Library location sheet workflow completed for ${input.locationName}`
+      );
+
+      await getLocationChannel(input.locationDbId)?.emit(
+        'location.sheet:progress',
+        {
+          locationId: input.locationDbId,
+          status: 'completed',
+          sheetImageUrl: storageResult.url,
+        }
+      );
+    });
 
     const result: LibraryLocationSheetWorkflowResult = {
       sheetImageUrl: storageResult.url,
       sheetImagePath: storageResult.path,
+      previewImageUrl: previewStorageResult.url,
+      previewImagePath: previewStorageResult.path,
       locationDbId: input.locationDbId,
     };
 
@@ -161,6 +286,15 @@ export const libraryLocationSheetWorkflow = createScopedWorkflow<
       console.error(
         '[LibraryLocationSheetWorkflow]',
         `Sheet generation failed for location ${input.locationName}: ${error}`
+      );
+
+      await getLocationChannel(input.locationDbId)?.emit(
+        'location.sheet:progress',
+        {
+          locationId: input.locationDbId,
+          status: 'failed',
+          error: `Sheet generation failed: ${error}`,
+        }
       );
 
       return `Library location sheet generation failed for ${input.locationName}`;

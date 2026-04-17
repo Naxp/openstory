@@ -54,7 +54,7 @@ export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
       {
         name: name.trim(),
         description: description.trim() || undefined,
-        isHuman: true,
+        isHuman: uploadedUrls.length > 0,
         referenceImageUrls: uploadedUrls,
       },
       {

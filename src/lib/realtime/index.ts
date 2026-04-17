@@ -14,10 +14,20 @@ export const realtimeSchema = {
     // Sheet generation progress
     'sheet:progress': z.object({
       talentId: z.string(),
-      status: z.enum(['generating', 'completed', 'failed']),
+      status: z.enum(['generating', 'sheet_ready', 'completed', 'failed']),
       sheetId: z.string().optional(),
       sheetImageUrl: z.string().optional(),
       headshotImageUrl: z.string().optional(),
+      error: z.string().optional(),
+    }),
+  },
+
+  // Location library events
+  location: {
+    'sheet:progress': z.object({
+      locationId: z.string(),
+      status: z.enum(['generating', 'completed', 'failed']),
+      sheetImageUrl: z.string().optional(),
       error: z.string().optional(),
     }),
   },
@@ -253,6 +263,18 @@ export function getGenerationChannel(sequenceId?: string) {
 export function getTalentChannel(talentId?: string) {
   return talentId
     ? getRealtime().channel(`talent:${talentId}`)
+    : {
+        emit: () => null,
+      };
+}
+
+/**
+ * Get a channel for location library events.
+ * @param locationId - The location ID to use as the channel identifier
+ */
+export function getLocationChannel(locationId?: string) {
+  return locationId
+    ? getRealtime().channel(`location:${locationId}`)
     : {
         emit: () => null,
       };

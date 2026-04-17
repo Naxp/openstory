@@ -127,21 +127,28 @@ export const createLibraryLocationFn = createServerFn({ method: 'POST' })
           source: 'manual_upload' as const,
         }))
       );
-
-      const workflowInput: LibraryLocationSheetWorkflowInput = {
-        locationDbId: newLocation.id,
-        locationName: data.name,
-        locationDescription: data.description,
-        referenceImageUrls: processedImages.map((img) => img.url),
-        userId: context.user.id,
-        teamId: context.teamId,
-        sequenceId: 'library',
-      };
-
-      await triggerWorkflow('/library-location-sheet', workflowInput, {
-        label: buildWorkflowLabel(newLocation.id),
-      });
     }
+
+    // Always trigger sheet generation (works with or without reference images)
+    const workflowInput: LibraryLocationSheetWorkflowInput = {
+      locationDbId: newLocation.id,
+      locationName: data.name,
+      locationDescription: data.description,
+      referenceImageUrls: processedImages.map((img) => img.url),
+      userId: context.user.id,
+      teamId: context.teamId,
+      sequenceId: 'library',
+    };
+
+    void triggerWorkflow('/library-location-sheet', workflowInput, {
+      label: buildWorkflowLabel(newLocation.id),
+    }).catch((error) => {
+      console.error(
+        '[createLibraryLocationFn]',
+        'Failed to trigger location sheet workflow:',
+        error
+      );
+    });
 
     return { ...newLocation, sequenceTitle: 'Library' as const };
   });

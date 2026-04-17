@@ -19,6 +19,10 @@ export function getLocationPreviewUrl(name: string): string {
   return `https://${getPublicAssetsDomain()}/locations/${sanitizeName(name)}/thumbnail.webp`;
 }
 
+export function getLocationSheetUrl(name: string): string {
+  return `https://${getPublicAssetsDomain()}/locations/${sanitizeName(name)}/sheet.webp`;
+}
+
 // Default location templates available to all teams
 export const DEFAULT_LOCATION_TEMPLATES: Array<
   Omit<

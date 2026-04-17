@@ -11,12 +11,25 @@
 
 import { createD1HttpClient } from '@/lib/db/client-d1-http';
 import { generateId } from '@/lib/db/id';
-import { locationLibrary, styles, talent, teams } from '@/lib/db/schema';
-import { DEFAULT_SYSTEM_LOCATIONS } from '@/lib/location/location-templates';
+import {
+  locationLibrary,
+  locationSheets,
+  styles,
+  talent,
+  talentSheets,
+  teams,
+} from '@/lib/db/schema';
+import {
+  DEFAULT_SYSTEM_LOCATIONS,
+  getLocationSheetUrl,
+} from '@/lib/location/location-templates';
 import { DEFAULT_SYSTEM_STYLES } from '@/lib/style/style-templates';
-import { DEFAULT_SYSTEM_TALENT } from '@/lib/talent/talent-templates';
+import {
+  DEFAULT_SYSTEM_TALENT,
+  getTalentSheetUrl,
+} from '@/lib/talent/talent-templates';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 
 const SYSTEM_TEAM_SLUG = 'system-templates';
@@ -233,6 +246,52 @@ async function seed() {
       `✅ Synced talent: ${talentUpdated} updated, ${talentInserted} inserted\n`
     );
 
+    // 4b. Sync system talent sheets
+    console.log('Syncing system talent sheets...');
+    const allSystemTalent = await db
+      .select()
+      .from(talent)
+      .where(eq(talent.teamId, systemTeam.id));
+
+    let talentSheetsInserted = 0;
+
+    for (const template of DEFAULT_SYSTEM_TALENT) {
+      const talentRecord = allSystemTalent.find(
+        (t) => t.name === template.name
+      );
+      if (!talentRecord) continue;
+
+      // Check if a default sheet already exists
+      const existingSheets = await db
+        .select()
+        .from(talentSheets)
+        .where(
+          and(
+            eq(talentSheets.talentId, talentRecord.id),
+            eq(talentSheets.isDefault, true)
+          )
+        );
+
+      if (existingSheets.length > 0) continue;
+
+      const sheetUrl = getTalentSheetUrl(template.name);
+      await db.insert(talentSheets).values({
+        id: generateId(),
+        talentId: talentRecord.id,
+        name: 'Default',
+        imageUrl: sheetUrl,
+        imagePath: `talent/${template.name.toLowerCase().replace(/\s+/g, '-')}/sheet.webp`,
+        isDefault: true,
+        source: 'ai_generated',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      talentSheetsInserted++;
+      console.log(`   + ${template.name} — default sheet`);
+    }
+
+    console.log(`✅ Synced talent sheets: ${talentSheetsInserted} inserted\n`);
+
     // 5. Sync system locations
     console.log('Syncing system locations...');
     const existingLocations = await db
@@ -274,6 +333,57 @@ async function seed() {
 
     console.log(
       `✅ Synced locations: ${locationsUpdated} updated, ${locationsInserted} inserted\n`
+    );
+
+    // 5b. Sync system location sheets
+    console.log('Syncing system location sheets...');
+    const allSystemLocations = await db
+      .select()
+      .from(locationLibrary)
+      .where(eq(locationLibrary.teamId, systemTeam.id));
+
+    let locationSheetsInserted = 0;
+
+    for (const template of DEFAULT_SYSTEM_LOCATIONS) {
+      const locationRecord = allSystemLocations.find(
+        (l) => l.name === template.name
+      );
+      if (!locationRecord) continue;
+
+      // Check if a default sheet already exists
+      const existingSheets = await db
+        .select()
+        .from(locationSheets)
+        .where(
+          and(
+            eq(locationSheets.locationId, locationRecord.id),
+            eq(locationSheets.isDefault, true)
+          )
+        );
+
+      if (existingSheets.length > 0) continue;
+
+      const sheetUrl = getLocationSheetUrl(template.name);
+      await db.insert(locationSheets).values({
+        id: generateId(),
+        locationId: locationRecord.id,
+        name: 'Default',
+        imageUrl: sheetUrl,
+        imagePath: `locations/${template.name
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')}/sheet.webp`,
+        isDefault: true,
+        source: 'ai_generated',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      locationSheetsInserted++;
+      console.log(`   + ${template.name} — default sheet`);
+    }
+
+    console.log(
+      `✅ Synced location sheets: ${locationSheetsInserted} inserted\n`
     );
 
     console.log('🎉 Database seeded successfully!');

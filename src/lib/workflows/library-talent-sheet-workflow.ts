@@ -161,6 +161,16 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
       });
     });
 
+    // Emit sheet_ready so the UI can show the sheet and switch to "Generating portrait…"
+    await context.run('emit-sheet-ready', async () => {
+      await getTalentChannel(input.talentId)?.emit('talent.sheet:progress', {
+        talentId: input.talentId,
+        status: 'sheet_ready',
+        sheetId: sheet.id,
+        sheetImageUrl: storageResult.url,
+      });
+    });
+
     // Step 5: Generate talent headshot for avatar
     const headshotResult = await context.run(
       'generate-headshot-image',
