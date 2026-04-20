@@ -73,6 +73,44 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
       });
     });
 
+    // Load sequence elements and wait (briefly) for vision descriptions to complete.
+    // Elements without a description still appear in the prompt as known tokens so
+    // the model can reference them; they're just excluded from reference-image lists.
+    const elements = await context.run(
+      'load-and-wait-for-elements',
+      async () => {
+        if (!sequenceId) return [];
+
+        const MAX_WAIT_MS = 30_000;
+        const POLL_INTERVAL_MS = 1500;
+        const startedAt = Date.now();
+
+        while (true) {
+          const list = await scopedDb.sequenceElements.list(sequenceId);
+          const stillAnalyzing = list.filter(
+            (el) =>
+              el.visionStatus === 'pending' || el.visionStatus === 'analyzing'
+          );
+          if (stillAnalyzing.length === 0) return list;
+          if (Date.now() - startedAt > MAX_WAIT_MS) {
+            console.warn(
+              `[AnalyzeScriptWorkflow] Proceeding with ${stillAnalyzing.length} elements still analyzing`
+            );
+            return list;
+          }
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        }
+      }
+    );
+
+    const elementsMinimal = elements.map((el) => ({
+      id: el.id,
+      token: el.token,
+      description: el.description,
+      imageUrl: el.imageUrl,
+      consistencyTag: el.consistencyTag,
+    }));
+
     const sceneSplitResult = await context.invoke('scene-split', {
       workflow: sceneSplitWorkflow,
       label,
@@ -86,6 +124,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
         styleConfig,
         modelId: analysisModelId,
         autoGenerateMotion,
+        elements: elementsMinimal,
       },
     });
 
@@ -98,6 +137,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
       frameMapping,
       characterBible: extractedCharacterBible,
       locationBible: extractedLocationBible,
+      elementBible: extractedElementBible,
     } = sceneSplitResult.body;
 
     // Phase 2: Talent + location matching in parallel
@@ -194,6 +234,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
           aspectRatio,
           characterBible,
           locationBible,
+          elementBible: extractedElementBible,
           styleConfig,
           analysisModelId,
           frameMapping,
@@ -233,6 +274,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
           scenesWithVisualPrompts,
           charactersWithSheets,
           locationsWithSheets,
+          elements: elementsMinimal,
           frameMapping,
           imageModel,
           imageModels,

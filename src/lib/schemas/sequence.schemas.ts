@@ -114,6 +114,16 @@ export const createSequenceSchema = createInsertSchema(sequences, {
     suggestedTalentIds: z.array(z.string()).optional(),
     // Suggested location IDs for visual consistency during generation
     suggestedLocationIds: z.array(z.string()).optional(),
+    // Draft element uploads (presigned to temp path before sequence exists)
+    elementUploads: z
+      .array(
+        z.object({
+          tempPath: z.string().min(1),
+          tempPublicUrl: z.string().url(),
+          filename: z.string().min(1),
+        })
+      )
+      .optional(),
   });
 
 export const updateSequenceSchema = createUpdateSchema(sequences, {

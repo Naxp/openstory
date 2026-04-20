@@ -8,6 +8,7 @@
 import { resolveImageModels } from '@/lib/ai/resolve-image-models';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import { buildCharacterReferenceImages } from '@/lib/prompts/character-prompt';
+import { buildElementReferenceImages } from '@/lib/prompts/element-prompt';
 import { buildLocationReferenceImages } from '@/lib/prompts/location-prompt';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
@@ -23,6 +24,7 @@ import { getFalFlowControl } from './constants';
 import { generateImageWorkflow } from './image-workflow';
 import {
   matchCharactersToScene,
+  matchElementsToScene,
   matchLocationsToScene,
 } from './scene-matching';
 import { generateVariantWorkflow } from './variant-workflow';
@@ -37,6 +39,7 @@ export const frameImagesWorkflow = createScopedWorkflow<
       scenesWithVisualPrompts,
       charactersWithSheets,
       locationsWithSheets,
+      elements = [],
       frameMapping,
       imageModel,
       imageModels: imageModelsInput,
@@ -48,10 +51,9 @@ export const frameImagesWorkflow = createScopedWorkflow<
 
     const label = buildWorkflowLabel(sequenceId);
 
-    // Build per-scene character and location maps for reference image lookup
-    const { sceneCharacterMap, sceneLocationMap } = await context.run(
-      'build-reference-maps',
-      () => ({
+    // Build per-scene character, location, and element maps for reference image lookup
+    const { sceneCharacterMap, sceneLocationMap, sceneElementMap } =
+      await context.run('build-reference-maps', () => ({
         sceneCharacterMap: Object.fromEntries(
           scenesWithVisualPrompts.map((scene) => [
             scene.sceneId,
@@ -71,8 +73,17 @@ export const frameImagesWorkflow = createScopedWorkflow<
             ),
           ])
         ),
-      })
-    );
+        sceneElementMap: Object.fromEntries(
+          scenesWithVisualPrompts.map((scene) => [
+            scene.sceneId,
+            matchElementsToScene(
+              elements,
+              scene.continuity?.elementTags || [],
+              scene.originalScript?.extract || ''
+            ),
+          ])
+        ),
+      }));
 
     const imageSize = aspectRatioToImageSize(aspectRatio);
 
@@ -98,7 +109,15 @@ export const frameImagesWorkflow = createScopedWorkflow<
           // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
           sceneLocationMap[scene.sceneId] || []
         );
-        const allReferences = [...characterRefs, ...locationRefs];
+        const elementRefs = buildElementReferenceImages(
+          // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+          sceneElementMap[scene.sceneId] || []
+        );
+        const allReferences = [
+          ...characterRefs,
+          ...locationRefs,
+          ...elementRefs,
+        ];
 
         // Generate with each selected model in parallel
         const modelResults = await Promise.all(
@@ -147,6 +166,8 @@ export const frameImagesWorkflow = createScopedWorkflow<
                   characterRefs.length > 0 ? characterRefs : undefined,
                 locationReferences:
                   locationRefs.length > 0 ? locationRefs : undefined,
+                elementReferences:
+                  elementRefs.length > 0 ? elementRefs : undefined,
                 aspectRatio,
                 model,
               } satisfies VariantWorkflowInput,

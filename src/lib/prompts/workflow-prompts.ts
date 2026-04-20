@@ -745,15 +745,34 @@ Also build a complete location bible. For each unique location:
 Notes:
 - Combine variations of the same location (e.g., "INT. OFFICE - DAY" and "INT. OFFICE - NIGHT" are the same location)
 - Extract the core location name without time-of-day suffixes
-- Describe the location in its most commonly seen state`,
+- Describe the location in its most commonly seen state
+
+## Element Bible (user-uploaded reference images)
+
+The user may have uploaded reference images ("elements") that should appear in scenes. Each element has an UPPERCASE token and (optionally) a visual description. Elements are typically logos, product shots, screenshots, or other visual assets.
+
+For EACH uploaded element you see used in the script (check the <ELEMENTS> block for the canonical list), produce an elementBible entry with:
+- token: the exact UPPERCASE token from <ELEMENTS>
+- description: the provided description, or a 1-sentence visual description if none was provided
+- consistencyTag: a short lowercase slug (e.g. "red-hex-brand-logo")
+- firstMention: { sceneId, text, lineNumber } — the first scene where the token appears
+
+For EACH scene that references an element, set continuity.elementTags[] to an array of the UPPERCASE tokens used in that scene.
+
+Preserve UPPERCASE tokens verbatim in originalScript.extract — do NOT lowercase them. If a script references an element token that is NOT in the <ELEMENTS> block, ignore it (do not invent elementBible entries).`,
     },
     {
       role: 'user',
-      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags. Also extract a complete character bible and location bible.
+      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags. Also extract a complete character bible, location bible, and element bible.
 
 <ASPECT_RATIO>
 {{aspectRatio}}
 </ASPECT_RATIO>
+
+<ELEMENTS>
+The following user-uploaded elements are available. Track each one's UPPERCASE token in the script and populate elementBible + continuity.elementTags accordingly:
+{{elements}}
+</ELEMENTS>
 
 <USER_SCRIPT>
 {{script}}
@@ -841,15 +860,19 @@ Respond with exactly {{numTalent}} matches.`,
 2. **THE "STARTING FRAME"**: Describe the exact moment the scene begins. Focus on the *potential energy*—muscles tensed, mid-breath, looking off-camera. This is a still image that implies motion.
 3. **ENVIRONMENT & LIGHTING**: Since the character identity is handled by reference, spend 60% of your tokens on the atmosphere, lighting texture, depth of field, and background details.
 4. **DIRECTOR STYLE**: Apply the <DIRECTOR_STYLE> to the camera lens (e.g., "anamorphic flares"), film stock, and color palette.
+5. **ELEMENTS**: User-uploaded elements (logos, products, screenshots) are identified by UPPERCASE tokens in the script. When a scene references one, include the token IN CAPS in the prompt so the element reference image guides its rendering. Describe how the element appears in the shot (held, placed, in background) — do NOT re-describe its visual identity; the reference image handles that. Only reference elements listed in <ELEMENT_BIBLE>.
 
 ### CONTENT RULES (STRICT)
 1. **NO HOLOGRAPHIC SCREENS**: Do NOT describe floating interfaces, holograms, or HUDs. Technology must be physical (glass screens, tactile buttons, cables, metal) and grounded.
-2. **NO TEXT**: No subtitles, no signs, no dialogue.
+2. **NO TEXT**: No subtitles, no signs, no dialogue. (Exception: text rendered on uploaded elements may appear — that is part of the element's identity.)
 3. **ONE SHOT**: Describe a single coherent frame.
 4. **ZERO MEMORY**: Re-describe the setting fully and name each character present with their costume. Do not refer to "the previous scene." Do NOT re-describe character physical appearance — the reference image provides identity.
 
 ### PROMPT STRUCTURE (Flatten into one paragraph)
-[Medium/Style] + [CHARACTER NAME IN CAPS & Costume/Wardrobe] + [Specific Pose/Action] + [Detailed Environment] + [Lighting Conditions] + [Camera Angle/Lens]`,
+[Medium/Style] + [CHARACTER NAME IN CAPS & Costume/Wardrobe] + [Specific Pose/Action] + [Detailed Environment] + [Lighting Conditions] + [Camera Angle/Lens]
+
+### CONTINUITY OUTPUT
+Set continuity.elementTags[] to the UPPERCASE tokens of any elements referenced in this scene.`,
     },
     {
       role: 'user',
@@ -877,6 +900,11 @@ Respond with exactly {{numTalent}} matches.`,
 <LOCATION_BIBLE>
 {{locationBible}}
 </LOCATION_BIBLE>
+
+<ELEMENT_BIBLE>
+(UPPERCASE-token identified user-uploaded elements. Reference images for these accompany the prompt. Reference elements by token only — do NOT describe their visual identity.)
+{{elementBible}}
+</ELEMENT_BIBLE>
 
 <DIRECTOR_STYLE>
 {{styleConfig}}

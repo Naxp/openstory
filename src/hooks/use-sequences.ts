@@ -85,6 +85,7 @@ export function useCreateSequence() {
           musicModel: input.musicModel,
           suggestedTalentIds: input.suggestedTalentIds,
           suggestedLocationIds: input.suggestedLocationIds,
+          elementUploads: input.elementUploads,
         },
       });
 
