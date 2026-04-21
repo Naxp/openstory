@@ -130,6 +130,8 @@ export const shortenPromptFn = createServerFn({ method: 'POST' })
       ],
       max_tokens: 500,
       temperature: 0.3,
+      observationName: 'shortenPrompt',
+      userId: context.user.id,
     });
 
     await deduct?.();
@@ -242,9 +244,9 @@ export const enhanceScriptStreamFn = createServerFn({ method: 'POST' })
       observationName: 'script-enhance',
       prompt: promptRef,
       tags: ['script-enhance', model],
+      userId: context.user.id,
       metadata: {
         teamId: context.teamId,
-        userId: context.user.id,
         elementCount: elements.length,
         targetDuration: data.targetDuration,
         aspectRatio: data.aspectRatio,

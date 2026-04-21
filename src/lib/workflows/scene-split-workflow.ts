@@ -118,6 +118,8 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           prompt: promptReference,
           tags: logTags,
           metadata: logMetadata,
+          userId: input.userId,
+          sessionId: input.sequenceId,
         })) {
           chunkCount++;
           finalText = chunk.accumulated;

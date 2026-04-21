@@ -396,6 +396,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
             </div>
             {currentCount < MAX_ELEMENTS && (
               <div
+                // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- dropzone cannot be a <button> because it contains a nested <Button>
                 role="button"
                 tabIndex={0}
                 onClick={() => inputRef.current?.click()}

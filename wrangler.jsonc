@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "main": "@tanstack/react-start/server-entry",
+  "main": "./src/server.ts",
   "name": "openstory",
   "compatibility_date": "2025-11-18",
   "compatibility_flags": ["nodejs_compat"],

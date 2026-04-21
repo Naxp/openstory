@@ -50,6 +50,10 @@ export type LLMRequestParams = {
   tags?: string[];
   /** Additional metadata for Langfuse */
   metadata?: Record<string, unknown>;
+  /** User id for Langfuse/PostHog user attribution */
+  userId?: string;
+  /** Session id for Langfuse trace grouping (typically sequenceId) */
+  sessionId?: string;
   responseSchema?: z.ZodTypeAny;
   apiKey?: string;
   /** OpenRouter plugins (e.g. web search) to enable for this request */
@@ -184,6 +188,8 @@ function buildChatMetadata(params: LLMRequestParams) {
     prompt: params.prompt,
     tags: params.tags,
     metadata: params.metadata,
+    userId: params.userId,
+    sessionId: params.sessionId,
   };
 }
 
@@ -224,7 +230,7 @@ export async function* callLLMStream(
     metadata: buildChatMetadata(params),
     modelOptions: {
       ...buildModelOptions(params),
-      streamOptions: { include_usage: true },
+      streamOptions: { includeUsage: true },
     },
     stream: true,
   });
@@ -235,7 +241,7 @@ export async function* callLLMStream(
       yield { delta: event.delta, accumulated, done: false };
     }
     if (event.type === 'RUN_ERROR') {
-      throw new Error(`LLM stream error: ${event.error.message}`);
+      throw new Error(`LLM stream error: ${event.message}`);
     }
   }
 
