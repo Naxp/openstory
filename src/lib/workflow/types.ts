@@ -257,15 +257,13 @@ export type TalentMatchResult = {
  * Talent matching workflow input
  */
 export interface TalentMatchingWorkflowInput extends SequenceWorkflowContext {
-  scenes: Scene[];
   analysisModelId: AnalysisModelId;
   suggestedTalentIds?: string[];
   /** Pre-extracted character bible from scene splitting. Skips extraction LLM call when provided. */
-  characterBible?: CharacterBibleEntry[];
+  characterBible: CharacterBibleEntry[];
 }
 
 export interface TalentMatchingWorkflowOutput {
-  characterBible: CharacterBibleEntry[];
   matches: TalentCharacterMatch[];
 }
 
@@ -516,15 +514,13 @@ export type LibraryLocationMatch = {
  * Location matching workflow input
  */
 export interface LocationMatchingWorkflowInput extends SequenceWorkflowContext {
-  scenes: Scene[];
   analysisModelId: AnalysisModelId;
   suggestedLocationIds?: string[];
   /** Pre-extracted location bible from scene splitting. Skips extraction LLM call when provided. */
-  locationBible?: LocationBibleEntry[];
+  locationBible: LocationBibleEntry[];
 }
 
 export interface LocationMatchingWorkflowOutput {
-  locationBible: LocationBibleEntry[];
   matches: LibraryLocationMatch[];
 }
 /**

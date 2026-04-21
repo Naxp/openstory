@@ -1,14 +1,14 @@
 /**
  * Element Vision Helper
  *
- * Describes an uploaded element image using a vision-capable LLM.
- * Bypasses the TanStack AI adapter (which wraps plain text chat) and
- * calls OpenRouter's chat/completions endpoint directly so we can pass
- * multimodal content.
+ * Describes an uploaded element image using a vision-capable LLM via
+ * @tanstack/ai's OpenRouter adapter.
  */
 
-import { getEnv } from '#env';
+import type { ChatMessage } from '@/lib/prompts';
+import { chat } from '@tanstack/ai';
 import { z } from 'zod';
+import { createAdapter } from './create-adapter';
 
 const VISION_MODEL = 'anthropic/claude-sonnet-4.6';
 
@@ -28,22 +28,14 @@ export type DescribeElementInput = {
 };
 
 /**
- * Build the multimodal user message for the vision LLM.
+ * Build the multimodal chat messages for the vision LLM.
  * Exported for testing.
  */
 export function buildVisionMessages(
   token: string,
   filename: string,
   imageUrl: string
-): Array<{
-  role: 'system' | 'user';
-  content:
-    | string
-    | Array<
-        | { type: 'text'; text: string }
-        | { type: 'image_url'; image_url: { url: string } }
-      >;
-}> {
+): ChatMessage[] {
   const system = `You are a visual reference describer. You will be shown a single image that will serve as a canonical reference for an element (logo, product, screenshot, or similar object) in a film/video production. Your job is to describe what the image visually contains so that AI image generators can later reproduce the element faithfully across scenes.
 
 Your output MUST be strict JSON with two fields:
@@ -62,74 +54,46 @@ Describe the element in the image below.`;
     {
       role: 'user',
       content: [
-        { type: 'text', text: userText },
-        { type: 'image_url', image_url: { url: imageUrl } },
+        { type: 'text', content: userText },
+        { type: 'image', source: { type: 'url', value: imageUrl } },
       ],
     },
   ];
 }
 
-const choiceSchema = z.object({
-  choices: z
-    .array(
-      z.object({
-        message: z.object({ content: z.string() }).optional(),
-      })
-    )
-    .optional(),
-});
-
-function extractChoiceContent(json: unknown): string | undefined {
-  const parsed = choiceSchema.safeParse(json);
-  if (!parsed.success) return undefined;
-  return parsed.data.choices?.[0]?.message?.content;
-}
-
 export async function describeElementImage(
   input: DescribeElementInput
 ): Promise<ElementDescription> {
-  const env = getEnv();
-  const apiKey = input.openRouterApiKey ?? env.OPENROUTER_KEY;
-  if (!apiKey) {
-    throw new Error('OpenRouter API key not configured');
+  const messages = buildVisionMessages(
+    input.token,
+    input.filename,
+    input.imageUrl
+  );
+
+  const systemPrompts: string[] = [];
+  const chatMessages: Array<{
+    role: 'user' | 'assistant';
+    content: ChatMessage['content'];
+  }> = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      if (typeof msg.content === 'string') systemPrompts.push(msg.content);
+    } else {
+      chatMessages.push({ role: msg.role, content: msg.content });
+    }
   }
 
-  const baseUrl = env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+  const adapter = createAdapter(VISION_MODEL, input.openRouterApiKey);
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': env.VITE_APP_URL || 'http://localhost:3000',
-      'X-Title': env.VITE_APP_NAME || 'OpenStory',
-    },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      messages: buildVisionMessages(
-        input.token,
-        input.filename,
-        input.imageUrl
-      ),
-      max_tokens: 500,
-      temperature: 0.3,
-      response_format: { type: 'json_object' },
-    }),
+  const result = await chat({
+    adapter,
+    systemPrompts,
+    messages: chatMessages,
+    stream: false,
+    temperature: 0.3,
+    outputSchema: responseSchema,
   });
 
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `Element vision call failed: ${response.status} ${response.statusText} — ${body.slice(0, 500)}`
-    );
-  }
-
-  const json: unknown = await response.json();
-  const content = extractChoiceContent(json);
-  if (!content) {
-    throw new Error('Element vision returned empty response');
-  }
-
-  const parsed = responseSchema.parse(JSON.parse(content));
-  return parsed;
+  return responseSchema.parse(result);
 }

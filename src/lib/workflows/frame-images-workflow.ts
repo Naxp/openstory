@@ -33,13 +33,13 @@ export const frameImagesWorkflow = createScopedWorkflow<
   FrameImagesWorkflowInput,
   FrameImagesWorkflowResult
 >(
-  async (context, _scopedDb) => {
+  async (context, scopedDb) => {
     const input = context.requestPayload;
     const {
       scenesWithVisualPrompts,
       charactersWithSheets,
       locationsWithSheets,
-      elements = [],
+      elements: elementsFromInput = [],
       frameMapping,
       imageModel,
       imageModels: imageModelsInput,
@@ -51,39 +51,49 @@ export const frameImagesWorkflow = createScopedWorkflow<
 
     const label = buildWorkflowLabel(sequenceId);
 
-    // Build per-scene character, location, and element maps for reference image lookup
+    // Build per-scene character, location, and element maps for reference image lookup.
+    //
+    // Re-fetch elements from the DB here (rather than relying on the snapshot
+    // taken at analyze-script start). Vision analysis for a slow element may
+    // have finished during phases 2–3 — re-fetching picks up the fresh
+    // description so the reference image isn't dropped downstream.
     const { sceneCharacterMap, sceneLocationMap, sceneElementMap } =
-      await context.run('build-reference-maps', () => ({
-        sceneCharacterMap: Object.fromEntries(
-          scenesWithVisualPrompts.map((scene) => [
-            scene.sceneId,
-            matchCharactersToScene(
-              charactersWithSheets,
-              scene.continuity?.characterTags || []
-            ),
-          ])
-        ),
-        sceneLocationMap: Object.fromEntries(
-          scenesWithVisualPrompts.map((scene) => [
-            scene.sceneId,
-            matchLocationsToScene(
-              locationsWithSheets,
-              scene.continuity?.environmentTag || '',
-              scene.metadata?.location || ''
-            ),
-          ])
-        ),
-        sceneElementMap: Object.fromEntries(
-          scenesWithVisualPrompts.map((scene) => [
-            scene.sceneId,
-            matchElementsToScene(
-              elements,
-              scene.continuity?.elementTags || [],
-              scene.originalScript?.extract || ''
-            ),
-          ])
-        ),
-      }));
+      await context.run('build-reference-maps', async () => {
+        const elements = sequenceId
+          ? await scopedDb.sequenceElements.list(sequenceId)
+          : elementsFromInput;
+        return {
+          sceneCharacterMap: Object.fromEntries(
+            scenesWithVisualPrompts.map((scene) => [
+              scene.sceneId,
+              matchCharactersToScene(
+                charactersWithSheets,
+                scene.continuity?.characterTags || []
+              ),
+            ])
+          ),
+          sceneLocationMap: Object.fromEntries(
+            scenesWithVisualPrompts.map((scene) => [
+              scene.sceneId,
+              matchLocationsToScene(
+                locationsWithSheets,
+                scene.continuity?.environmentTag || '',
+                scene.metadata?.location || ''
+              ),
+            ])
+          ),
+          sceneElementMap: Object.fromEntries(
+            scenesWithVisualPrompts.map((scene) => [
+              scene.sceneId,
+              matchElementsToScene(
+                elements,
+                scene.continuity?.elementTags || [],
+                scene.originalScript?.extract || ''
+              ),
+            ])
+          ),
+        };
+      });
 
     const imageSize = aspectRatioToImageSize(aspectRatio);
 

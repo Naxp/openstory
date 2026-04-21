@@ -76,9 +76,24 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
       });
     });
 
-    // Load sequence elements and wait (briefly) for vision descriptions to complete.
-    // Elements without a description still appear in the prompt as known tokens so
-    // the model can reference them; they're just excluded from reference-image lists.
+    // Load sequence elements, polling briefly for vision descriptions to finish.
+    //
+    // Why this exists: reference elements (logos, product shots, etc.) are uploaded
+    // via `finalizeElementUploadFn`, which fires `elementVisionWorkflow` async so
+    // the upload response isn't blocked. That vision workflow generates the
+    // `description` + `consistencyTag` used below in `elementsMinimal`, which is
+    // passed to `sceneSplitWorkflow` so the LLM knows what each token (e.g. LOGO,
+    // BOTTLE) depicts and can weave them into scene prompts correctly.
+    //
+    // If the user hits "Analyze" immediately after uploading, vision analysis may
+    // still be pending/analyzing. Proceeding right away would hand the LLM bare
+    // tokens with no visual context, producing weaker scene prompts and missing
+    // reference-image matches downstream.
+    //
+    // The wait is bounded (30s) because vision calls hit external providers (Fal/
+    // OpenRouter) and can stall — we'd rather degrade gracefully than block the
+    // whole generation pipeline. Elements without a description still appear in
+    // the prompt as known tokens; they're just excluded from reference-image lists.
     const elements = await context.run(
       'load-and-wait-for-elements',
       async () => {
@@ -88,6 +103,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
         const POLL_INTERVAL_MS = 1500;
         const startedAt = Date.now();
 
+        // oxlint-disable-next-line no-unnecessary-condition -- loop has a break condition
         while (true) {
           const list = await scopedDb.sequenceElements.list(sequenceId);
           const stillAnalyzing = list.filter(
@@ -137,9 +153,9 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
     const {
       scenes,
       frameMapping,
-      characterBible: extractedCharacterBible,
-      locationBible: extractedLocationBible,
-      elementBible: extractedElementBible,
+      characterBible,
+      locationBible,
+      elementBible,
     } = sceneSplitResult.body;
 
     // Phase 2: Talent + location matching in parallel
@@ -157,10 +173,9 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
             sequenceId,
             userId: input.userId,
             teamId: input.teamId,
-            scenes,
             analysisModelId,
             suggestedTalentIds,
-            characterBible: extractedCharacterBible,
+            characterBible,
           },
         }),
         context.invoke('location-matching', {
@@ -170,10 +185,9 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
             sequenceId,
             userId: input.userId,
             teamId: input.teamId,
-            scenes,
             analysisModelId,
             suggestedLocationIds,
-            locationBible: extractedLocationBible,
+            locationBible,
           },
         }),
       ]
@@ -183,10 +197,8 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
     if (locationMatchingResult.isFailed || locationMatchingResult.isCanceled)
       throw new Error('Location sheet generation failed');
 
-    const { characterBible, matches: talentCharacterMatches } =
-      characterMatchingResult.body;
-    const { locationBible, matches: libraryLocationMatches } =
-      locationMatchingResult.body;
+    const { matches: talentCharacterMatches } = characterMatchingResult.body;
+    const { matches: libraryLocationMatches } = locationMatchingResult.body;
 
     // Phase 3 START
     await context.run('phase-3-start', async () => {
@@ -236,7 +248,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
           aspectRatio,
           characterBible,
           locationBible,
-          elementBible: extractedElementBible,
+          elementBible,
           styleConfig,
           analysisModelId,
           frameMapping,

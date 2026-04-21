@@ -21,14 +21,16 @@ export function buildElementDescription(
 }
 
 /**
- * Build role-tagged reference images for elements. Only elements with both
- * an imageUrl and a description are included.
+ * Build role-tagged reference images for elements. Elements must have an
+ * imageUrl; description is optional — when vision analysis hasn't finished,
+ * the token alone is enough context for the image model since the reference
+ * image itself carries the visual identity.
  */
 export function buildElementReferenceImages(
   elements: SequenceElementMinimal[]
 ): ReferenceImageDescription[] {
   return elements
-    .filter((el) => el.imageUrl && el.description)
+    .filter((el) => el.imageUrl)
     .map((el) => ({
       referenceImageUrl: el.imageUrl,
       description: buildElementDescription(el),

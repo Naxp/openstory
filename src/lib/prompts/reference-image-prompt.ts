@@ -96,6 +96,10 @@ export function buildReferenceImagePrompt(
       instructionLines.push(
         'IMPORTANT: Character, location, and element reference images are for IDENTITY CONSISTENCY ONLY. Do NOT reproduce them as separate panels or subjects. Elements (logos, products) must render faithfully when referenced but should appear naturally within the scene. All output panels must depict the scene from the PRIMARY SOURCE image.'
       );
+    } else if (elements.length > 0 || locations.length > 0) {
+      instructionLines.push(
+        'IMPORTANT: Reference images CARRY the visual identity of their labeled objects. When the prompt names an UPPERCASE element token, render it faithfully from its ELEMENT REF image — do not generate a new version from the prose. When the prompt names a LOCATION REF, use that image for the environment, lighting, and architectural identity. Prose describes how things are framed, lit, and positioned in the shot — it does not redefine what the reference already shows.'
+      );
     }
 
     referenceSection = `<reference-images>
