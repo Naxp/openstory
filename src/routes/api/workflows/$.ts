@@ -15,6 +15,7 @@ import { analyzeScriptWorkflow } from '@/lib/workflows/analyze-script-workflow';
 import { characterBibleWorkflow } from '@/lib/workflows/character-bible-workflow';
 import { characterSheetWorkflow } from '@/lib/workflows/character-sheet-workflow';
 import { frameImagesWorkflow } from '@/lib/workflows/frame-images-workflow';
+import { graphicsRenderWorkflow } from '@/lib/workflows/graphics-render-workflow';
 import { generateImageWorkflow } from '@/lib/workflows/image-workflow';
 import { libraryLocationSheetWorkflow } from '@/lib/workflows/library-location-sheet-workflow';
 import { libraryTalentSheetWorkflow } from '@/lib/workflows/library-talent-sheet-workflow';
@@ -24,6 +25,8 @@ import { locationSheetWorkflow } from '@/lib/workflows/location-sheet-workflow';
 import { mergeAudioVideoWorkflow } from '@/lib/workflows/merge-audio-video-workflow';
 import { mergeVideoWorkflow } from '@/lib/workflows/merge-video-workflow';
 import { motionBatchWorkflow } from '@/lib/workflows/motion-batch-workflow';
+import { motionGraphicsSceneWorkflow } from '@/lib/workflows/motion-graphics-scene-workflow';
+import { motionGraphicsWorkflow } from '@/lib/workflows/motion-graphics-workflow';
 import { motionMusicPromptsWorkflow } from '@/lib/workflows/motion-music-prompts-workflow';
 import { motionPromptSceneWorkflow } from '@/lib/workflows/motion-prompt-scene-workflow';
 import { motionPromptWorkflow } from '@/lib/workflows/motion-prompt-workflow';
@@ -58,6 +61,7 @@ function getHandler() {
         'character-sheet-from-bible': characterBibleWorkflow,
         'character-sheet': characterSheetWorkflow,
         'frame-images': frameImagesWorkflow,
+        'graphics-render': graphicsRenderWorkflow,
         image: generateImageWorkflow,
         'library-location-sheet': libraryLocationSheetWorkflow,
         'library-talent-sheet': libraryTalentSheetWorkflow,
@@ -66,6 +70,8 @@ function getHandler() {
         'location-sheet': locationSheetWorkflow,
         'merge-audio-video': mergeAudioVideoWorkflow,
         'merge-video': mergeVideoWorkflow,
+        'motion-graphics-scene': motionGraphicsSceneWorkflow,
+        'motion-graphics': motionGraphicsWorkflow,
         'motion-music-prompts': motionMusicPromptsWorkflow,
         'motion-prompt-scene': motionPromptSceneWorkflow,
         'motion-prompts': motionPromptWorkflow,

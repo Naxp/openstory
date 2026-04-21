@@ -17,6 +17,7 @@ import type {
   MusicSceneSummary,
 } from '@/lib/workflow/types';
 import { reinforceInstrumentalTags } from '../prompts/music-prompt';
+import { motionGraphicsWorkflow } from './motion-graphics-workflow';
 import { motionPromptWorkflow } from './motion-prompt-workflow';
 import { generateMusicPromptWorflow } from './music-prompt-workflow';
 
@@ -76,41 +77,65 @@ export const motionMusicPromptsWorkflow = createScopedWorkflow<
       })
     );
 
-    // Run motion prompts and music design in parallel
-    const [motionPromptsResults, musicDesignResult] = await Promise.all([
-      context.invoke('motion-prompts', {
-        workflow: motionPromptWorkflow,
-        label,
-        body: {
-          userId,
-          teamId,
-          sequenceId,
-          scenes: scenesWithSnappedDurations,
-          aspectRatio,
-          characterBible,
-          locationBible,
-          styleConfig,
-          analysisModelId,
-          frameMapping,
-        },
-      }),
-      context.invoke('music-prompt', {
-        workflow: generateMusicPromptWorflow,
-        label,
-        body: {
-          userId,
-          teamId,
-          sequenceId,
-          sceneSummaries,
-          analysisModelId,
-        },
-      }),
-    ]);
+    // Run motion prompts, music design, and motion-graphics design in parallel.
+    // Motion graphics writes directly to frame.graphicsOverlays inside its
+    // sub-workflow, so we don't need its return value downstream.
+    const [motionPromptsResults, musicDesignResult, motionGraphicsResult] =
+      await Promise.all([
+        context.invoke('motion-prompts', {
+          workflow: motionPromptWorkflow,
+          label,
+          body: {
+            userId,
+            teamId,
+            sequenceId,
+            scenes: scenesWithSnappedDurations,
+            aspectRatio,
+            characterBible,
+            locationBible,
+            styleConfig,
+            analysisModelId,
+            frameMapping,
+          },
+        }),
+        context.invoke('music-prompt', {
+          workflow: generateMusicPromptWorflow,
+          label,
+          body: {
+            userId,
+            teamId,
+            sequenceId,
+            sceneSummaries,
+            analysisModelId,
+          },
+        }),
+        context.invoke('motion-graphics', {
+          workflow: motionGraphicsWorkflow,
+          label,
+          body: {
+            userId,
+            teamId,
+            sequenceId,
+            scenes: scenesWithSnappedDurations,
+            characterBible,
+            locationBible,
+            styleConfig,
+            analysisModelId,
+            frameMapping,
+          },
+        }),
+      ]);
 
     if (motionPromptsResults.isFailed || motionPromptsResults.isCanceled)
       throw new Error('Motion prompt generation failed');
     if (musicDesignResult.isFailed || musicDesignResult.isCanceled)
       throw new Error('Music design generation failed');
+    // Motion graphics is best-effort: a failure here shouldn't block the run.
+    if (motionGraphicsResult.isFailed || motionGraphicsResult.isCanceled) {
+      console.warn(
+        '[MotionMusicPromptsWorkflow] Motion graphics design failed; continuing without overlays'
+      );
+    }
 
     const motionPrompts = motionPromptsResults.body;
     const musicDesign = musicDesignResult.body;

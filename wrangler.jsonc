@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "main": "@tanstack/react-start/server-entry",
+  "main": "./src/worker-entry.ts",
   "name": "openstory",
   "compatibility_date": "2025-11-18",
   "compatibility_flags": ["nodejs_compat"],
@@ -36,6 +36,30 @@
     {
       "binding": "R2_STORAGE_BUCKET",
       "bucket_name": "openstory-storage",
+    },
+  ],
+  // Hyperframes motion-graphics render container (Chromium + FFmpeg).
+  // Reachable only from this Worker via the HYPERFRAMES_RENDER Durable Object binding.
+  "containers": [
+    {
+      "class_name": "HyperframesRender",
+      "image": "./containers/render/Dockerfile",
+      "name": "hyperframes-render",
+      "instances": 3,
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "HyperframesRender",
+        "name": "HYPERFRAMES_RENDER",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1-hyperframes-render",
+      "new_sqlite_classes": ["HyperframesRender"],
     },
   ],
 }

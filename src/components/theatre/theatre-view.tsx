@@ -29,12 +29,15 @@ type TheatreViewProps = {
   sequence: Sequence;
   onGenerateMergedVideo?: () => void;
   isGenerating?: boolean;
+  /** Count of frames currently rendering motion-graphics overlays */
+  graphicsRenderingCount?: number;
 };
 
 export const TheatreView: React.FC<TheatreViewProps> = ({
   sequence,
   onGenerateMergedVideo,
   isGenerating = false,
+  graphicsRenderingCount = 0,
 }) => {
   const { mergedVideoStatus, mergedVideoUrl, mergedVideoError, aspectRatio } =
     sequence;
@@ -73,6 +76,19 @@ export const TheatreView: React.FC<TheatreViewProps> = ({
       <div className="flex flex-col items-center justify-center gap-4 py-16">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         <p className="text-muted-foreground">Merging video segments…</p>
+      </div>
+    );
+  }
+
+  // Motion graphics rendering state (blocks merge until composited videos are ready)
+  if (graphicsRenderingCount > 0 && mergedVideoStatus !== 'completed') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <p className="text-muted-foreground">
+          Rendering motion graphics on {graphicsRenderingCount}{' '}
+          {graphicsRenderingCount === 1 ? 'frame' : 'frames'}…
+        </p>
       </div>
     );
   }

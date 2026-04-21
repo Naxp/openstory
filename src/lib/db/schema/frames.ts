@@ -5,6 +5,10 @@
 
 import { DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
+import type {
+  CompositedVideoStatus,
+  FrameOverlay,
+} from '@/lib/hyperframes/overlay.types';
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import {
   index,
@@ -94,6 +98,22 @@ export const frames = sqliteTable(
     }),
     audioError: text('audio_error'),
     audioModel: text('audio_model', { length: 100 }), // Model used for music/audio generation (nullable)
+    // Motion graphics overlay list (Hyperframes). Null = no overlays; otherwise composited onto videoUrl.
+    graphicsOverlays: text('graphics_overlays', {
+      mode: 'json',
+    }).$type<FrameOverlay[]>(),
+    // Composited video = frame's motion video with graphicsOverlays rendered onto it (Hyperframes output).
+    // Merge pipeline prefers this over videoUrl when populated.
+    compositedVideoUrl: text('composited_video_url'),
+    compositedVideoPath: text('composited_video_path'),
+    compositedVideoStatus: text(
+      'composited_video_status'
+    ).$type<CompositedVideoStatus>(),
+    compositedVideoWorkflowRunId: text('composited_video_workflow_run_id'),
+    compositedVideoGeneratedAt: integer('composited_video_generated_at', {
+      mode: 'timestamp',
+    }),
+    compositedVideoError: text('composited_video_error'),
     /**
      * Stores Scene data at various stages of progressive analysis.
      * Fields are populated progressively across 5 phases.

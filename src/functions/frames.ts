@@ -1,4 +1,5 @@
 import type { NewFrame } from '@/lib/db/schema';
+import { frameOverlaysSchema } from '@/lib/hyperframes/overlay.schema';
 import { getVideoDownloadUrl } from '@/lib/motion/video-storage';
 import {
   bulkFrameSchema,
@@ -129,6 +130,29 @@ export const reorderFramesFn = createServerFn({ method: 'POST' })
     }));
     await context.scopedDb.frames.reorder(data.sequenceId, frameOrders);
     return { success: true };
+  });
+
+/**
+ * Replace a frame's motion-graphics overlay list (Hyperframes).
+ * Pass `overlays: []` or `null` to clear.
+ */
+export const setFrameOverlaysFn = createServerFn({ method: 'POST' })
+  .middleware([frameAccessMiddleware])
+  .inputValidator(
+    zodValidator(
+      z.object({
+        sequenceId: ulidSchema,
+        frameId: ulidSchema,
+        overlays: frameOverlaysSchema.nullable(),
+      })
+    )
+  )
+  .handler(async ({ data, context }) => {
+    const updated = await context.scopedDb.frames.updateGraphicsOverlays(
+      data.frameId,
+      data.overlays && data.overlays.length > 0 ? data.overlays : null
+    );
+    return updated ?? null;
   });
 
 /**

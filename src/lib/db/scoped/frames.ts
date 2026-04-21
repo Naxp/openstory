@@ -7,7 +7,20 @@ import type { Database } from '@/lib/db/client';
 import { frames } from '@/lib/db/schema';
 import type { Frame, NewFrame } from '@/lib/db/schema';
 import type { Sequence } from '@/lib/db/schema/sequences';
+import type {
+  CompositedVideoStatus,
+  FrameOverlay,
+} from '@/lib/hyperframes/overlay.types';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+
+export type CompositedVideoFieldsUpdate = {
+  compositedVideoStatus?: CompositedVideoStatus;
+  compositedVideoUrl?: string | null;
+  compositedVideoPath?: string | null;
+  compositedVideoWorkflowRunId?: string | null;
+  compositedVideoGeneratedAt?: Date | null;
+  compositedVideoError?: string | null;
+};
 
 type FrameWithSequence = Frame & {
   sequence: Pick<
@@ -205,6 +218,30 @@ export function createFramesMethods(db: Database) {
     getByIds: async (frameIds: string[]): Promise<Frame[]> => {
       if (frameIds.length === 0) return [];
       return await db.select().from(frames).where(inArray(frames.id, frameIds));
+    },
+
+    updateGraphicsOverlays: async (
+      frameId: string,
+      graphicsOverlays: FrameOverlay[] | null
+    ): Promise<Frame | undefined> => {
+      const [frame] = await db
+        .update(frames)
+        .set({ graphicsOverlays, updatedAt: new Date() })
+        .where(eq(frames.id, frameId))
+        .returning();
+      return frame;
+    },
+
+    updateCompositedVideoFields: async (
+      frameId: string,
+      fields: CompositedVideoFieldsUpdate
+    ): Promise<Frame | undefined> => {
+      const [frame] = await db
+        .update(frames)
+        .set({ ...fields, updatedAt: new Date() })
+        .where(eq(frames.id, frameId))
+        .returning();
+      return frame;
     },
 
     getWithSequence: async (

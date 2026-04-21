@@ -110,6 +110,12 @@ Target video duration: ${formatDuration(durationSeconds)} (${sceneRange} scenes,
     parts.push(`\nAspect ratio: ${labels[options.aspectRatio]}`);
   }
 
+  parts.push(`\nMotion-graphics conventions (use sparingly — downstream reads these as overlay hints):
+- When a scene opens at a new real-world place or time, start the scene with a SUPER line, e.g. SUPER: "LAGOS — 2041".
+- When a named character first appears with a professional role, introduce them with a lower-third cue, e.g. LOWER THIRD: Dr. Iris Chen / Lead Biologist.
+- When the narrative jumps chapters/acts or time, precede the scene with TITLE CARD: "CHAPTER TWO" or "EIGHT YEARS LATER".
+- Do NOT invent chyrons for every scene — only use these where a viewer would genuinely be lost without them.`);
+
   return parts.join('\n');
 }
 

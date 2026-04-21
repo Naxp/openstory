@@ -37,6 +37,13 @@ function makeFrame(overrides: Partial<Frame> = {}): Frame {
     audioError: null,
     audioModel: null,
     previewThumbnailUrl: null,
+    graphicsOverlays: null,
+    compositedVideoUrl: null,
+    compositedVideoPath: null,
+    compositedVideoStatus: null,
+    compositedVideoWorkflowRunId: null,
+    compositedVideoGeneratedAt: null,
+    compositedVideoError: null,
     metadata: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -81,6 +88,8 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     autoGenerateMusic: false,
     suggestedTalentIds: null,
     suggestedLocationIds: null,
+    introOverlay: null,
+    outroOverlay: null,
     ...overrides,
   };
 }

@@ -52,6 +52,8 @@ Oh, hi Mom. Yeah, I'm fine. Just... working on a big project.`,
   autoGenerateMusic: false,
   suggestedTalentIds: null,
   suggestedLocationIds: null,
+  introOverlay: null,
+  outroOverlay: null,
 };
 
 // Create a new QueryClient for each story to avoid state leakage

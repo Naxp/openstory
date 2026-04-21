@@ -8,6 +8,7 @@ import {
   type AspectRatio,
   DEFAULT_ASPECT_RATIO,
 } from '@/lib/constants/aspect-ratios';
+import type { FrameOverlay } from '@/lib/hyperframes/overlay.types';
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { generateId } from '../id';
@@ -133,6 +134,11 @@ export const sequences = sqliteTable(
     suggestedLocationIds: text('suggested_location_ids', {
       mode: 'json',
     }).$type<string[]>(),
+
+    // Sequence-level motion graphics (Hyperframes): optional intro title card + outro end card.
+    // Rendered as standalone clips and prepended/appended during merge.
+    introOverlay: text('intro_overlay', { mode: 'json' }).$type<FrameOverlay>(),
+    outroOverlay: text('outro_overlay', { mode: 'json' }).$type<FrameOverlay>(),
   },
   (table) => [
     index('idx_sequences_created_at').on(table.createdAt),

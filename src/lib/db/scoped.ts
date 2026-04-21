@@ -60,6 +60,8 @@ export type {
   MusicFieldsUpdate,
 } from '@/lib/db/scoped/sequences';
 
+export type { CompositedVideoFieldsUpdate } from '@/lib/db/scoped/frames';
+
 /**
  * Resolve a user's default team (highest-role team).
  * Module-level function for bootstrap before scopedDb exists.

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { createInsertSchema, createUpdateSchema } from 'drizzle-zod';
 import { frames, FRAME_GENERATION_STATUSES } from '@/lib/db/schema/frames';
 import { IMAGE_MODELS, IMAGE_TO_VIDEO_MODELS } from '@/lib/ai/models';
+import { COMPOSITED_VIDEO_STATUSES } from '@/lib/hyperframes/overlay.types';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 
 /**
@@ -22,6 +23,9 @@ const createFrameSchema = createInsertSchema(frames, {
   variantImageStatus: () =>
     z.enum(FRAME_GENERATION_STATUSES).nullable().optional(),
   audioStatus: () => z.enum(FRAME_GENERATION_STATUSES).nullable().optional(),
+  compositedVideoStatus: () =>
+    z.enum(COMPOSITED_VIDEO_STATUSES).nullable().optional(),
+  graphicsOverlays: () => z.array(z.any()).nullable().optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -37,6 +41,9 @@ export const updateFrameSchema = createUpdateSchema(frames, {
   variantImageStatus: () =>
     z.enum(FRAME_GENERATION_STATUSES).nullable().optional(),
   audioStatus: () => z.enum(FRAME_GENERATION_STATUSES).nullable().optional(),
+  compositedVideoStatus: () =>
+    z.enum(COMPOSITED_VIDEO_STATUSES).nullable().optional(),
+  graphicsOverlays: () => z.array(z.any()).nullable().optional(),
 }).omit({
   id: true,
   sequenceId: true,

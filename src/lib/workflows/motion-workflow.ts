@@ -24,6 +24,7 @@ import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type {
+  GraphicsRenderWorkflowInput,
   MergeVideoWorkflowInput,
   MotionWorkflowInput,
 } from '@/lib/workflow/types';
@@ -363,6 +364,32 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
         );
       });
 
+      // Step 5b: If the frame has motion-graphics overlays, trigger a graphics-render
+      // workflow to composite them onto the motion video. The merge step will
+      // prefer compositedVideoUrl over videoUrl when both exist.
+      await context.run('trigger-graphics-render', async () => {
+        if (!input.sequenceId || !input.teamId || !input.userId) return;
+
+        const current = await scopedDb.frames.getById(frameId);
+        const overlays = current?.graphicsOverlays ?? [];
+        if (overlays.length === 0) return;
+
+        const graphicsInput: GraphicsRenderWorkflowInput = {
+          userId: input.userId,
+          teamId: input.teamId,
+          sequenceId: input.sequenceId,
+          frameId,
+          videoUrl: storageResult.url,
+          aspectRatio: input.aspectRatio ?? '16:9',
+          durationMs: duration * 1000,
+        };
+
+        await triggerWorkflow('/graphics-render', graphicsInput, {
+          deduplicationId: `graphics-${frameId}-${Date.now()}`,
+          label: buildWorkflowLabel(input.sequenceId),
+        });
+      });
+
       // Step 6: Check if all frames are complete and trigger merge
       // TODO: Tom Dec 2025 - I don't love this. It's a bit of a hack.
       // I looked at multiple options and the only way to reliably do this is to have versioning.
@@ -376,9 +403,28 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
         if (allFrames.length === 0) return;
         if (!allFrames.every((f) => f.videoStatus === 'completed')) return;
 
+        // Motion-graphics gate: frames with overlays must also have their
+        // composited video ready before we merge.
+        const framesWaitingOnGraphics = allFrames.filter(
+          (f) =>
+            (f.graphicsOverlays?.length ?? 0) > 0 &&
+            f.compositedVideoStatus !== 'completed' &&
+            f.compositedVideoStatus !== 'failed'
+        );
+        if (framesWaitingOnGraphics.length > 0) {
+          console.log(
+            `[MotionWorkflow] ${framesWaitingOnGraphics.length} frames still rendering motion graphics, deferring merge`
+          );
+          return;
+        }
+
         const videoUrls = allFrames
           .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((f) => f.videoUrl)
+          .map((f) =>
+            f.compositedVideoStatus === 'completed' && f.compositedVideoUrl
+              ? f.compositedVideoUrl
+              : f.videoUrl
+          )
           .filter((url): url is string => Boolean(url));
 
         if (videoUrls.length !== allFrames.length) return;

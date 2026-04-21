@@ -113,6 +113,13 @@ export const realtimeSchema = {
       mergedVideoUrl: z.string().optional(),
     }),
 
+    // Motion-graphics (Hyperframes) composition progress — per-frame overlay render
+    'graphics:progress': z.object({
+      frameId: z.string(),
+      status: z.enum(['pending', 'rendering', 'completed', 'failed']),
+      compositedVideoUrl: z.string().optional(),
+    }),
+
     // Character sheet generation progress (during recasting)
     'character-sheet:progress': z.object({
       characterId: z.string(),

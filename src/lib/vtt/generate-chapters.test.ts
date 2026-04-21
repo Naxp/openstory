@@ -48,6 +48,13 @@ const createTestFrame = (overrides: Partial<Frame>): Frame => ({
   audioError: null,
   audioModel: null,
   previewThumbnailUrl: null,
+  graphicsOverlays: null,
+  compositedVideoUrl: null,
+  compositedVideoPath: null,
+  compositedVideoStatus: null,
+  compositedVideoWorkflowRunId: null,
+  compositedVideoGeneratedAt: null,
+  compositedVideoError: null,
   ...overrides,
 });
 

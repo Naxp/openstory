@@ -35,6 +35,13 @@ const mockFrame: Frame = {
   audioError: null,
   audioModel: null,
   previewThumbnailUrl: null,
+  graphicsOverlays: null,
+  compositedVideoUrl: null,
+  compositedVideoPath: null,
+  compositedVideoStatus: null,
+  compositedVideoWorkflowRunId: null,
+  compositedVideoGeneratedAt: null,
+  compositedVideoError: null,
   metadata: {
     sceneId: 'scene-1',
     sceneNumber: 1,

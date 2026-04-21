@@ -52,6 +52,8 @@ const mockSequence: Sequence = {
   autoGenerateMusic: false,
   suggestedTalentIds: null,
   suggestedLocationIds: null,
+  introOverlay: null,
+  outroOverlay: null,
 };
 
 const meta = {
@@ -133,6 +135,13 @@ const mockFrameBase = {
   variantImageStatus: 'pending' as const,
   variantWorkflowRunId: null,
   previewThumbnailUrl: null,
+  graphicsOverlays: null,
+  compositedVideoUrl: null,
+  compositedVideoPath: null,
+  compositedVideoStatus: null,
+  compositedVideoWorkflowRunId: null,
+  compositedVideoGeneratedAt: null,
+  compositedVideoError: null,
   metadata: {
     sceneId: 'scene-1',
     sceneNumber: 1,

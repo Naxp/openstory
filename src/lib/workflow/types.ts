@@ -393,6 +393,56 @@ export interface LibraryTalentSheetWorkflowResult {
 }
 
 /**
+ * Motion-graphics design workflow inputs (LLM).
+ *
+ * Given scene + character/location bible context, emits FrameOverlay[] and
+ * writes them to frame.graphicsOverlays so the graphics-render workflow can
+ * later composite them.
+ */
+export interface MotionGraphicsDesignWorkflowInput extends SequenceWorkflowContext {
+  scenes: Scene[];
+  characterBible: CharacterBibleEntry[];
+  locationBible: LocationBibleEntry[];
+  styleConfig: StyleConfig;
+  analysisModelId: AnalysisModelId;
+  frameMapping: FrameMapping;
+}
+
+export interface MotionGraphicsSceneWorkflowInput extends SequenceWorkflowContext {
+  scene: Scene;
+  sceneBefore?: Scene;
+  characterBible: CharacterBibleEntry[];
+  locationBible: LocationBibleEntry[];
+  styleConfig: StyleConfig;
+  analysisModelId: AnalysisModelId;
+  frameId?: string;
+  /** Duration to clamp overlay timings against. */
+  sceneDurationMs: number;
+}
+
+/**
+ * Graphics render workflow input
+ * Composites a frame's graphicsOverlays onto its motion video via Hyperframes.
+ */
+export interface GraphicsRenderWorkflowInput extends SequenceWorkflowContext {
+  /** Frame to composite */
+  frameId: string;
+  /** Source video URL (the frame's videoUrl) */
+  videoUrl: string;
+  /** Aspect ratio for render dimensions */
+  aspectRatio: AspectRatio;
+  /** Frame duration in milliseconds */
+  durationMs: number;
+  /** Render quality */
+  quality?: 'draft' | 'standard' | 'high';
+}
+
+export interface GraphicsRenderWorkflowResult {
+  compositedVideoUrl: string;
+  compositedVideoPath: string;
+}
+
+/**
  * Merge video workflow input
  * Stitches all frame videos into a single merged video
  */

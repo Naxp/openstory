@@ -8,6 +8,7 @@
         "@aws-sdk/client-s3": "^3.1020.0",
         "@aws-sdk/s3-request-presigner": "^3.1020.0",
         "@better-auth/passkey": "^1.5.6",
+        "@cloudflare/containers": "^0.3.2",
         "@fal-ai/client": "^1.9.5",
         "@langfuse/client": "5",
         "@langfuse/otel": "5",
@@ -75,6 +76,7 @@
         "@cloudflare/vite-plugin": "^1.30.2",
         "@copilotkit/aimock": "^1.14.0",
         "@faker-js/faker": "^10.4.0",
+        "@hyperframes/player": "^0.4.11",
         "@storybook/addon-a11y": "^10.3.3",
         "@storybook/addon-docs": "^10.3.3",
         "@storybook/addon-onboarding": "^10.3.3",
@@ -295,6 +297,8 @@
 
     "@clack/prompts": ["@clack/prompts@1.2.0", "", { "dependencies": { "@clack/core": "1.2.0", "fast-string-width": "^1.1.0", "fast-wrap-ansi": "^0.1.3", "sisteransi": "^1.0.5" } }, "sha512-4jmztR9fMqPMjz6H/UZXj0zEmE43ha1euENwkckKKel4XpSfokExPo5AiVStdHSAlHekz4d0CA/r45Ok1E4D3w=="],
 
+    "@cloudflare/containers": ["@cloudflare/containers@0.3.2", "", {}, "sha512-hWobJrpXCgFJ/HYii6E49eegnnlUDWGacjLd0Fb6nQwTD005+T2eHUPI6qOEq9KPJOd7xTWkhkuXEKxDFvfyqQ=="],
+
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.4.2", "", {}, "sha512-SIOD2DxrRRwQ+jgzlXCqoEFiKOFqaPjhnNTGKXSRLvp1HiOvapLaFG2kEr9dYQTYe8rKrd9uvDUzmAITeNyaHQ=="],
 
     "@cloudflare/unenv-preset": ["@cloudflare/unenv-preset@2.16.0", "", { "peerDependencies": { "unenv": "2.0.0-rc.24", "workerd": "1.20260301.1 || ~1.20260302.1 || ~1.20260303.1 || ~1.20260304.1 || >1.20260305.0 <2.0.0-0" }, "optionalPeers": ["workerd"] }, "sha512-8ovsRpwzPoEqPUzoErAYVv8l3FMZNeBVQfJTvtzP4AgLSRGZISRfuChFxHWUQd3n6cnrwkuTGxT+2cGo8EsyYg=="],
@@ -400,6 +404,8 @@
     "@hexagon/base64": ["@hexagon/base64@1.1.28", "", {}, "sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.12", "", { "peerDependencies": { "hono": "^4" } }, "sha512-txsUW4SQ1iilgE0l9/e9VQWmELXifEFvmdA1j6WFh/aFPj99hIntrSsq/if0UWyGVkmrRPKA1wCeP+UCr1B9Uw=="],
+
+    "@hyperframes/player": ["@hyperframes/player@0.4.11", "", {}, "sha512-MtY4r3u85bd0ynXL2/fJS05tXr8pvIcTkdIZ5hGshT3Asp12XHMI4/TRwihGvyKGusUKjDCslrKuaDmfE8ve6A=="],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 

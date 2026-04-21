@@ -1,0 +1,20 @@
+{
+  "name": "@openstory/hyperframes-render",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@hyperframes/core": "^0.4.11",
+    "@hyperframes/producer": "^0.4.11",
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.9.0",
+    "zod": "^3.23.0"
+  }
+}
