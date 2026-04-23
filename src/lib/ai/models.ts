@@ -189,6 +189,15 @@ export const IMAGE_MODELS = {
     description: 'Unified generation and editing',
     maxPromptLength: 2000,
   },
+  gpt_image_2: {
+    id: 'openai/gpt-image-2' as const,
+    name: 'GPT Image 2',
+    provider: 'OpenAI',
+    license: 'proprietary' as const,
+    qualityRank: 2.5,
+    description: 'Extremely detailed images with fine typography',
+    maxPromptLength: 32000,
+  },
   flux_2_turbo: {
     id: 'fal-ai/flux-2/turbo' as const,
     name: 'FLUX.2 Turbo',
@@ -586,6 +595,7 @@ export const EDIT_ENDPOINTS: Partial<Record<TextToImageModel, string>> = {
   flux_2_turbo: 'fal-ai/flux-2/turbo/edit',
   qwen_image: 'fal-ai/qwen-image-2/pro/edit',
   seedream_v5: 'fal-ai/bytedance/seedream/v5/lite/edit',
+  gpt_image_2: 'openai/gpt-image-2/edit',
 };
 
 /**

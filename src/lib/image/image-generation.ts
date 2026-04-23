@@ -36,6 +36,7 @@ export type ImageGenerationParams = {
   embeddings?: Array<{ path: string; tokens: string[] }>;
 
   // Model-specific
+  quality?: 'low' | 'medium' | 'high';
   style?: string;
   colors?: Array<{ r: number; g: number; b: number }>;
   resolution?: '1K' | '2K' | '4K';
@@ -192,6 +193,7 @@ async function generateImageInternal(
     heightPx: dims.height,
     resolution: params.resolution,
     style: params.style,
+    quality: params.quality,
     imageSize: sizeMap[imageSize],
   });
 
@@ -357,6 +359,18 @@ function buildFalModelOptions(
         enable_safety_checker: true,
         ...(params.seed !== undefined && { seed: params.seed }),
         ...(params.numImages !== undefined && { num_images: params.numImages }),
+        ...(params.referenceImageUrls?.length && {
+          image_urls: params.referenceImageUrls,
+        }),
+        sync_mode: false,
+      };
+
+    case 'gpt_image_2':
+      return {
+        image_size: params.imageSize ?? DEFAULT_IMAGE_SIZE,
+        quality: params.quality ?? 'high',
+        ...(params.numImages !== undefined && { num_images: params.numImages }),
+        ...(params.outputFormat && { output_format: params.outputFormat }),
         ...(params.referenceImageUrls?.length && {
           image_urls: params.referenceImageUrls,
         }),

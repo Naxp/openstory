@@ -142,6 +142,48 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     basePrice: micros(75_000),
     unit: 'per_image',
   },
+  'openai/gpt-image-2': {
+    basePrice: micros(220_000),
+    unit: 'per_image',
+    qualitySizeMatrix: {
+      low: {
+        '1024x1024': micros(10_000),
+        '1024x1536': micros(10_000),
+        '1536x1024': micros(10_000),
+      },
+      medium: {
+        '1024x1024': micros(60_000),
+        '1024x1536': micros(50_000),
+        '1536x1024': micros(40_000),
+      },
+      high: {
+        '1024x1024': micros(220_000),
+        '1024x1536': micros(170_000),
+        '1536x1024': micros(160_000),
+      },
+    },
+  },
+  'openai/gpt-image-2/edit': {
+    basePrice: micros(220_000),
+    unit: 'per_image',
+    qualitySizeMatrix: {
+      low: {
+        '1024x1024': micros(10_000),
+        '1024x1536': micros(10_000),
+        '1536x1024': micros(10_000),
+      },
+      medium: {
+        '1024x1024': micros(60_000),
+        '1024x1536': micros(50_000),
+        '1536x1024': micros(40_000),
+      },
+      high: {
+        '1024x1024': micros(220_000),
+        '1024x1536': micros(170_000),
+        '1536x1024': micros(160_000),
+      },
+    },
+  },
   'xai/grok-imagine-image': {
     basePrice: micros(20_000),
     unit: 'per_image',
