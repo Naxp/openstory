@@ -20,7 +20,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   return (
     <SidebarProvider className="h-svh">
       <AppSidebar />
-      <SidebarInset className="min-h-0">
+      <SidebarInset className="min-w-0 min-h-0">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="mx-1 h-4" />
@@ -29,7 +29,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <InvalidApiKeyBanner />
         <div
           className={cn(
-            'flex flex-col flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]',
+            'flex flex-col flex-1 min-w-0 min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]',
             className
           )}
           {...props}
