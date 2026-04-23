@@ -27,13 +27,12 @@ import { useLowBalanceWarning } from '@/hooks/use-low-balance-warning';
 import { useUser } from '@/hooks/use-user';
 import { authClient } from '@/lib/auth/client';
 import { Route as locationsRoute } from '@/routes/_protected/locations/index';
-import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
 import { Route as sequencesRoute } from '@/routes/_protected/sequences/index';
+import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
 import { Route as talentRoute } from '@/routes/_protected/talent/index';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
-  BarChart3,
   ChevronsUpDown,
   LogOut,
   MapPin,
@@ -229,12 +228,20 @@ function AdminMenuItem() {
   if (!adminStatus?.isAdmin) return null;
 
   return (
-    <DropdownMenuItem asChild>
-      <Link to="/admin/usage">
-        <BarChart3 className="mr-2 h-4 w-4" />
-        Admin
-      </Link>
-    </DropdownMenuItem>
+    <>
+      <DropdownMenuItem asChild>
+        <Link to="/settings">
+          <Settings className="mr-2 h-4 w-4" />
+          Settings
+        </Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild>
+        <Link to="/credits">
+          <Wallet className="mr-2 h-4 w-4" />
+          Credits
+        </Link>
+      </DropdownMenuItem>
+    </>
   );
 }
 
