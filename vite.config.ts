@@ -100,6 +100,6 @@ export default defineConfig({
     exclude: ['bun'],
   },
   ssr: {
-    noExternal: ['@upstash/realtime', '@videojs/react'],
+    noExternal: ['@upstash/realtime', '@videojs/react', '@hyperframes/player'],
   },
 });

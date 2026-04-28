@@ -116,6 +116,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1033.0",
     "@better-auth/passkey": "^1.6.5",
     "@fal-ai/client": "^1.9.5",
+    "@hyperframes/player": "^0.4.32",
     "@langfuse/client": "^5.1.0",
     "@langfuse/otel": "^5.1.0",
     "@libsql/client": "^0.17.2",

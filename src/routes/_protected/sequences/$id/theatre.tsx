@@ -1,8 +1,14 @@
 import { TheatreView } from '@/components/theatre/theatre-view';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSequence } from '@/hooks/use-sequences';
+import { mergeVideoAndMusicFn } from '@/functions/sequences';
+import { useFramesBySequence } from '@/hooks/use-frames';
+import { sequenceKeys, useSequence } from '@/hooks/use-sequences';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
+import type { Sequence } from '@/types/database';
+import { usePostHog } from '@posthog/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_protected/sequences/$id/theatre')({
   component: TheatrePage,
@@ -20,11 +26,32 @@ const THEATRE_MAX_CLASS_BY_RATIO: Record<AspectRatio, string> = {
 
 function TheatrePage() {
   const { id: sequenceId } = Route.useParams();
+  const queryClient = useQueryClient();
+  const posthog = usePostHog();
 
   const { data: sequence, isLoading } = useSequence(sequenceId, {
     refetchInterval: (query) => {
       if (query.state.data?.mergedVideoStatus === 'merging') return 2000;
       return false;
+    },
+  });
+
+  const { data: frames = [] } = useFramesBySequence(sequenceId);
+
+  const mergeVideoAndMusic = useMutation({
+    mutationFn: () => mergeVideoAndMusicFn({ data: { sequenceId } }),
+    onMutate: () => {
+      queryClient.setQueryData<Sequence>(
+        sequenceKeys.detail(sequenceId),
+        (old) => (old ? { ...old, mergedVideoStatus: 'merging' as const } : old)
+      );
+      posthog.capture('merged_video_generation_started', {
+        sequence_id: sequenceId,
+        source: 'theatre',
+      });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to start merge');
     },
   });
 
@@ -39,7 +66,12 @@ function TheatrePage() {
   return (
     <div className="flex h-full items-center justify-center p-4">
       <div className={THEATRE_MAX_CLASS_BY_RATIO[sequence.aspectRatio]}>
-        <TheatreView sequence={sequence} />
+        <TheatreView
+          sequence={sequence}
+          frames={frames}
+          onGenerateMergedVideo={() => mergeVideoAndMusic.mutate()}
+          isGenerating={mergeVideoAndMusic.isPending}
+        />
       </div>
     </div>
   );

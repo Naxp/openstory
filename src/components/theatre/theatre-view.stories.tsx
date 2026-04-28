@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-type-assertion -- Storybook mock data uses intentional type assertions */
+import type { Frame, Sequence } from '@/types/database';
 import type { Meta, StoryObj } from '@storybook/react';
 import { fn } from 'storybook/test';
 import { TheatreView } from './theatre-view';
-import type { Sequence } from '@/types/database';
 
 const baseSequence: Sequence = {
   id: 'seq_123',
@@ -41,12 +42,69 @@ const baseSequence: Sequence = {
   suggestedLocationIds: null,
 };
 
+const frame = (overrides: Partial<Frame>): Frame =>
+  ({
+    id: overrides.id ?? 'f',
+    sequenceId: 'seq_123',
+    orderIndex: 0,
+    description: null,
+    durationMs: 3000,
+    thumbnailUrl: null,
+    previewThumbnailUrl: null,
+    thumbnailPath: null,
+    variantImageUrl: null,
+    variantImageStatus: 'pending',
+    variantWorkflowRunId: null,
+    videoUrl: null,
+    videoPath: null,
+    thumbnailStatus: 'pending',
+    thumbnailWorkflowRunId: null,
+    thumbnailGeneratedAt: null,
+    thumbnailError: null,
+    imageModel: 'nano_banana_pro',
+    imagePrompt: null,
+    videoStatus: 'pending',
+    videoWorkflowRunId: null,
+    videoGeneratedAt: null,
+    videoError: null,
+    motionPrompt: null,
+    motionModel: null,
+    audioUrl: null,
+    audioPath: null,
+    audioStatus: 'pending',
+    audioWorkflowRunId: null,
+    audioGeneratedAt: null,
+    audioError: null,
+    audioModel: null,
+    metadata: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }) as Frame;
+
+const completedFrames: Frame[] = [
+  frame({
+    id: '1',
+    orderIndex: 0,
+    videoStatus: 'completed',
+    videoUrl:
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    durationMs: 5000,
+  }),
+  frame({
+    id: '2',
+    orderIndex: 1,
+    videoStatus: 'completed',
+    videoUrl:
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    durationMs: 5000,
+  }),
+];
+
 const meta: Meta<typeof TheatreView> = {
   title: 'Theatre/TheatreView',
   component: TheatreView,
-  parameters: {
-    layout: 'padded',
-  },
+  parameters: { layout: 'padded' },
   args: {
     onGenerateMergedVideo: fn(),
   },
@@ -55,25 +113,47 @@ const meta: Meta<typeof TheatreView> = {
 export default meta;
 type Story = StoryObj<typeof TheatreView>;
 
-export const Pending: Story = {
+export const NoMotionYet: Story = {
   args: {
-    sequence: {
-      ...baseSequence,
-      mergedVideoStatus: 'pending',
-    },
+    sequence: baseSequence,
+    frames: [
+      frame({ id: '1', orderIndex: 0, videoStatus: 'pending' }),
+      frame({ id: '2', orderIndex: 1, videoStatus: 'generating' }),
+    ],
   },
 };
 
-export const Merging: Story = {
+export const LivePreviewNoMerge: Story = {
   args: {
-    sequence: {
-      ...baseSequence,
-      mergedVideoStatus: 'merging',
-    },
+    sequence: baseSequence,
+    frames: completedFrames,
   },
 };
 
-export const Completed: Story = {
+export const LivePreviewWithMusic: Story = {
+  args: {
+    sequence: {
+      ...baseSequence,
+      musicUrl:
+        'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/audio/T-Rex-Roar.mp3',
+      musicStatus: 'completed',
+    },
+    frames: completedFrames,
+  },
+};
+
+export const LivePreviewMixedStates: Story = {
+  args: {
+    sequence: baseSequence,
+    frames: [
+      ...completedFrames,
+      frame({ id: '3', orderIndex: 2, videoStatus: 'generating' }),
+      frame({ id: '4', orderIndex: 3, videoStatus: 'failed' }),
+    ],
+  },
+};
+
+export const WithMergedVideoAvailable: Story = {
   args: {
     sequence: {
       ...baseSequence,
@@ -84,10 +164,11 @@ export const Completed: Story = {
         'teams/team_123/sequences/seq_123/merged/abc123_openstory.mp4',
       mergedVideoGeneratedAt: new Date(),
     },
+    frames: completedFrames,
   },
 };
 
-export const CompletedPortrait: Story = {
+export const Portrait: Story = {
   args: {
     sequence: {
       ...baseSequence,
@@ -99,36 +180,14 @@ export const CompletedPortrait: Story = {
         'teams/team_123/sequences/seq_123/merged/abc123_openstory.mp4',
       mergedVideoGeneratedAt: new Date(),
     },
+    frames: completedFrames,
   },
 };
 
-export const Failed: Story = {
+export const RenderingMergedMP4: Story = {
   args: {
-    sequence: {
-      ...baseSequence,
-      mergedVideoStatus: 'failed',
-      mergedVideoError: 'Failed to download video segment from storage',
-    },
-  },
-};
-
-export const FailedWithRetrying: Story = {
-  args: {
-    sequence: {
-      ...baseSequence,
-      mergedVideoStatus: 'failed',
-      mergedVideoError: 'Network timeout during merge operation',
-    },
-    isGenerating: true,
-  },
-};
-
-export const PendingWithGenerating: Story = {
-  args: {
-    sequence: {
-      ...baseSequence,
-      mergedVideoStatus: 'pending',
-    },
+    sequence: { ...baseSequence, mergedVideoStatus: 'merging' },
+    frames: completedFrames,
     isGenerating: true,
   },
 };

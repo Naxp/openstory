@@ -9,6 +9,7 @@
         "@aws-sdk/s3-request-presigner": "^3.1033.0",
         "@better-auth/passkey": "^1.6.5",
         "@fal-ai/client": "^1.9.5",
+        "@hyperframes/player": "^0.4.32",
         "@langfuse/client": "^5.1.0",
         "@langfuse/otel": "^5.1.0",
         "@libsql/client": "^0.17.2",
@@ -397,6 +398,8 @@
     "@hexagon/base64": ["@hexagon/base64@1.1.28", "", {}, "sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw=="],
 
     "@hono/node-server": ["@hono/node-server@1.19.12", "", { "peerDependencies": { "hono": "^4" } }, "sha512-txsUW4SQ1iilgE0l9/e9VQWmELXifEFvmdA1j6WFh/aFPj99hIntrSsq/if0UWyGVkmrRPKA1wCeP+UCr1B9Uw=="],
+
+    "@hyperframes/player": ["@hyperframes/player@0.4.32", "", {}, "sha512-UbvDbB2dWuMDVWNp7yHJlH+dAI2OGHgBqisAM65X3BwthkeUGlOYH2oRtzFNdV4Qc42PPnRR04w+tRGCF5/n3w=="],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 

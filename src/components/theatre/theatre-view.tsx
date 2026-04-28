@@ -1,6 +1,8 @@
 /**
  * Theatre View
- * Displays the merged video for a sequence
+ * Live preview of a sequence using @hyperframes/player. Plays motion clips
+ * + music without waiting for a server-side merge. The merge workflow is
+ * still available (and required) for downloading a single shareable MP4.
  */
 
 import { Button } from '@/components/ui/button';
@@ -8,46 +10,61 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import { VideoPlayer } from '@/components/motion/video-player';
-import type { Sequence } from '@/types/database';
+import type { Frame, Sequence } from '@/types/database';
 import {
-  Loader2,
   AlertCircle,
-  Film,
-  Share2,
-  Link,
   Download,
+  Film,
+  Link,
+  Loader2,
+  Share2,
+  Sparkles,
 } from 'lucide-react';
 import { usePostHog } from '@posthog/react';
 import { useCallback } from 'react';
 import { toast } from 'sonner';
+import { SequencePlayer } from './sequence-player';
 
 type TheatreViewProps = {
   sequence: Sequence;
+  frames: Frame[];
   onGenerateMergedVideo?: () => void;
   isGenerating?: boolean;
 };
 
+const countByStatus = (frames: Frame[]) => {
+  let completed = 0;
+  let pending = 0;
+  let failed = 0;
+  for (const f of frames) {
+    if (f.videoStatus === 'completed' && f.videoUrl) completed += 1;
+    else if (f.videoStatus === 'failed') failed += 1;
+    else pending += 1;
+  }
+  return { completed, pending, failed };
+};
+
 export const TheatreView: React.FC<TheatreViewProps> = ({
   sequence,
+  frames,
   onGenerateMergedVideo,
   isGenerating = false,
 }) => {
-  const { mergedVideoStatus, mergedVideoUrl, mergedVideoError, aspectRatio } =
-    sequence;
+  const { mergedVideoStatus, mergedVideoUrl, aspectRatio } = sequence;
   const posthog = usePostHog();
+
+  const { completed, pending, failed } = countByStatus(frames);
 
   const handleCopyVideoUrl = useCallback(async () => {
     if (!mergedVideoUrl) return;
     try {
       await navigator.clipboard.writeText(mergedVideoUrl);
       toast.success('Video URL copied');
-      posthog.capture('video_url_copied', {
-        sequence_id: sequence.id,
-      });
+      posthog.capture('video_url_copied', { sequence_id: sequence.id });
     } catch (err) {
       toast.error('Failed to copy URL');
       posthog.captureException(err);
@@ -62,103 +79,97 @@ export const TheatreView: React.FC<TheatreViewProps> = ({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    posthog.capture('video_downloaded', {
-      sequence_id: sequence.id,
-    });
+    posthog.capture('video_downloaded', { sequence_id: sequence.id });
   }, [mergedVideoUrl, sequence.id, sequence.title, posthog]);
 
-  // Merging state
-  if (mergedVideoStatus === 'merging') {
+  if (completed === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-muted-foreground">Merging video segments…</p>
+        <Film className="h-8 w-8 text-muted-foreground" />
+        <p className="text-muted-foreground">No motion clips yet</p>
+        <p className="text-sm text-muted-foreground max-w-md text-center">
+          {pending > 0
+            ? `Waiting for ${pending} motion ${pending === 1 ? 'clip' : 'clips'} to render…`
+            : 'Generate motion for at least one scene to start previewing.'}
+        </p>
       </div>
     );
   }
 
-  // Completed state - show video
-  if (mergedVideoStatus === 'completed' && mergedVideoUrl) {
-    return (
-      <div className="relative">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute top-2 right-2 z-10 h-8 w-8 bg-black/50 text-white hover:bg-black/70"
-              aria-label="Share"
-            >
-              <Share2 className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => void handleCopyVideoUrl()}>
-              <Link className="h-4 w-4" />
-              Copy video URL
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleDownloadVideo}>
-              <Download className="h-4 w-4" />
-              Download video
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <VideoPlayer src={mergedVideoUrl} aspectRatio={aspectRatio} />
-      </div>
-    );
-  }
+  const isMerging = mergedVideoStatus === 'merging';
+  const hasMergedVideo = mergedVideoStatus === 'completed' && !!mergedVideoUrl;
+  const mergeFailed = mergedVideoStatus === 'failed';
 
-  // Failed state
-  if (mergedVideoStatus === 'failed') {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16">
-        <AlertCircle className="h-8 w-8 text-destructive" />
-        <p className="text-destructive">Failed to merge video</p>
-        {mergedVideoError && (
-          <p className="text-sm text-muted-foreground max-w-md text-center">
-            {mergedVideoError}
-          </p>
-        )}
-        {onGenerateMergedVideo && (
-          <Button onClick={onGenerateMergedVideo} disabled={isGenerating}>
-            {isGenerating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Retrying…
-              </>
-            ) : (
-              'Retry Merge'
-            )}
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  // Pending state - no merged video yet
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-16">
-      <Film className="h-8 w-8 text-muted-foreground" />
-      <p className="text-muted-foreground">No merged video yet</p>
-      <p className="text-sm text-muted-foreground max-w-md text-center">
-        The merged video will be generated automatically once all motion
-        segments are complete.
-      </p>
-      {onGenerateMergedVideo && (
-        <Button
-          variant="outline"
-          onClick={onGenerateMergedVideo}
-          disabled={isGenerating}
-        >
-          {isGenerating ? (
+    <div className="relative">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 z-10 h-8 w-8 bg-black/50 text-white hover:bg-black/70"
+            aria-label="Share"
+          >
+            <Share2 className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {hasMergedVideo && (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating…
+              <DropdownMenuItem onClick={() => void handleCopyVideoUrl()}>
+                <Link className="h-4 w-4" />
+                Copy video URL
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleDownloadVideo}>
+                <Download className="h-4 w-4" />
+                Download video
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
             </>
-          ) : (
-            'Generate Now'
           )}
-        </Button>
+          {onGenerateMergedVideo && (
+            <DropdownMenuItem
+              onClick={onGenerateMergedVideo}
+              disabled={isGenerating || isMerging}
+            >
+              {isGenerating || isMerging ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {hasMergedVideo
+                ? 'Re-render shareable MP4'
+                : mergeFailed
+                  ? 'Retry shareable MP4'
+                  : 'Render shareable MP4'}
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <SequencePlayer
+        sequenceId={sequence.id}
+        frames={frames}
+        musicUrl={sequence.musicUrl}
+        aspectRatio={aspectRatio}
+        posterUrl={sequence.posterUrl}
+      />
+
+      {(pending > 0 || failed > 0) && (
+        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+          {pending > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {pending} clip{pending === 1 ? '' : 's'} still rendering
+            </span>
+          )}
+          {failed > 0 && (
+            <span className="inline-flex items-center gap-1 text-destructive">
+              <AlertCircle className="h-3 w-3" />
+              {failed} clip{failed === 1 ? '' : 's'} failed
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
