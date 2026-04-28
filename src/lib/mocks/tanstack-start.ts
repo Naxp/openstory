@@ -90,3 +90,16 @@ export function createServerOnlyFn(handler?: (...args: any[]) => any) {
 export function getRequestHeaders(): Record<string, string> {
   return {};
 }
+
+// TanStack Start's default-entry/server.ts imports these from
+// @tanstack/react-start/server and calls createStartHandler() at module
+// top-level. Storybook's Vite SSR transform follows that import chain when
+// it touches anything in this aliased module, so we provide no-op stubs to
+// keep evaluation from throwing. They never run real handlers in Storybook.
+export const defaultStreamHandler = (
+  _ctx?: unknown
+): Promise<Response> | Response => new Response(null);
+
+export function createStartHandler<T>(_handler: T): () => Response {
+  return () => new Response(null);
+}
