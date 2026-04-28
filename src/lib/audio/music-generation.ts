@@ -107,15 +107,21 @@ const AUDIO_CALL_BUILDERS: Partial<Record<AudioModel, AudioCallBuilder>> = {
   }),
 
   // fal-ai/ace-step-1.5: prompt + lyrics + duration. No `instrumental` flag —
-  // empty `lyrics` produces an instrumental track.
-  ace_step_1_5: (options, config) => ({
-    prompt: options.tags ?? options.prompt,
-    duration: clampDuration(options.duration, config),
-    modelOptions: {
-      ...(options.lyrics ? { lyrics: options.lyrics } : {}),
-      ...(options.steps ? { num_inference_steps: options.steps } : {}),
-    },
-  }),
+  // per fal docs, the way to force no vocals is `lyrics: '[Instrumental]'`.
+  // Leaving `lyrics` empty/unset lets the built-in LM auto-write vocals.
+  ace_step_1_5: (options, config) => {
+    const isInstrumental = options.instrumental ?? true;
+    const lyrics =
+      options.lyrics ?? (isInstrumental ? '[Instrumental]' : undefined);
+    return {
+      prompt: options.tags ?? options.prompt,
+      duration: clampDuration(options.duration, config),
+      modelOptions: {
+        ...(lyrics !== undefined ? { lyrics } : {}),
+        ...(options.steps ? { num_inference_steps: options.steps } : {}),
+      },
+    };
+  },
 
   // fal-ai/elevenlabs/music: adapter maps `duration` -> `music_length_ms` (ms).
   elevenlabs_music: (options, config) => ({
