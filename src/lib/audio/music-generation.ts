@@ -72,6 +72,13 @@ function clampDuration(
 
 type AudioCallShape = {
   prompt: string;
+  /**
+   * Pass `duration` (seconds) only for models whose API actually accepts a
+   * duration field — falAudio maps this to `music_length_ms` for ElevenLabs
+   * and to bare `duration` elsewhere. Models without a duration parameter
+   * (Lyria 2, Minimax Music v2) must omit this or fal will 422.
+   */
+  duration?: number;
   modelOptions: Record<string, unknown>;
 };
 
@@ -82,44 +89,41 @@ type AudioCallBuilder = (
 
 /**
  * Per-model builders that turn `GenerateMusicOptions` into the shape required
- * by `generateAudio`. The `falAudio` adapter handles `prompt` and `duration`
- * (mapping the latter to `music_length_ms` for ElevenLabs Music), so we only
- * forward model-specific parameters via `modelOptions`.
+ * by `generateAudio`. Builders are the source of truth for which fields each
+ * fal endpoint actually accepts. Only models that support a `duration` field
+ * are included — fixed-length endpoints have been removed from the registry.
  */
 const AUDIO_CALL_BUILDERS: Partial<Record<AudioModel, AudioCallBuilder>> = {
-  ace_step: (options) => {
-    const lyrics =
-      options.instrumental && !options.lyrics
-        ? '[inst]'
-        : (options.lyrics ?? '[inst]');
-
-    return {
-      prompt: options.tags ?? options.prompt,
-      modelOptions: {
-        lyrics,
-        instrumental: options.instrumental ?? true,
-        number_of_steps: options.steps ?? 27,
-        scheduler: 'euler',
-        guidance_type: 'apg',
-      },
-    };
-  },
-
-  elevenlabs_music: (options) => ({
-    prompt: options.prompt,
+  // fal-ai/ace-step/prompt-to-audio: prompt + duration (seconds) + standard CFG knobs.
+  ace_step: (options, config) => ({
+    prompt: options.tags ?? options.prompt,
+    duration: clampDuration(options.duration, config),
     modelOptions: {
-      force_instrumental: options.instrumental ?? true,
+      instrumental: options.instrumental ?? true,
+      number_of_steps: options.steps ?? 27,
+      scheduler: 'euler',
+      guidance_type: 'apg',
     },
   }),
 
-  minimax_music_v2: (options) => ({
-    prompt: options.prompt,
-    modelOptions: {},
+  // fal-ai/ace-step-1.5: prompt + lyrics + duration. No `instrumental` flag —
+  // empty `lyrics` produces an instrumental track.
+  ace_step_1_5: (options, config) => ({
+    prompt: options.tags ?? options.prompt,
+    duration: clampDuration(options.duration, config),
+    modelOptions: {
+      ...(options.lyrics ? { lyrics: options.lyrics } : {}),
+      ...(options.steps ? { num_inference_steps: options.steps } : {}),
+    },
   }),
 
-  lyria_2: (options) => ({
+  // fal-ai/elevenlabs/music: adapter maps `duration` -> `music_length_ms` (ms).
+  elevenlabs_music: (options, config) => ({
     prompt: options.prompt,
-    modelOptions: {},
+    duration: clampDuration(options.duration, config),
+    modelOptions: {
+      force_instrumental: options.instrumental ?? true,
+    },
   }),
 };
 
@@ -170,15 +174,18 @@ async function callFalAudio(
     throw new Error(`No audio call builder for model: ${modelKey}`);
   }
 
-  const { prompt, modelOptions } = builder(options, modelConfig);
-  const duration = clampDuration(options.duration, modelConfig);
+  const shape = builder(options, modelConfig);
+  // For cost estimation, use the builder's duration (models that accept one)
+  // or fall back to the requested/default duration (fixed-length models).
+  const billedDuration =
+    shape.duration ?? clampDuration(options.duration, modelConfig);
 
   console.log(
     `[Music Service] Generating music with model: ${modelConfig.id}`,
     {
       provider: modelConfig.provider,
-      promptLength: prompt.length,
-      duration,
+      promptLength: shape.prompt.length,
+      duration: shape.duration ?? '(fixed by model)',
     }
   );
 
@@ -189,9 +196,9 @@ async function callFalAudio(
   const adapter = falAudio(modelConfig.id, { apiKey: falApiKeyInfo.key });
   const result = await generateAudio({
     adapter,
-    prompt,
-    duration,
-    modelOptions,
+    prompt: shape.prompt,
+    duration: shape.duration,
+    modelOptions: shape.modelOptions,
   });
 
   if (!result.audio.url) {
@@ -201,7 +208,7 @@ async function callFalAudio(
 
   const cost = calculateAudioCost({
     endpointId: modelConfig.id,
-    durationSeconds: duration,
+    durationSeconds: billedDuration,
   });
 
   return {
@@ -211,7 +218,7 @@ async function callFalAudio(
     metadata: {
       model: modelConfig.id,
       provider: modelConfig.provider,
-      duration,
+      duration: billedDuration,
       cost,
       generatedAt: new Date().toISOString(),
       usedOwnKey: falApiKeyInfo.source === 'team',
