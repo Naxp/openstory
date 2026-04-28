@@ -1,4 +1,3 @@
-import '@hyperframes/player';
 import type { HyperframesPlayer } from '@hyperframes/player';
 import {
   type AspectRatio,
@@ -9,6 +8,17 @@ import { cn } from '@/lib/utils';
 import type { Frame } from '@/types/database';
 import { useEffect, useRef } from 'react';
 import { useSequenceComposition } from './sequence-composition';
+
+// Browser-only registration of <hyperframes-player>. The package's top-level
+// code calls customElements.define() which is undefined on the server, so we
+// lazy-import on first client mount. The element renders as unknown briefly,
+// then gets upgraded by the platform once registration resolves.
+let registrationPromise: Promise<unknown> | null = null;
+const ensureRegistered = (): Promise<unknown> => {
+  if (typeof window === 'undefined') return Promise.resolve();
+  registrationPromise ??= import('@hyperframes/player');
+  return registrationPromise;
+};
 
 declare module 'react' {
   namespace JSX {
@@ -71,6 +81,7 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
 
   useEffect(() => {
     if (!hasContent) return;
+    void ensureRegistered();
     const el = playerRef.current;
     if (!el) return;
 
