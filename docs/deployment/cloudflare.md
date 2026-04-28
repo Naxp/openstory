@@ -27,13 +27,13 @@ This uses the Cloudflare Vite plugin instead of the default Nitro/Bun preset.
 
 Set these in your Cloudflare Pages dashboard:
 
-| Variable | Description |
-|----------|-------------|
+| Variable             | Description                   |
+| -------------------- | ----------------------------- |
 | `TURSO_DATABASE_URL` | Production Turso database URL |
-| `TURSO_AUTH_TOKEN` | Turso authentication token |
-| `R2_BUCKET_NAME` | R2 bucket for media storage |
-| `BETTER_AUTH_SECRET` | Secret for authentication |
-| `APP_URL` | Your production URL |
+| `TURSO_AUTH_TOKEN`   | Turso authentication token    |
+| `R2_BUCKET_NAME`     | R2 bucket for media storage   |
+| `BETTER_AUTH_SECRET` | Secret for authentication     |
+| `APP_URL`            | Your production URL           |
 
 ## R2 Storage
 

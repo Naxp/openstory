@@ -31,17 +31,17 @@ During regeneration, a loading spinner replaces the image with "Regenerating cha
 
 All properties are automatically extracted from your script:
 
-| Property | Description |
-|----------|-------------|
-| **Name** | Character's name |
-| **Age** | Approximate age |
-| **Gender** | Character's gender |
-| **Ethnicity** | Ethnic background |
-| **Physical Description** | Detailed physical appearance |
-| **Standard Clothing** | Default wardrobe |
-| **Distinguishing Features** | Unique visual identifiers |
-| **First Appears** | Scene number and line where the character first appears, with the quoted text |
-| **Consistency Tag** | Internal tag used to maintain visual consistency across scenes (shown as a monospace code badge) |
+| Property                    | Description                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Name**                    | Character's name                                                                                 |
+| **Age**                     | Approximate age                                                                                  |
+| **Gender**                  | Character's gender                                                                               |
+| **Ethnicity**               | Ethnic background                                                                                |
+| **Physical Description**    | Detailed physical appearance                                                                     |
+| **Standard Clothing**       | Default wardrobe                                                                                 |
+| **Distinguishing Features** | Unique visual identifiers                                                                        |
+| **First Appears**           | Scene number and line where the character first appears, with the quoted text                    |
+| **Consistency Tag**         | Internal tag used to maintain visual consistency across scenes (shown as a monospace code badge) |
 
 ### Casting Status
 

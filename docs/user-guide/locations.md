@@ -28,19 +28,19 @@ A 16:9 reference image generated from the script's location description. This im
 
 All properties are automatically extracted from your script:
 
-| Property | Description |
-|----------|-------------|
-| **Name** | Location name |
-| **Type** | Interior, Exterior, or Interior/Exterior |
-| **Time of Day** | Default lighting context |
-| **Description** | Detailed setting description |
-| **Architectural Style** | Building and structural aesthetic |
-| **Key Features** | Notable visual elements |
-| **Color Palette** | Dominant colors for the setting |
-| **Lighting Setup** | Default lighting configuration |
-| **Ambiance** | Overall mood and atmosphere |
-| **First Appears** | Scene number and line where the location first appears, with quoted text |
-| **Consistency Tag** | Internal tag for maintaining visual consistency (shown as monospace code badge) |
+| Property                | Description                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| **Name**                | Location name                                                                   |
+| **Type**                | Interior, Exterior, or Interior/Exterior                                        |
+| **Time of Day**         | Default lighting context                                                        |
+| **Description**         | Detailed setting description                                                    |
+| **Architectural Style** | Building and structural aesthetic                                               |
+| **Key Features**        | Notable visual elements                                                         |
+| **Color Palette**       | Dominant colors for the setting                                                 |
+| **Lighting Setup**      | Default lighting configuration                                                  |
+| **Ambiance**            | Overall mood and atmosphere                                                     |
+| **First Appears**       | Scene number and line where the location first appears, with quoted text        |
+| **Consistency Tag**     | Internal tag for maintaining visual consistency (shown as monospace code badge) |
 
 ### Frame Count
 

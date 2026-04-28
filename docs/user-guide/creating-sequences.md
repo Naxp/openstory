@@ -33,13 +33,13 @@ For short scripts (under ~1000 characters), OpenStory nudges you to enhance befo
 
 Before enhancing, you choose a **target video duration**:
 
-| Preset | Duration |
-|--------|----------|
-| 15s | 15 seconds |
-| 30s | 30 seconds |
-| 1m | 1 minute |
-| 2m | 2 minutes |
-| 3m | 3 minutes |
+| Preset | Duration   |
+| ------ | ---------- |
+| 15s    | 15 seconds |
+| 30s    | 30 seconds |
+| 1m     | 1 minute   |
+| 2m     | 2 minutes  |
+| 3m     | 3 minutes  |
 
 The enhanced script streams in real-time. You can:
 
@@ -49,9 +49,9 @@ The enhanced script streams in real-time. You can:
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd + Enter` | Generate sequence |
+| Shortcut           | Action                  |
+| ------------------ | ----------------------- |
+| `Cmd + Enter`      | Generate sequence       |
 | `Esc` or `Cmd + .` | Stop script enhancement |
 
 ## Generation Settings
@@ -62,11 +62,11 @@ Click the settings button in the control bar to configure all generation paramet
 
 Choose the output aspect ratio for all generated images and videos:
 
-| Ratio | Use Case |
-|-------|----------|
-| **16:9** | Landscape — standard widescreen video |
+| Ratio    | Use Case                                                 |
+| -------- | -------------------------------------------------------- |
+| **16:9** | Landscape — standard widescreen video                    |
 | **9:16** | Portrait — vertical/mobile video (TikTok, Reels, Shorts) |
-| **1:1** | Square — social media posts |
+| **1:1**  | Square — social media posts                              |
 
 ### Analysis Model
 
@@ -78,32 +78,32 @@ When multiple models are selected, the footer shows "N sequences will be created
 
 The AI model for generating scene images. You can select **multiple image models** to generate variant images across different providers. Available models include:
 
-| Model | Provider | Notes |
-|-------|----------|-------|
-| Nano Banana 2 | Google | Fast generation and editing (default) |
-| Nano Banana Pro | Google | Enhanced realism and typography |
-| Grok Imagine Image | Grok | Aesthetic generation with low censoring |
-| FLUX.2 Max | Black Forest Labs | Exceptional realism and consistency |
-| Phota | Phota | Character consistency via profiles |
-| Hunyuan Image v3 | Tencent | Open source with strong composition |
-| FLUX.2 Dev | Black Forest Labs | Open source, 32B open weights |
-| Qwen Image 2 Pro | Alibaba | Apache 2.0, native 2K, text rendering |
-| HiDream I1 | HiDream | MIT licensed, 17B parameters |
-| Seedream 5 | ByteDance | Unified generation and editing |
+| Model              | Provider          | Notes                                   |
+| ------------------ | ----------------- | --------------------------------------- |
+| Nano Banana 2      | Google            | Fast generation and editing (default)   |
+| Nano Banana Pro    | Google            | Enhanced realism and typography         |
+| Grok Imagine Image | Grok              | Aesthetic generation with low censoring |
+| FLUX.2 Max         | Black Forest Labs | Exceptional realism and consistency     |
+| Phota              | Phota             | Character consistency via profiles      |
+| Hunyuan Image v3   | Tencent           | Open source with strong composition     |
+| FLUX.2 Dev         | Black Forest Labs | Open source, 32B open weights           |
+| Qwen Image 2 Pro   | Alibaba           | Apache 2.0, native 2K, text rendering   |
+| HiDream I1         | HiDream           | MIT licensed, 17B parameters            |
+| Seedream 5         | ByteDance         | Unified generation and editing          |
 
 ### Motion Model
 
 The AI model for image-to-video animation. Toggle **Auto-generate motion** to automatically create video clips for each scene after images are generated.
 
-| Model | Provider | Est. Time |
-|-------|----------|-----------|
-| LTX 2.3 Pro | Lightricks | ~15s (open-source) |
-| Veo 3.1 | Google | ~25s |
-| Kling v3 Pro | Kling | ~20s (default) |
-| Grok Imagine Video | Grok | ~20s |
-| MiniMax Hailuo 02 | MiniMax | ~15s |
-| Seedance 1.5 Pro | ByteDance | ~12s |
-| Seedance 2 | ByteDance | ~20s (animation styles only) |
+| Model              | Provider   | Est. Time                    |
+| ------------------ | ---------- | ---------------------------- |
+| LTX 2.3 Pro        | Lightricks | ~15s (open-source)           |
+| Veo 3.1            | Google     | ~25s                         |
+| Kling v3 Pro       | Kling      | ~20s (default)               |
+| Grok Imagine Video | Grok       | ~20s                         |
+| MiniMax Hailuo 02  | MiniMax    | ~15s                         |
+| Seedance 1.5 Pro   | ByteDance  | ~12s                         |
+| Seedance 2         | ByteDance  | ~20s (animation styles only) |
 
 Some motion models are restricted to specific style categories (e.g., Seedance 2 requires an animation style).
 
@@ -111,14 +111,14 @@ Some motion models are restricted to specific style categories (e.g., Seedance 2
 
 Toggle **Auto-generate music** to automatically create a soundtrack after scene generation. Choose from:
 
-| Model | Provider | Max Duration | Type |
-|-------|----------|-------------|------|
-| ElevenLabs Music | ElevenLabs | 600s | Music (default) |
-| MiniMax Music v2 | MiniMax | 300s | Music (supports lyrics) |
-| ACE-Step 1.5 | ACE Studio | 240s | Music (open-source) |
-| Lyria 2 | Google | 30s | Music |
-| MMAudio V2 | MMAudio | 8s | SFX (video-to-audio) |
-| ElevenLabs SFX | ElevenLabs | 22s | Sound Effects |
+| Model            | Provider   | Max Duration | Type                    |
+| ---------------- | ---------- | ------------ | ----------------------- |
+| ElevenLabs Music | ElevenLabs | 600s         | Music (default)         |
+| MiniMax Music v2 | MiniMax    | 300s         | Music (supports lyrics) |
+| ACE-Step 1.5     | ACE Studio | 240s         | Music (open-source)     |
+| Lyria 2          | Google     | 30s          | Music                   |
+| MMAudio V2       | MMAudio    | 8s           | SFX (video-to-audio)    |
+| ElevenLabs SFX   | ElevenLabs | 22s          | Sound Effects           |
 
 ## Pre-Generation Options
 

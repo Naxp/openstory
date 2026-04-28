@@ -44,10 +44,10 @@ A **Generate Now** button is available if you want to trigger the merge manually
 
 The theatre player automatically sizes based on your sequence's aspect ratio:
 
-| Ratio | Behavior |
-|-------|----------|
-| **16:9** | Full width, standard widescreen |
+| Ratio    | Behavior                                    |
+| -------- | ------------------------------------------- |
+| **16:9** | Full width, standard widescreen             |
 | **9:16** | Narrow, tall — optimized for mobile preview |
-| **1:1** | Square, centered |
+| **1:1**  | Square, centered                            |
 
 All ratios are constrained to `calc(100dvh - 15rem)` maximum height to fit within the viewport alongside the header and navigation tabs.

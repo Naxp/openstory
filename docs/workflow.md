@@ -334,34 +334,34 @@ Each phase enriches the `Scene` object. The frame's `metadata` column is updated
 
 Events emitted via Upstash Realtime on a per-sequence channel (`getGenerationChannel(sequenceId)`).
 
-| Event                                 | When Emitted                                     | Payload                                                               |
-| ------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| `generation.phase:start`              | Before each LLM call or generation phase         | `{ phase, phaseName }`                                                |
-| `generation.phase:complete`           | After each phase completes                       | `{ phase }`                                                           |
-| `generation.poster:ready`             | Storyboard workflow — after poster generated     | `{ posterUrl }`                                                       |
-| `generation.scene:new`                | Phase 1 — progressively as scenes stream in      | `{ sceneId, sceneNumber, title, scriptExtract, durationSeconds }`     |
-| `generation.scene:updated`            | Phase 1 — as scene metadata updates during stream| `{ sceneId, sceneNumber, title, scriptExtract, durationSeconds }`     |
-| `generation.updated`                  | Phase 1 — after title detected in stream         | `{ title }`                                                           |
-| `generation.frame:created`            | Phase 1 — progressively as frames are upserted   | `{ frameId, sceneId, orderIndex }`                                    |
-| `generation.frame:updated`            | Phase 4 — after prompts written to DB            | `{ frameId, updateType, metadata }`                                   |
-| `generation.talent:matched`           | Phase 2 — when talent matched to characters      | `{ matches: [{ characterId, characterName, talentId, talentName }] }` |
-| `generation.talent:unmatched`         | Phase 2 — unused talent after matching           | `{ unusedTalentIds, unusedTalentNames }`                              |
-| `generation.location:matched`         | Phase 2 — when locations matched to library      | `{ matches: [{ locationId, locationName, libraryLocationId, ... }] }` |
-| `generation.image:progress`           | Image workflow — generating/completed/failed     | `{ frameId, status, thumbnailUrl? }`                                  |
-| `generation.variant-image:progress`   | Variant workflow — generating/completed/failed   | `{ frameId, status, variantImageUrl? }`                               |
-| `generation.video:progress`           | Motion workflow — generating/completed/failed    | `{ frameId, status, videoUrl? }`                                      |
-| `generation.audio:progress`           | Music workflow — generating/completed/failed     | `{ status, audioUrl? }`                                               |
-| `generation.character-sheet:progress` | Character bible — per character                  | `{ characterId, status, sheetImageUrl? }`                             |
-| `generation.location-sheet:progress`  | Location bible — per location                    | `{ locationId, status, referenceImageUrl? }`                          |
-| `generation.recast:start`             | Recast character — before regenerating frames    | `{ characterId, frameCount }`                                         |
-| `generation.recast:complete`          | Recast character — all frames regenerated        | `{ characterId, successCount, failedCount }`                          |
-| `generation.recast:failed`            | Recast character — on failure                    | `{ characterId, error }`                                              |
-| `generation.recast-location:start`    | Recast location — before regenerating frames     | `{ locationId, frameCount }`                                          |
-| `generation.recast-location:complete` | Recast location — all frames regenerated         | `{ locationId, successCount, failedCount }`                           |
-| `generation.recast-location:failed`   | Recast location — on failure                     | `{ locationId, error }`                                               |
-| `generation.error`                    | On non-fatal workflow error                      | `{ message, phase? }`                                                 |
-| `generation.failed`                   | On workflow failure                              | `{ message }`                                                         |
-| `generation.complete`                 | Storyboard workflow — after everything finishes  | `{ sequenceId }`                                                      |
+| Event                                 | When Emitted                                      | Payload                                                               |
+| ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| `generation.phase:start`              | Before each LLM call or generation phase          | `{ phase, phaseName }`                                                |
+| `generation.phase:complete`           | After each phase completes                        | `{ phase }`                                                           |
+| `generation.poster:ready`             | Storyboard workflow — after poster generated      | `{ posterUrl }`                                                       |
+| `generation.scene:new`                | Phase 1 — progressively as scenes stream in       | `{ sceneId, sceneNumber, title, scriptExtract, durationSeconds }`     |
+| `generation.scene:updated`            | Phase 1 — as scene metadata updates during stream | `{ sceneId, sceneNumber, title, scriptExtract, durationSeconds }`     |
+| `generation.updated`                  | Phase 1 — after title detected in stream          | `{ title }`                                                           |
+| `generation.frame:created`            | Phase 1 — progressively as frames are upserted    | `{ frameId, sceneId, orderIndex }`                                    |
+| `generation.frame:updated`            | Phase 4 — after prompts written to DB             | `{ frameId, updateType, metadata }`                                   |
+| `generation.talent:matched`           | Phase 2 — when talent matched to characters       | `{ matches: [{ characterId, characterName, talentId, talentName }] }` |
+| `generation.talent:unmatched`         | Phase 2 — unused talent after matching            | `{ unusedTalentIds, unusedTalentNames }`                              |
+| `generation.location:matched`         | Phase 2 — when locations matched to library       | `{ matches: [{ locationId, locationName, libraryLocationId, ... }] }` |
+| `generation.image:progress`           | Image workflow — generating/completed/failed      | `{ frameId, status, thumbnailUrl? }`                                  |
+| `generation.variant-image:progress`   | Variant workflow — generating/completed/failed    | `{ frameId, status, variantImageUrl? }`                               |
+| `generation.video:progress`           | Motion workflow — generating/completed/failed     | `{ frameId, status, videoUrl? }`                                      |
+| `generation.audio:progress`           | Music workflow — generating/completed/failed      | `{ status, audioUrl? }`                                               |
+| `generation.character-sheet:progress` | Character bible — per character                   | `{ characterId, status, sheetImageUrl? }`                             |
+| `generation.location-sheet:progress`  | Location bible — per location                     | `{ locationId, status, referenceImageUrl? }`                          |
+| `generation.recast:start`             | Recast character — before regenerating frames     | `{ characterId, frameCount }`                                         |
+| `generation.recast:complete`          | Recast character — all frames regenerated         | `{ characterId, successCount, failedCount }`                          |
+| `generation.recast:failed`            | Recast character — on failure                     | `{ characterId, error }`                                              |
+| `generation.recast-location:start`    | Recast location — before regenerating frames      | `{ locationId, frameCount }`                                          |
+| `generation.recast-location:complete` | Recast location — all frames regenerated          | `{ locationId, successCount, failedCount }`                           |
+| `generation.recast-location:failed`   | Recast location — on failure                      | `{ locationId, error }`                                               |
+| `generation.error`                    | On non-fatal workflow error                       | `{ message, phase? }`                                                 |
+| `generation.failed`                   | On workflow failure                               | `{ message }`                                                         |
+| `generation.complete`                 | Storyboard workflow — after everything finishes   | `{ sequenceId }`                                                      |
 
 ## Error Handling
 
@@ -394,48 +394,48 @@ Sub-workflows (image, motion, music, character bible, location bible, talent mat
 
 ## Key Files Reference
 
-| File                                                   | Purpose                                                   |
-| ------------------------------------------------------ | --------------------------------------------------------- |
-| `src/functions/sequences.ts`                           | Server functions that trigger the pipeline                |
-| `src/lib/workflow/client.ts`                           | `triggerWorkflow()` — QStash integration                  |
-| `src/routes/api/workflows/$.ts`                        | Workflow route registration (`serveMany`)                  |
-| `src/lib/workflows/storyboard-workflow.ts`             | Wrapper: verify, clear, poster, invoke analyze-script     |
-| `src/lib/workflows/analyze-script-workflow.ts`         | Core orchestration (phases 1-5)                           |
-| `src/lib/workflows/scene-split-workflow.ts`            | Phase 1: streaming scene split + preview images           |
-| `src/lib/workflows/constants.ts`                       | `getFalFlowControl()` / `getLLMFlowControl()`             |
-| `src/lib/ai/streaming-scene-parser.ts`                 | Incremental JSON parser for streaming scene creation      |
-| `src/lib/workflow/sanitize-fail-response.ts`           | Error message extraction from QStash failures             |
-| `src/lib/db/helpers/frames.ts`                         | `upsertFrame()` / `bulkInsertFrames()` idempotent helpers |
-| **Extraction + Matching**                              |                                                           |
-| `src/lib/workflows/talent-matching-workflow.ts`        | Character extraction + talent matching sub-workflow        |
-| `src/lib/workflows/location-matching-workflow.ts`      | Location extraction + location matching sub-workflow       |
-| **Reference Generation**                               |                                                           |
-| `src/lib/workflows/character-bible-workflow.ts`        | Character sheet generation (parallel per character)        |
-| `src/lib/workflows/character-sheet-workflow.ts`        | Single character sheet image generation                    |
-| `src/lib/workflows/location-bible-workflow.ts`         | Location sheet generation (parallel per location)          |
-| `src/lib/workflows/location-sheet-workflow.ts`         | Single location reference image generation                 |
-| **Prompt Generation**                                  |                                                           |
-| `src/lib/workflows/visual-prompt-workflow.ts`          | Visual prompt sub-workflow (parallel per scene)             |
-| `src/lib/workflows/visual-prompt-scene-workflow.ts`    | Per-scene visual prompt LLM call                           |
-| `src/lib/workflows/motion-prompt-workflow.ts`          | Motion prompt sub-workflow (parallel per scene)             |
-| `src/lib/workflows/motion-prompt-scene-workflow.ts`    | Per-scene motion prompt LLM call                           |
-| `src/lib/workflows/motion-music-prompts-workflow.ts`   | Orchestrates motion + music prompts in parallel            |
-| `src/lib/workflows/music-prompt-workflow.ts`           | Music design LLM call                                      |
-| **Image Generation**                                   |                                                           |
-| `src/lib/workflows/frame-images-workflow.ts`           | Orchestrates image + variant gen for all scenes            |
-| `src/lib/workflows/image-workflow.ts`                  | Single image generation (Fal.ai)                           |
-| `src/lib/workflows/variant-workflow.ts`                | Shot grid variant generation                               |
-| **Motion + Music Generation**                          |                                                           |
-| `src/lib/workflows/motion-batch-workflow.ts`           | Orchestrates motion + music + merge                        |
-| `src/lib/workflows/motion-workflow.ts`                 | Single motion/video generation (Fal.ai)                    |
-| `src/lib/workflows/music-workflow.ts`                  | Music generation (Fal.ai)                                  |
-| `src/lib/workflows/merge-video-workflow.ts`            | Merge frame videos into sequence video                     |
-| `src/lib/workflows/merge-audio-video-workflow.ts`      | Merge music audio with video                               |
-| **Recasting + Regeneration**                           |                                                           |
-| `src/lib/workflows/recast-character-workflow.ts`       | Recast a character and regenerate affected frames          |
-| `src/lib/workflows/recast-location-workflow.ts`        | Recast a location and regenerate affected frames           |
-| `src/lib/workflows/regenerate-frames-workflow.ts`      | Regenerate specific frames with new prompts                |
-| **Schemas + Events**                                   |                                                           |
-| `src/lib/realtime/index.ts`                            | Real-time event schema and channel helpers                 |
-| `src/lib/ai/scene-analysis.schema.ts`                  | `Scene` type definition                                    |
-| `src/lib/ai/response-schemas.ts`                       | `musicDesignResultSchema` and other LLM response schemas   |
+| File                                                 | Purpose                                                   |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `src/functions/sequences.ts`                         | Server functions that trigger the pipeline                |
+| `src/lib/workflow/client.ts`                         | `triggerWorkflow()` — QStash integration                  |
+| `src/routes/api/workflows/$.ts`                      | Workflow route registration (`serveMany`)                 |
+| `src/lib/workflows/storyboard-workflow.ts`           | Wrapper: verify, clear, poster, invoke analyze-script     |
+| `src/lib/workflows/analyze-script-workflow.ts`       | Core orchestration (phases 1-5)                           |
+| `src/lib/workflows/scene-split-workflow.ts`          | Phase 1: streaming scene split + preview images           |
+| `src/lib/workflows/constants.ts`                     | `getFalFlowControl()` / `getLLMFlowControl()`             |
+| `src/lib/ai/streaming-scene-parser.ts`               | Incremental JSON parser for streaming scene creation      |
+| `src/lib/workflow/sanitize-fail-response.ts`         | Error message extraction from QStash failures             |
+| `src/lib/db/helpers/frames.ts`                       | `upsertFrame()` / `bulkInsertFrames()` idempotent helpers |
+| **Extraction + Matching**                            |                                                           |
+| `src/lib/workflows/talent-matching-workflow.ts`      | Character extraction + talent matching sub-workflow       |
+| `src/lib/workflows/location-matching-workflow.ts`    | Location extraction + location matching sub-workflow      |
+| **Reference Generation**                             |                                                           |
+| `src/lib/workflows/character-bible-workflow.ts`      | Character sheet generation (parallel per character)       |
+| `src/lib/workflows/character-sheet-workflow.ts`      | Single character sheet image generation                   |
+| `src/lib/workflows/location-bible-workflow.ts`       | Location sheet generation (parallel per location)         |
+| `src/lib/workflows/location-sheet-workflow.ts`       | Single location reference image generation                |
+| **Prompt Generation**                                |                                                           |
+| `src/lib/workflows/visual-prompt-workflow.ts`        | Visual prompt sub-workflow (parallel per scene)           |
+| `src/lib/workflows/visual-prompt-scene-workflow.ts`  | Per-scene visual prompt LLM call                          |
+| `src/lib/workflows/motion-prompt-workflow.ts`        | Motion prompt sub-workflow (parallel per scene)           |
+| `src/lib/workflows/motion-prompt-scene-workflow.ts`  | Per-scene motion prompt LLM call                          |
+| `src/lib/workflows/motion-music-prompts-workflow.ts` | Orchestrates motion + music prompts in parallel           |
+| `src/lib/workflows/music-prompt-workflow.ts`         | Music design LLM call                                     |
+| **Image Generation**                                 |                                                           |
+| `src/lib/workflows/frame-images-workflow.ts`         | Orchestrates image + variant gen for all scenes           |
+| `src/lib/workflows/image-workflow.ts`                | Single image generation (Fal.ai)                          |
+| `src/lib/workflows/variant-workflow.ts`              | Shot grid variant generation                              |
+| **Motion + Music Generation**                        |                                                           |
+| `src/lib/workflows/motion-batch-workflow.ts`         | Orchestrates motion + music + merge                       |
+| `src/lib/workflows/motion-workflow.ts`               | Single motion/video generation (Fal.ai)                   |
+| `src/lib/workflows/music-workflow.ts`                | Music generation (Fal.ai)                                 |
+| `src/lib/workflows/merge-video-workflow.ts`          | Merge frame videos into sequence video                    |
+| `src/lib/workflows/merge-audio-video-workflow.ts`    | Merge music audio with video                              |
+| **Recasting + Regeneration**                         |                                                           |
+| `src/lib/workflows/recast-character-workflow.ts`     | Recast a character and regenerate affected frames         |
+| `src/lib/workflows/recast-location-workflow.ts`      | Recast a location and regenerate affected frames          |
+| `src/lib/workflows/regenerate-frames-workflow.ts`    | Regenerate specific frames with new prompts               |
+| **Schemas + Events**                                 |                                                           |
+| `src/lib/realtime/index.ts`                          | Real-time event schema and channel helpers                |
+| `src/lib/ai/scene-analysis.schema.ts`                | `Scene` type definition                                   |
+| `src/lib/ai/response-schemas.ts`                     | `musicDesignResultSchema` and other LLM response schemas  |

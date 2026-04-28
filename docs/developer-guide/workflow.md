@@ -57,10 +57,12 @@ Streams the LLM response and creates frames progressively as scenes arrive:
 Two sub-workflows run in parallel:
 
 **Talent Matching** (`src/lib/workflows/talent-matching-workflow.ts`):
+
 1. Character extraction — LLM identifies characters with physical descriptions and consistency tags
 2. Talent matching — If `suggestedTalentIds` provided, LLM matches characters to talent entries
 
 **Location Matching** (`src/lib/workflows/location-matching-workflow.ts`):
+
 1. Location extraction — LLM identifies locations with descriptions and color palettes
 2. Location matching — If `suggestedLocationIds` provided, LLM matches to library locations
 
@@ -77,11 +79,13 @@ Three sub-workflows run in parallel:
 The key parallelization — two independent strands run simultaneously:
 
 **Frame Images** (`src/lib/workflows/frame-images-workflow.ts`):
+
 - Generates images for each scene with each selected model in parallel
 - After each image, generates shot grid variants
 - Uses character and location reference images for consistency
 
 **Motion + Music Prompts** (`src/lib/workflows/motion-music-prompts-workflow.ts`):
+
 - Snaps durations to video model capabilities upfront
 - Runs motion prompt generation and music design in parallel:
   - Motion prompts: per-scene LLM calls for camera movement and timing
@@ -103,15 +107,15 @@ Only runs if `autoGenerateMotion` is enabled. A single orchestrator handles:
 
 Each phase enriches the Scene object:
 
-| Field | Added By | Description |
-|-------|----------|-------------|
-| `sceneId`, `sceneNumber` | Phase 1 | Unique scene identifiers |
-| `originalScript` | Phase 1 | `{ extract, dialogue }` |
-| `metadata` | Phase 1 | `{ title, durationSeconds, location, timeOfDay, storyBeat }` |
-| `prompts.visual` | Phase 3 | `{ fullPrompt, negativePrompt, components }` |
-| `continuity` | Phase 3 | `{ characterTags, environmentTag, colorPalette, lightingSetup, styleTag }` |
-| `prompts.motion` | Phase 4 | `{ fullPrompt, components, parameters }` |
-| `musicDesign` | Phase 4 | `{ presence, style, mood, atmosphere }` |
+| Field                    | Added By | Description                                                                |
+| ------------------------ | -------- | -------------------------------------------------------------------------- |
+| `sceneId`, `sceneNumber` | Phase 1  | Unique scene identifiers                                                   |
+| `originalScript`         | Phase 1  | `{ extract, dialogue }`                                                    |
+| `metadata`               | Phase 1  | `{ title, durationSeconds, location, timeOfDay, storyBeat }`               |
+| `prompts.visual`         | Phase 3  | `{ fullPrompt, negativePrompt, components }`                               |
+| `continuity`             | Phase 3  | `{ characterTags, environmentTag, colorPalette, lightingSetup, styleTag }` |
+| `prompts.motion`         | Phase 4  | `{ fullPrompt, components, parameters }`                                   |
+| `musicDesign`            | Phase 4  | `{ presence, style, mood, atmosphere }`                                    |
 
 ## Real-Time Events
 
@@ -129,6 +133,7 @@ Events are emitted via Upstash Realtime on a per-sequence channel. Key events:
 ## Error Handling
 
 Each workflow registers a `failureFunction` that:
+
 1. Sanitizes errors via `sanitizeFailResponse()` (extracts inner errors, maps Cloudflare codes, truncates)
 2. Updates the relevant record's status to `failed`
 3. Emits failure events for the UI
@@ -137,16 +142,16 @@ Each workflow registers a `failureFunction` that:
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `src/lib/workflows/storyboard-workflow.ts` | Entry point: verify, poster, invoke |
-| `src/lib/workflows/analyze-script-workflow.ts` | Core orchestration (phases 1-5) |
-| `src/lib/workflows/scene-split-workflow.ts` | Streaming scene split + previews |
-| `src/lib/workflows/talent-matching-workflow.ts` | Character extraction + matching |
-| `src/lib/workflows/location-matching-workflow.ts` | Location extraction + matching |
-| `src/lib/workflows/character-bible-workflow.ts` | Character sheet generation |
-| `src/lib/workflows/location-bible-workflow.ts` | Location sheet generation |
-| `src/lib/workflows/visual-prompt-workflow.ts` | Visual prompt generation |
-| `src/lib/workflows/frame-images-workflow.ts` | Image + variant generation |
-| `src/lib/workflows/motion-music-prompts-workflow.ts` | Motion + music prompt generation |
-| `src/lib/workflows/motion-batch-workflow.ts` | Motion + music gen + merge |
+| File                                                 | Purpose                             |
+| ---------------------------------------------------- | ----------------------------------- |
+| `src/lib/workflows/storyboard-workflow.ts`           | Entry point: verify, poster, invoke |
+| `src/lib/workflows/analyze-script-workflow.ts`       | Core orchestration (phases 1-5)     |
+| `src/lib/workflows/scene-split-workflow.ts`          | Streaming scene split + previews    |
+| `src/lib/workflows/talent-matching-workflow.ts`      | Character extraction + matching     |
+| `src/lib/workflows/location-matching-workflow.ts`    | Location extraction + matching      |
+| `src/lib/workflows/character-bible-workflow.ts`      | Character sheet generation          |
+| `src/lib/workflows/location-bible-workflow.ts`       | Location sheet generation           |
+| `src/lib/workflows/visual-prompt-workflow.ts`        | Visual prompt generation            |
+| `src/lib/workflows/frame-images-workflow.ts`         | Image + variant generation          |
+| `src/lib/workflows/motion-music-prompts-workflow.ts` | Motion + music prompt generation    |
+| `src/lib/workflows/motion-batch-workflow.ts`         | Motion + music gen + merge          |
