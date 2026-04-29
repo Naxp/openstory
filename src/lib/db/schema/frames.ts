@@ -94,6 +94,12 @@ export const frames = sqliteTable(
     }),
     audioError: text('audio_error'),
     audioModel: text('audio_model', { length: 100 }), // Model used for music/audio generation (nullable)
+    // Input-hash staleness tracking — null until the artifact is generated
+    // post-#614. See docs/architecture/workflow-snapshots-and-content-hash-staleness.md.
+    thumbnailInputHash: text('thumbnail_input_hash'),
+    variantImageInputHash: text('variant_image_input_hash'),
+    videoInputHash: text('video_input_hash'),
+    audioInputHash: text('audio_input_hash'),
     /**
      * Stores Scene data at various stages of progressive analysis.
      * Fields are populated progressively across 5 phases.

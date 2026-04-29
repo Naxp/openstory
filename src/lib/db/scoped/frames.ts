@@ -24,6 +24,15 @@ type FrameWithSequence = Frame & {
 
 type FrameOrderBy = 'orderIndex' | 'createdAt' | 'updatedAt';
 
+const FRAME_ARTIFACT_HASH_COLUMNS = {
+  thumbnail: 'thumbnailInputHash',
+  variantImage: 'variantImageInputHash',
+  video: 'videoInputHash',
+  audio: 'audioInputHash',
+} as const satisfies Record<string, keyof Frame>;
+
+export type FrameArtifact = keyof typeof FRAME_ARTIFACT_HASH_COLUMNS;
+
 type FrameFilters = {
   orderBy?: FrameOrderBy;
   ascending?: boolean;
@@ -205,6 +214,32 @@ export function createFramesMethods(db: Database) {
     getByIds: async (frameIds: string[]): Promise<Frame[]> => {
       if (frameIds.length === 0) return [];
       return await db.select().from(frames).where(inArray(frames.id, frameIds));
+    },
+
+    /**
+     * Stage-1 staleness reader: compares the stored input hash against a
+     * caller-provided fresh hash. Returns false when the stored hash is null
+     * (treat as "unknown, not stale") or when no fresh hash is provided.
+     *
+     * The fresh hash is computed by callers via the helpers in
+     * src/lib/ai/input-hash.ts. Auto-resolving references through scopedDb
+     * is part of the workflow-migration step.
+     */
+    isStale: async (
+      frameId: string,
+      artifact: FrameArtifact,
+      currentHash?: string
+    ): Promise<boolean> => {
+      const result = await db
+        .select({
+          hash: frames[FRAME_ARTIFACT_HASH_COLUMNS[artifact]],
+        })
+        .from(frames)
+        .where(eq(frames.id, frameId));
+      const stored = result[0]?.hash ?? null;
+      if (!stored) return false;
+      if (currentHash === undefined) return false;
+      return currentHash !== stored;
     },
 
     getWithSequence: async (
