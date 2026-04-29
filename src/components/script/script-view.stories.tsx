@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
+import { styleKeys } from '@/hooks/use-styles';
 import type { Sequence } from '@/lib/db/schema/sequences';
 import { MOCK_SYSTEM_STYLES } from '@/lib/style/style-templates';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -71,10 +72,9 @@ const createQueryClient = () => {
       },
     },
   });
-  // Match styleKeys.list(teamId) with teamId='demo-team' AND undefined,
-  // covering both the team-scoped and unscoped useStyles() callers.
-  client.setQueryData(['styles', 'list', 'demo-team'], MOCK_SYSTEM_STYLES);
-  client.setQueryData(['styles', 'list', undefined], MOCK_SYSTEM_STYLES);
+  // Cover both the team-scoped and unscoped useStyles() callers.
+  client.setQueryData(styleKeys.list('demo-team'), MOCK_SYSTEM_STYLES);
+  client.setQueryData(styleKeys.list(undefined), MOCK_SYSTEM_STYLES);
   return client;
 };
 

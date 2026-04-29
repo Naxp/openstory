@@ -8,11 +8,10 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const STUB_RUNTIME = path.resolve(__dirname, '../src/lib/mocks/server-stub.ts');
 
 // Module paths whose import graph must NOT enter the Storybook bundle.
-// These are server-only files that drag Node-only deps (posthog-node, OTel,
-// drizzle, fal, qstash, …) into the iframe and crash with "process is not
-// defined" or similar. The createServerFn mock already turns the function
-// bodies into no-ops, so all we need is for the import to resolve to
-// something with the same export names but no real code.
+// These are server-only files that drag Node-only deps into the iframe and
+// crash with "process is not defined" or similar. The createServerFn mock
+// already turns the function bodies into no-ops, so all we need is for the
+// import to resolve to something with the same export names but no real code.
 const SERVER_ONLY_PATTERNS: RegExp[] = [
   /^@\/functions(\/|$)/,
   /^@\/lib\/observability(\/|$)/,
@@ -58,12 +57,10 @@ const collectExportNames = (src: string): Set<string> => {
   const names = new Set<string>();
   const code = stripComments(src);
 
-  // export const/let/var X | export function X | export class X
   const declRe =
     /^export\s+(?:async\s+)?(?:const|let|var|function\*?|class)\s+([A-Za-z_$][\w$]*)/gm;
   for (const m of code.matchAll(declRe)) names.add(m[1]);
 
-  // export { a, b as c } [from '...']
   const groupRe = /^export\s*\{([^}]+)\}/gm;
   for (const m of code.matchAll(groupRe)) {
     for (const part of m[1].split(',')) {
@@ -77,7 +74,6 @@ const collectExportNames = (src: string): Set<string> => {
     }
   }
 
-  // export default … — not a named binding, handled separately
   return names;
 };
 
@@ -88,9 +84,17 @@ export function serverStubPlugin(): Plugin {
     async resolveId(source) {
       if (!matchesServerOnly(source)) return null;
       const fsBase = aliasToFsPath(source);
-      if (!fsBase) return null;
+      if (!fsBase) {
+        throw new Error(
+          `[storybook-server-stub] matched ${source} as server-only but it does not start with the ${TS_ALIAS_PREFIX} alias. Update SERVER_ONLY_PATTERNS or fix the import.`
+        );
+      }
       const real = await resolveSourceFile(fsBase);
-      if (!real) return null;
+      if (!real) {
+        throw new Error(
+          `[storybook-server-stub] matched ${source} as server-only but could not resolve a source file at ${fsBase}.{ts,tsx,/index.ts,/index.tsx}. Update SERVER_ONLY_PATTERNS or fix the import.`
+        );
+      }
       // Encode the real path so `load` can read its exports without
       // re-resolving. Prefix with \0 to mark as virtual (Vite convention).
       return `\0server-stub:${real}`;
