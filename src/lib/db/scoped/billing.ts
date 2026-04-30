@@ -64,7 +64,7 @@ export function createBillingReadMethods(db: Database, teamId: string) {
       await db
         .insert(credits)
         .values({ teamId, balance: 0 })
-        .onConflictDoNothing();
+        .onConflictDoNothing({ target: credits.teamId });
       return ZERO_MICROS;
     }
 
@@ -140,7 +140,7 @@ export function createBillingReadMethods(db: Database, teamId: string) {
     const [inserted] = await db
       .insert(teamBillingSettings)
       .values({ teamId })
-      .onConflictDoNothing()
+      .onConflictDoNothing({ target: teamBillingSettings.teamId })
       .returning();
 
     if (inserted) return inserted;
