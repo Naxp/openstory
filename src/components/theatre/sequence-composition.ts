@@ -64,17 +64,47 @@ export const buildSequenceComposition = ({
 
   const compositionId = escapeAttr(`seq-${sequenceId}`);
 
+  // The hyperframes runtime drives a GSAP timeline registered at
+  // window.__timelines[id]. It does not build one from raw data-* attrs, so
+  // we author one here: tl.call() triggers play/pause on each clip at its
+  // start/end, with tl.set() handling visibility.
+  const timelineScript = `
+      const gsap = window.gsap;
+      const root = document.querySelector('[data-composition-id]');
+      const id = root.getAttribute('data-composition-id');
+      const tl = gsap.timeline({ paused: true });
+      const items = root.querySelectorAll('video[data-start], audio[data-start]');
+      const playMedia = (el) => { try { el.currentTime = 0; const p = el.play(); if (p && p.catch) p.catch(() => {}); } catch (_) {} };
+      const pauseMedia = (el) => { try { el.pause(); el.currentTime = 0; } catch (_) {} };
+      items.forEach((el) => {
+        const start = parseFloat(el.dataset.start) || 0;
+        const dur = parseFloat(el.dataset.duration) || 0;
+        const isVideo = el.tagName === 'VIDEO';
+        gsap.set(el, { autoAlpha: isVideo ? 0 : 1 });
+        if (isVideo) tl.set(el, { autoAlpha: 1 }, start);
+        tl.call(playMedia, [el], start);
+        if (isVideo) tl.set(el, { autoAlpha: 0 }, start + dur);
+        tl.call(pauseMedia, [el], start + dur);
+      });
+      window.__timelines = window.__timelines || {};
+      window.__timelines[id] = tl;`;
+
   const html = `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#stage{position:relative;width:100%;height:100%}#stage video,#stage audio{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}</style>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
   </head>
   <body>
-    <div id="stage" data-composition-id="${compositionId}" data-start="0" data-width="${width}" data-height="${height}">
+    <div id="stage" data-composition-id="${compositionId}" data-width="${width}" data-height="${height}">
       ${clipMarkup}
       ${audioMarkup}
     </div>
+    <script>${timelineScript}</script>
+    <!-- Hyperframes runtime bootstraps on DOMContentLoaded and wires
+         __timelines into a __player object the web component drives. -->
+    <script src="https://cdn.jsdelivr.net/npm/@hyperframes/core/dist/hyperframe.runtime.iife.js"></script>
   </body>
 </html>`;
 

@@ -49,7 +49,7 @@ const completed: Frame[] = [
     orderIndex: 0,
     videoStatus: 'completed',
     videoUrl:
-      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+      'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4',
     durationMs: 5000,
   }),
   frame({
@@ -57,7 +57,7 @@ const completed: Frame[] = [
     orderIndex: 1,
     videoStatus: 'completed',
     videoUrl:
-      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+      'https://test-videos.co.uk/vids/sintel/mp4/h264/360/Sintel_360_10s_1MB.mp4',
     durationMs: 5000,
   }),
 ];
@@ -84,8 +84,7 @@ export const TwoClipsWithMusic: Story = {
   args: {
     sequenceId: 'seq_123',
     frames: completed,
-    musicUrl:
-      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/audio/T-Rex-Roar.mp3',
+    musicUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     aspectRatio: '16:9',
   },
 };
