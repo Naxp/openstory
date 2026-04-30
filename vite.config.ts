@@ -99,7 +99,26 @@ export default defineConfig({
     viteReact(),
   ],
   optimizeDeps: {
+    // Mermaid itself is excluded because pre-bundling its 74MB / 100+ chunks
+    // blocks dev server startup. Its CJS transitive deps must be force-included
+    // so Vite wraps them with proper ESM named-export shims.
     exclude: ['bun', 'mermaid'],
+    include: [
+      '@braintree/sanitize-url',
+      'cytoscape',
+      'cytoscape-cose-bilkent',
+      'cytoscape-fcose',
+      'd3-sankey',
+      'dayjs',
+      'dayjs/plugin/advancedFormat',
+      'dayjs/plugin/customParseFormat',
+      'dayjs/plugin/duration',
+      'dayjs/plugin/isoWeek',
+      'dompurify',
+      'katex',
+      'roughjs',
+      'ts-dedent',
+    ],
   },
   ssr: {
     noExternal: ['@upstash/realtime', '@videojs/react'],

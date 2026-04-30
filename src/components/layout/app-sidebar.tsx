@@ -12,6 +12,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { useLowBalanceWarning } from '@/hooks/use-low-balance-warning';
 import { Route as locationsRoute } from '@/routes/_protected/locations/index';
@@ -19,7 +20,7 @@ import { Route as sequencesRoute } from '@/routes/_protected/sequences/index';
 import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
 import { Route as talentRoute } from '@/routes/_protected/talent/index';
 import { Link } from '@tanstack/react-router';
-import { BookOpen, MapPin, Plus, Users, Video } from 'lucide-react';
+import { LifeBuoy, MapPin, Plus, Users, Video } from 'lucide-react';
 import { CreditBalancePill } from './credit-balance-pill';
 import { UserSidebarFooter } from './user-sidebar-footer';
 
@@ -83,13 +84,16 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Guide">
+            <SidebarMenuButton asChild tooltip="Help">
               <Link to="/docs">
-                <BookOpen />
-                <span>Guide</span>
+                <LifeBuoy />
+                <span>Help</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
+        </SidebarMenu>
+        <SidebarSeparator />
+        <SidebarMenu>
           <UserSidebarFooter />
         </SidebarMenu>
       </SidebarFooter>

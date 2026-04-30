@@ -6,7 +6,7 @@ const docs = defineCollection({
   name: 'docs',
   directory: './docs',
   include:
-    '{getting-started,user-guide/**,developer-guide/**,deployment/**}.md',
+    '{getting-started,user-guide/**,developer-guide/**,deployment/**,support/**}.md',
   schema: z.object({
     title: z.string(),
     description: z.string(),

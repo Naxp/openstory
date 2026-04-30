@@ -7,8 +7,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { UserSidebarFooter } from '@/components/layout/user-sidebar-footer';
+import { getDocsReturnUrl } from '@/lib/docs/docs-referrer';
 import { useRouter } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 
@@ -16,11 +18,8 @@ export function DocsAppSidebar() {
   const router = useRouter();
 
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.history.back();
-    } else {
-      void router.navigate({ to: '/' });
-    }
+    const returnUrl = getDocsReturnUrl();
+    void router.navigate({ href: returnUrl ?? '/' });
   };
 
   return (
@@ -35,6 +34,7 @@ export function DocsAppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+      <SidebarSeparator />
       <SidebarContent>
         <DocsSidebar />
       </SidebarContent>
