@@ -16,21 +16,33 @@ type CharacterMatchInput = Pick<
   'name' | 'characterId' | 'consistencyTag'
 >;
 
-// Normalizes any cased/spaced/punctuated form to a snake_case slug so
-// `"GIRL ONE"` and `"girl_one"` compare equal.
-function slugify(s: string): string {
+// Tokenizes any cased/spaced/punctuated form into a set of snake_case-style
+// word tokens, so `"Subject (Anonymous)"` and `"anonymous_subject_..."`
+// share the {subject, anonymous} tokens regardless of order.
+function tokenize(s: string): string[] {
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function isSubset(needle: string[], haystack: Set<string>): boolean {
+  if (needle.length === 0) return false;
+  return needle.every((t) => haystack.has(t));
 }
 
 /**
  * Boolean: does any tag in `characterTags` refer to this character?
  *
- * Authoritative match key is the slugified `name` — it's stable across
- * recast and is what the LLM is told to emit. `characterId` and
- * `consistencyTag` remain as fallbacks.
+ * Token-subset match: the character's `name` tokens must be a subset of
+ * the tag's tokens (or vice versa for partial references). This is
+ * invariant to case, spaces, punctuation, and word order — so
+ * `"Subject (Anonymous)"` matches `"anonymous_subject_tattooed_..."`,
+ * and `"jack"` no longer accidentally matches `"jacket_of_doom"`.
+ *
+ * `name` is the authoritative match key (stable across recast and what
+ * the LLM is told to emit). `characterId` and `consistencyTag` are
+ * fallbacks for legacy frames whose tags pre-date the prompt fix.
  */
 export function matchCharacterToFrameTags(
   character: CharacterMatchInput,
@@ -38,27 +50,31 @@ export function matchCharacterToFrameTags(
 ): boolean {
   if (characterTags.length === 0) return false;
 
-  const nameSlug = slugify(character.name);
-  const idSlug = slugify(character.characterId);
-  const consistencySlug = character.consistencyTag
-    ? slugify(character.consistencyTag)
-    : '';
+  const nameTokens = tokenize(character.name);
+  const idTokens = tokenize(character.characterId);
+  const consistencyTokens = character.consistencyTag
+    ? tokenize(character.consistencyTag)
+    : [];
 
   return characterTags.some((rawTag) => {
-    const tagSlug = slugify(rawTag);
-    if (!tagSlug) return false;
+    const tagTokens = tokenize(rawTag);
+    if (tagTokens.length === 0) return false;
+    const tagSet = new Set(tagTokens);
 
-    if (nameSlug && tagSlug.includes(nameSlug)) return true;
-    if (nameSlug && tagSlug.length >= 3 && nameSlug.includes(tagSlug))
-      return true;
-    if (idSlug && tagSlug.includes(idSlug)) return true;
-    if (consistencySlug && tagSlug.includes(consistencySlug)) return true;
-    if (
-      consistencySlug &&
-      tagSlug.length >= 3 &&
-      consistencySlug.includes(tagSlug)
-    )
-      return true;
+    // Authoritative: name tokens
+    if (isSubset(nameTokens, tagSet)) return true;
+    // Reverse (partial name reference): tag is just part of the name
+    const nameSet = new Set(nameTokens);
+    if (isSubset(tagTokens, nameSet)) return true;
+
+    // Fallback: characterId — tag must contain every characterId token
+    if (isSubset(idTokens, tagSet)) return true;
+
+    // Fallback: consistencyTag — both directions
+    if (isSubset(consistencyTokens, tagSet)) return true;
+    const consistencySet = new Set(consistencyTokens);
+    if (isSubset(tagTokens, consistencySet)) return true;
+
     return false;
   });
 }

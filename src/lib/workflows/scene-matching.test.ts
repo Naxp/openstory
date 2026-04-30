@@ -105,6 +105,27 @@ describe('matchCharacterToFrameTags', () => {
     });
     expect(matchCharacterToFrameTags(c, ['char_001_in_doorway'])).toBe(true);
   });
+
+  // Regression for sequence 01KQDZ5AY370HAPX736RHRWN0E — the LLM emitted
+  // tokens in reversed order from the character's `name`.
+  it('matches when the LLM reorders the name tokens in the tag', () => {
+    const subject = makeCharacter({
+      name: 'Subject (Anonymous)',
+      characterId: 'char_001',
+      consistencyTag: 'char_001_ben_affleck',
+    });
+    expect(
+      matchCharacterToFrameTags(subject, [
+        'anonymous_subject_tattooed_gold_nosering_vintage_tee',
+      ])
+    ).toBe(true);
+  });
+
+  it('does not false-match when the name is a substring of a different word', () => {
+    const jack = makeCharacter({ name: 'JACK', characterId: 'char_jack' });
+    // Substring matcher would match "jack" inside "jacket"; token matcher must not.
+    expect(matchCharacterToFrameTags(jack, ['jacket_of_doom'])).toBe(false);
+  });
 });
 
 describe('matchCharactersToScene', () => {
