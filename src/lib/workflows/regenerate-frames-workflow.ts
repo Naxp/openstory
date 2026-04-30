@@ -1,15 +1,23 @@
 /**
  * Regenerate Frames Workflow
  *
- * Bulk regenerates frame images after character recast.
- * Includes ALL character sheet references for visual consistency.
+ * Bulk regenerates frame images after character/location recast. Operates
+ * entirely from an inlined snapshot DTO assembled at trigger time — no live
+ * mutable reads inside `context.run`.
+ *
+ * Convergent path (current inputs match snapshot): records `thumbnailInputHash`
+ * on the frame and the matching `frame_variants` row alongside the primary
+ * write that `image-workflow` already performed.
+ * Divergent path (something changed mid-flight): leaves the primary frame
+ * artifact alone and rewrites the per-model `frame_variants` row as a
+ * divergence (input_hash + diverged_at) so the UI can offer it as an
+ * alternative without disturbing the user's live thumbnail.
+ *
+ * See docs/architecture/workflow-snapshots-and-content-hash-staleness.md.
  */
 
 import { DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
-import { matchLocationsToFrame } from '@/lib/db/scoped/sequence-locations';
-import { buildCharacterReferenceImages } from '@/lib/prompts/character-prompt';
-import { buildLocationReferenceImages } from '@/lib/prompts/location-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
@@ -18,19 +26,23 @@ import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { RegenerateFramesWorkflowInput } from '@/lib/workflow/types';
 import { getFalFlowControl } from './constants';
 import { generateImageWorkflow } from './image-workflow';
-import { matchCharactersToScene } from './scene-matching';
+import {
+  buildConvergentWrites,
+  buildDivergentWrites,
+  buildRegenerateFrameSnapshot,
+  computeRegenerateFramesBatchHash,
+  emitRecastEvent,
+} from './regenerate-frames-snapshot';
 
-type FrameResult = {
-  frameId: string;
-  success: boolean;
-  imageUrl?: string;
-  error?: string;
-};
+type FrameResult =
+  | { frameId: string; success: true; imageUrl: string }
+  | { frameId: string; success: false; error: string };
 
 type RegenerateFramesResult = {
   totalFrames: number;
   successCount: number;
   failedFrames: string[];
+  divergedFrameIds: string[];
 };
 
 export const regenerateFramesWorkflow = createScopedWorkflow<
@@ -39,95 +51,73 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
 >(
   async (context, scopedDb) => {
     const input = context.requestPayload;
-    const { sequenceId, frameIds, userId, teamId, triggeringCharacterId } =
-      input;
+    const { sequenceId, teamId, triggerKind, triggerId } = input;
     const label = buildWorkflowLabel(sequenceId);
 
     if (!sequenceId) {
       throw new WorkflowValidationError('Sequence ID is required');
     }
 
-    const sequence = await context.run('get-sequence', async () => {
-      const seq = await scopedDb.sequences.getById(sequenceId);
-      if (!seq) {
-        throw new WorkflowValidationError(`Sequence ${sequenceId} not found`);
+    // Re-validate the snapshot hash inside the workflow body. The middleware
+    // also checks at start, but Upstash routes middleware throws to
+    // console.error without re-raising — this throw propagates via context.run
+    // and triggers the failureFunction.
+    await context.run('validate-snapshot', async () => {
+      if (context.snapshot) {
+        await context.snapshot.validate();
       }
-      return seq;
     });
 
-    const allCharacters = await context.run('get-all-characters', async () => {
-      const chars = await scopedDb.characters.listWithSheets(sequenceId);
-      console.log(
-        '[RegenerateFramesWorkflow]',
-        `Found ${chars.length} characters with completed sheets`
-      );
-      return chars;
-    });
-
-    const allLocations = await context.run('get-all-locations', async () => {
-      const locs =
-        await scopedDb.sequenceLocations.listWithReferences(sequenceId);
-      console.log(
-        '[RegenerateFramesWorkflow]',
-        `Found ${locs.length} locations with completed reference images`
-      );
-      return locs;
-    });
-
-    const framesToRegenerate = await context.run('get-frames', async () => {
-      const frames = await scopedDb.frames.getByIds(frameIds);
-      console.log(
-        '[RegenerateFramesWorkflow]',
-        `Found ${frames.length}/${frameIds.length} frames to regenerate`
-      );
-      return frames;
-    });
-
-    if (framesToRegenerate.length === 0) {
-      return { totalFrames: 0, successCount: 0, failedFrames: [] };
+    const snapshots = input.frameSnapshots;
+    if (snapshots.length === 0) {
+      return {
+        totalFrames: 0,
+        successCount: 0,
+        failedFrames: [],
+        divergedFrameIds: [],
+      };
     }
 
+    const imageModel = input.imageModel ?? DEFAULT_IMAGE_MODEL;
+    const aspectRatio = input.aspectRatio;
+
     await context.run('emit-start', async () => {
-      await getGenerationChannel(sequenceId).emit('generation.recast:start', {
-        characterId: triggeringCharacterId,
-        frameCount: framesToRegenerate.length,
+      await emitRecastEvent({
+        kind: triggerKind,
+        event: 'start',
+        sequenceId,
+        triggerId,
+        frameCount: snapshots.length,
       });
     });
 
-    const imageModel = input.imageModel ?? DEFAULT_IMAGE_MODEL;
-    const imageSize = aspectRatioToImageSize(sequence.aspectRatio);
-
     const imageResults: FrameResult[] = await Promise.all(
-      framesToRegenerate.map(async (frame) => {
-        if (!frame.imagePrompt) {
-          throw new WorkflowValidationError(
-            `Frame ${frame.id} has no image prompt`
-          );
+      snapshots.map(async (snapshot): Promise<FrameResult> => {
+        if (!snapshot.imagePrompt) {
+          // Per-frame failure — peer frames in the batch should still run.
+          return {
+            frameId: snapshot.frameId,
+            success: false,
+            error: 'no image prompt',
+          };
         }
 
-        const characterTags = frame.metadata?.continuity?.characterTags ?? [];
-        const frameCharacters = matchCharactersToScene(
-          allCharacters,
-          characterTags
-        );
-        const frameLocations = matchLocationsToFrame(frame, allLocations);
-
         const referenceImages = [
-          ...buildCharacterReferenceImages(frameCharacters),
-          ...buildLocationReferenceImages(frameLocations),
+          ...snapshot.characterRefs,
+          ...snapshot.locationRefs,
         ];
 
         const { body, isFailed, isCanceled } = await context.invoke('image', {
           workflow: generateImageWorkflow,
           label,
           body: {
-            userId,
+            userId: input.userId,
             teamId,
             sequenceId,
-            frameId: frame.id,
-            prompt: frame.imagePrompt,
+            frameId: snapshot.frameId,
+            prompt: snapshot.imagePrompt,
             model: imageModel,
-            imageSize,
+            imageSize: aspectRatioToImageSize(aspectRatio),
             numImages: 1,
             referenceImages,
           },
@@ -138,20 +128,128 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
 
         // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
         if (isFailed || isCanceled || !body?.imageUrl) {
+          const reason = isCanceled
+            ? 'canceled'
+            : isFailed
+              ? 'failed'
+              : 'no imageUrl';
+          console.error(
+            '[RegenerateFramesWorkflow]',
+            `Image generation failed frame=${snapshot.frameId} reason=${reason}`
+          );
           return {
-            frameId: frame.id,
+            frameId: snapshot.frameId,
             success: false,
-            error: 'Image generation failed',
+            error: `Image generation ${reason}`,
           };
         }
 
         return {
-          frameId: frame.id,
+          frameId: snapshot.frameId,
           success: true,
           imageUrl: body.imageUrl,
         };
       })
     );
+
+    const divergedFrameIds: string[] = [];
+
+    await context.run('reconcile-divergence', async () => {
+      const allCharacters =
+        await scopedDb.characters.listWithSheets(sequenceId);
+      const allLocations =
+        await scopedDb.sequenceLocations.listWithReferences(sequenceId);
+
+      for (const result of imageResults) {
+        if (!result.success) continue;
+
+        const snapshot = snapshots.find((s) => s.frameId === result.frameId);
+        if (!snapshot) {
+          // Invariant: imageResults is built from snapshots, so this should
+          // never fire. If it does, that's a corruption bug worth surfacing.
+          throw new Error(
+            `[RegenerateFramesWorkflow] Reconcile invariant: imageResults produced frameId=${result.frameId} not in snapshots`
+          );
+        }
+
+        const liveFrame = await scopedDb.frames.getById(result.frameId);
+        if (!liveFrame) {
+          // Frame was deleted mid-flight. The speculative thumbnail was
+          // already written by image-workflow, but its row is gone — there's
+          // nothing left to reconcile. Log so the count drift is traceable.
+          console.warn(
+            '[RegenerateFramesWorkflow]',
+            `Frame ${result.frameId} deleted mid-flight; skipping reconciliation`
+          );
+          continue;
+        }
+
+        const currentSnapshot = await buildRegenerateFrameSnapshot({
+          frame: liveFrame,
+          characters: allCharacters,
+          locations: allLocations,
+          imageModel,
+          aspectRatio,
+        });
+
+        if (currentSnapshot.snapshotInputHash === snapshot.snapshotInputHash) {
+          const writes = buildConvergentWrites(snapshot.snapshotInputHash);
+          await scopedDb.frames.update(result.frameId, writes.frame);
+          const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+            result.frameId,
+            'image',
+            imageModel,
+            writes.variant
+          );
+          if (!updated) {
+            throw new Error(
+              `Convergent reconcile: no frame_variants row for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`
+            );
+          }
+          continue;
+        }
+
+        // Divergent path. Order matters: revert the speculative primary
+        // thumbnail FIRST, then tag the variant. If the revert fails (DB
+        // error, missing row), we abort before tagging — leaving the variant
+        // un-flagged is better than the inverse, where the UI would say
+        // "diverged" while the speculative thumbnail still owned the primary.
+        const divergedAt = new Date();
+        const writes = buildDivergentWrites(
+          snapshot.snapshotInputHash,
+          divergedAt
+        );
+
+        await scopedDb.frames.update(result.frameId, writes.frame);
+
+        const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+          result.frameId,
+          'image',
+          imageModel,
+          writes.variant
+        );
+        if (!updated) {
+          throw new Error(
+            `Divergent reconcile: no frame_variants row for frame=${result.frameId} model=${imageModel} — cannot tag divergence without an existing variant row.`
+          );
+        }
+        divergedFrameIds.push(result.frameId);
+
+        await getGenerationChannel(sequenceId).emit(
+          'generation.image:progress',
+          {
+            frameId: result.frameId,
+            status: 'pending',
+            model: imageModel,
+          }
+        );
+
+        console.log(
+          '[RegenerateFramesWorkflow]',
+          `Diverged frame ${result.frameId}: snapshot=${snapshot.snapshotInputHash.slice(0, 8)} current=${currentSnapshot.snapshotInputHash.slice(0, 8)}`
+        );
+      }
+    });
 
     const failedFrames = imageResults
       .filter((r) => !r.success)
@@ -159,25 +257,26 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
     const successCount = imageResults.length - failedFrames.length;
 
     await context.run('emit-complete', async () => {
-      await getGenerationChannel(sequenceId).emit(
-        'generation.recast:complete',
-        {
-          characterId: triggeringCharacterId,
-          successCount,
-          failedCount: failedFrames.length,
-        }
-      );
+      await emitRecastEvent({
+        kind: triggerKind,
+        event: 'complete',
+        sequenceId,
+        triggerId,
+        successCount,
+        failedCount: failedFrames.length,
+      });
     });
 
     console.log(
       '[RegenerateFramesWorkflow]',
-      `Completed: ${successCount} success, ${failedFrames.length} failed`
+      `Completed: ${successCount} success, ${failedFrames.length} failed, ${divergedFrameIds.length} diverged`
     );
 
     return {
-      totalFrames: framesToRegenerate.length,
+      totalFrames: snapshots.length,
       successCount,
       failedFrames,
+      divergedFrameIds,
     };
   },
   {
@@ -185,13 +284,15 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
       const input = context.requestPayload;
       const error = sanitizeFailResponse(failResponse);
 
-      await getGenerationChannel(input.sequenceId).emit(
-        'generation.recast:failed',
-        {
-          characterId: input.triggeringCharacterId,
+      if (input.sequenceId) {
+        await emitRecastEvent({
+          kind: input.triggerKind,
+          event: 'failed',
+          sequenceId: input.sequenceId,
+          triggerId: input.triggerId,
           error,
-        }
-      );
+        });
+      }
 
       console.error(
         '[RegenerateFramesWorkflow]',
@@ -199,6 +300,40 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
       );
 
       return `Frame regeneration failed: ${error}`;
+    },
+    snapshot: {
+      computeFromDto: (input) => computeRegenerateFramesBatchHash(input),
+      computeCurrent: async (input, scopedDb) => {
+        if (!input.sequenceId) {
+          throw new WorkflowValidationError(
+            'Sequence ID is required for snapshot computation'
+          );
+        }
+        const characters = await scopedDb.characters.listWithSheets(
+          input.sequenceId
+        );
+        const locations = await scopedDb.sequenceLocations.listWithReferences(
+          input.sequenceId
+        );
+        const frames = await scopedDb.frames.getByIds(input.frameIds);
+        const aspectRatio = input.aspectRatio;
+        const imageModel = input.imageModel ?? DEFAULT_IMAGE_MODEL;
+        const fresh = await Promise.all(
+          frames.map((frame) =>
+            buildRegenerateFrameSnapshot({
+              frame,
+              characters,
+              locations,
+              imageModel,
+              aspectRatio,
+            })
+          )
+        );
+        return computeRegenerateFramesBatchHash({
+          ...input,
+          frameSnapshots: fresh,
+        });
+      },
     },
   }
 );
