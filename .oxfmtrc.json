@@ -8,6 +8,7 @@
   "useTabs": false,
   "ignorePatterns": [
     "public/mockServiceWorker.js",
+    "public/vendor/**",
     "*.gen.ts",
     ".vscode/**",
     "bun.lockb",
