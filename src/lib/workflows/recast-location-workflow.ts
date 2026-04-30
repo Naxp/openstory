@@ -89,6 +89,19 @@ export const recastLocationWorkflow =
               scopedDb.sequenceLocations.listWithReferences(sequenceId),
               scopedDb.frames.getByIds(input.affectedFrameIds),
             ]);
+            // Reject silent drops: getByIds returns only existing rows, so a
+            // missing frame would shrink frameSnapshots below frameIds without
+            // any signal. Surface the gap so the caller can fix data drift
+            // instead of zero-counting frames that never ran.
+            if (frames.length !== input.affectedFrameIds.length) {
+              const found = new Set(frames.map((f) => f.id));
+              const missing = input.affectedFrameIds.filter(
+                (id) => !found.has(id)
+              );
+              throw new Error(
+                `[RecastLocationWorkflow] Missing frames for ${input.locationName}: ${missing.join(', ')}`
+              );
+            }
             const aspectRatio = sequence.aspectRatio;
             const frameSnapshots = await Promise.all(
               frames.map((frame) =>

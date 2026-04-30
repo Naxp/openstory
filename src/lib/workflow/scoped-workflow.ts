@@ -60,19 +60,18 @@ export type SnapshotContext = {
   computeCurrent: () => Promise<string>;
   /**
    * Recomputes the hash from the inlined DTO and throws if it does not match
-   * `snapshotInputHash`. The framework already runs this in `runStarted`
-   * middleware, but Upstash catches middleware throws and routes them to
-   * `console.error` without re-raising — so workflows that need a hard fail
-   * should also call this from inside the body via `context.run`, where the
-   * throw propagates to QStash and triggers the failureFunction.
+   * `snapshotInputHash`. Workflows must call this from inside `context.run`
+   * — Upstash swallows runStarted-middleware throws to `console.error` without
+   * re-raising, so middleware-only validation cannot halt a tampered run.
    */
   validate: () => Promise<void>;
 };
 
 /**
  * Pure validator: recompute hash from DTO and throw if it does not match the
- * payload's `snapshotInputHash`. Shared between the start-time middleware
- * (defence in depth) and the workflow body (the one that actually halts).
+ * payload's `snapshotInputHash`. Called from inside the workflow body (via
+ * `context.snapshot.validate()` in a `context.run`) — middleware-level throws
+ * are swallowed by Upstash and cannot halt a tampered run.
  */
 export async function validateSnapshotPayload<T extends SnapshotInput>(
   payload: T,
@@ -127,20 +126,12 @@ export function createScopedWorkflow<
 
   const middlewares: WorkflowMiddleware<T, TResult>[] = [teamIdValidation];
 
+  // No snapshot-validation middleware: Upstash routes middleware throws to
+  // console.error without re-raising, so a runStarted-only check cannot halt
+  // a tampered run. Validation happens inside the workflow body via
+  // `context.snapshot.validate()` wrapped in `context.run`, where the throw
+  // propagates to QStash and triggers the failureFunction.
   const snapshotConfig = options?.snapshot;
-  if (snapshotConfig) {
-    const snapshotValidation = new WorkflowMiddleware<T, TResult>({
-      name: 'snapshot-validation',
-      callbacks: {
-        runStarted: async ({ context }) => {
-          // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- workflow opted into snapshot, so payload must carry SnapshotInput; validateSnapshotPayload checks the runtime shape and throws otherwise
-          const payload = context.requestPayload as T & SnapshotInput;
-          await validateSnapshotPayload(payload, snapshotConfig.computeFromDto);
-        },
-      },
-    });
-    middlewares.push(snapshotValidation);
-  }
 
   return createWorkflow<T, TResult>(
     async (context) => {

@@ -62,10 +62,10 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
       throw new WorkflowValidationError('Sequence ID is required');
     }
 
-    // Re-validate the snapshot hash inside the workflow body. The middleware
-    // also checks at start, but Upstash routes middleware throws to
-    // console.error without re-raising — this throw propagates via context.run
-    // and triggers the failureFunction.
+    // Validate the snapshot hash inside the workflow body. Upstash swallows
+    // runStarted-middleware throws to console.error, so the only place a
+    // tampered payload actually halts the run is inside `context.run`, where
+    // the throw propagates to QStash and triggers the failureFunction.
     await context.run('validate-snapshot', async () => {
       if (context.snapshot) {
         await context.snapshot.validate();
@@ -156,118 +156,183 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
       })
     );
 
-    const divergedFrameIds: string[] = [];
+    // Shared batch reads — pulled out of the per-frame loop so each frame's
+    // reconcile step is independent (one frame's DB blip can't poison the
+    // batch's character/location lookup).
+    const allCharacters = await context.run('load-characters', () =>
+      scopedDb.characters.listWithSheets(sequenceId)
+    );
+    const allLocations = await context.run('load-locations', () =>
+      scopedDb.sequenceLocations.listWithReferences(sequenceId)
+    );
 
-    await context.run('reconcile-divergence', async () => {
-      const allCharacters =
-        await scopedDb.characters.listWithSheets(sequenceId);
-      const allLocations =
-        await scopedDb.sequenceLocations.listWithReferences(sequenceId);
+    type ReconcileOutcome =
+      | { kind: 'convergent' }
+      | { kind: 'divergent' }
+      | { kind: 'skipped-deleted' }
+      | { kind: 'failed'; error: string };
 
-      for (const result of imageResults) {
-        if (!result.success) continue;
+    const reconcileOutcomes = new Map<string, ReconcileOutcome>();
 
-        const snapshot = snapshots.find((s) => s.frameId === result.frameId);
-        if (!snapshot) {
-          // Invariant: imageResults is built from snapshots, so this should
-          // never fire. If it does, that's a corruption bug worth surfacing.
-          throw new Error(
-            `[RegenerateFramesWorkflow] Reconcile invariant: imageResults produced frameId=${result.frameId} not in snapshots`
-          );
-        }
+    // Per-frame `context.run` so a single frame's permanent failure (deleted
+    // mid-flight, missing primary variant row, DB invariant violation) cannot
+    // abort sibling reconciliations or leave earlier writes orphaned. Each
+    // step returns a tagged outcome we can tally; throws inside the step are
+    // caught and converted to a `failed` outcome so the loop continues.
+    for (const result of imageResults) {
+      if (!result.success) continue;
 
-        const liveFrame = await scopedDb.frames.getById(result.frameId);
-        if (!liveFrame) {
-          // Frame was deleted mid-flight. The speculative thumbnail was
-          // already written by image-workflow, but its row is gone — there's
-          // nothing left to reconcile. Log so the count drift is traceable.
-          console.warn(
-            '[RegenerateFramesWorkflow]',
-            `Frame ${result.frameId} deleted mid-flight; skipping reconciliation`
-          );
-          continue;
-        }
-
-        const currentSnapshot = await buildRegenerateFrameSnapshot({
-          frame: liveFrame,
-          characters: allCharacters,
-          locations: allLocations,
-          imageModel,
-          aspectRatio,
-        });
-
-        if (currentSnapshot.snapshotInputHash === snapshot.snapshotInputHash) {
-          const writes = buildConvergentWrites(snapshot.snapshotInputHash);
-          await scopedDb.frames.update(result.frameId, writes.frame);
-          const updated = await scopedDb.frameVariants.updateByFrameAndModel(
-            result.frameId,
-            'image',
-            imageModel,
-            writes.variant
-          );
-          if (!updated) {
-            throw new Error(
-              `Convergent reconcile: no frame_variants row for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`
+      const outcome = await context.run(
+        `reconcile-frame-${result.frameId}`,
+        async (): Promise<ReconcileOutcome> => {
+          try {
+            const snapshot = snapshots.find(
+              (s) => s.frameId === result.frameId
             );
+            if (!snapshot) {
+              // Invariant: imageResults is built from snapshots. Surface as a
+              // failed outcome so sibling frames still reconcile.
+              return {
+                kind: 'failed',
+                error: `imageResults produced frameId=${result.frameId} not in snapshots`,
+              };
+            }
+
+            const liveFrame = await scopedDb.frames.getById(result.frameId);
+            if (!liveFrame) {
+              // Frame was deleted mid-flight. The speculative thumbnail was
+              // already written by image-workflow, but its row is gone —
+              // there's nothing left to reconcile. Skipped, not failed.
+              return { kind: 'skipped-deleted' };
+            }
+
+            const currentSnapshot = await buildRegenerateFrameSnapshot({
+              frame: liveFrame,
+              characters: allCharacters,
+              locations: allLocations,
+              imageModel,
+              aspectRatio,
+            });
+
+            if (
+              currentSnapshot.snapshotInputHash === snapshot.snapshotInputHash
+            ) {
+              const writes = buildConvergentWrites(snapshot.snapshotInputHash);
+              await scopedDb.frames.update(result.frameId, writes.frame);
+              const updated =
+                await scopedDb.frameVariants.updateByFrameAndModel(
+                  result.frameId,
+                  'image',
+                  imageModel,
+                  writes.variant
+                );
+              if (!updated) {
+                return {
+                  kind: 'failed',
+                  error: `Convergent reconcile: no frame_variants row for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`,
+                };
+              }
+              return { kind: 'convergent' };
+            }
+
+            // Divergent path. Read the primary variant first so its R2-tracked
+            // storage fields (storagePath/previewUrl/shotVariantUrl) carry
+            // forward to the divergent alternate — clearing the primary
+            // without copying would leave the speculative R2 object untracked.
+            //
+            // Write order (revert-then-insert):
+            //   1. Revert the speculative primary thumbnail on the frame row.
+            //   2. Revert the speculative URL on the primary variant row so
+            //      the primary slot stops pointing at diverged work.
+            //   3. Insert (or no-op on retry) a divergent alternate row
+            //      preserving the diverged result for comparison/promotion.
+            // Steps 1 and 2 must precede 3: if step 3 fails, the user keeps
+            // ownership of their live edits (no stale primary), at the cost
+            // of losing the diverged result. The inverse would leave the UI
+            // saying "diverged" while the speculative thumbnail still owned
+            // the primary.
+            const primaryVariant =
+              await scopedDb.frameVariants.getByFrameAndModel(
+                result.frameId,
+                'image',
+                imageModel
+              );
+
+            const divergedAt = new Date();
+            const writes = buildDivergentWrites(
+              snapshot.snapshotInputHash,
+              divergedAt
+            );
+
+            await scopedDb.frames.update(result.frameId, writes.frame);
+
+            const reverted = await scopedDb.frameVariants.updateByFrameAndModel(
+              result.frameId,
+              'image',
+              imageModel,
+              writes.primaryRevert
+            );
+            if (!reverted) {
+              return {
+                kind: 'failed',
+                error: `Divergent reconcile: no primary frame_variants row to revert for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`,
+              };
+            }
+
+            await scopedDb.frameVariants.insertDivergent({
+              frameId: result.frameId,
+              sequenceId,
+              variantType: 'image',
+              model: imageModel,
+              url: result.imageUrl,
+              storagePath: primaryVariant?.storagePath ?? null,
+              previewUrl: primaryVariant?.previewUrl ?? null,
+              shotVariantUrl: primaryVariant?.shotVariantUrl ?? null,
+              shotVariantPath: primaryVariant?.shotVariantPath ?? null,
+              ...writes.divergentRow,
+            });
+
+            await getGenerationChannel(sequenceId).emit(
+              'generation.image:progress',
+              {
+                frameId: result.frameId,
+                status: 'pending',
+                model: imageModel,
+              }
+            );
+
+            console.log(
+              '[RegenerateFramesWorkflow]',
+              `Diverged frame ${result.frameId}: snapshot=${snapshot.snapshotInputHash.slice(0, 8)} current=${currentSnapshot.snapshotInputHash.slice(0, 8)}`
+            );
+
+            return { kind: 'divergent' };
+          } catch (err) {
+            return {
+              kind: 'failed',
+              error: err instanceof Error ? err.message : String(err),
+            };
           }
-          continue;
         }
+      );
 
-        // Divergent path. Three writes in order:
-        //   1. Revert the speculative primary thumbnail on the frame row.
-        //   2. Revert the speculative URL on the primary variant row so the
-        //      primary slot stops pointing at diverged work.
-        //   3. Insert a divergent alternate row preserving the diverged
-        //      result so the UI can offer it for comparison/promotion.
-        // Steps 1 and 2 must precede 3: if step 3 fails, the user keeps
-        // ownership of their live edits (no stale primary), at the cost of
-        // losing the diverged result. The inverse would leave the UI saying
-        // "diverged" while the speculative thumbnail still owned the primary.
-        const divergedAt = new Date();
-        const writes = buildDivergentWrites(
-          snapshot.snapshotInputHash,
-          divergedAt
-        );
-
-        await scopedDb.frames.update(result.frameId, writes.frame);
-
-        const reverted = await scopedDb.frameVariants.updateByFrameAndModel(
-          result.frameId,
-          'image',
-          imageModel,
-          writes.primaryRevert
-        );
-        if (!reverted) {
-          throw new Error(
-            `Divergent reconcile: no primary frame_variants row to revert for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`
-          );
-        }
-
-        await scopedDb.frameVariants.insertDivergent({
-          frameId: result.frameId,
-          sequenceId,
-          variantType: 'image',
-          model: imageModel,
-          url: result.imageUrl,
-          ...writes.divergentRow,
-        });
-        divergedFrameIds.push(result.frameId);
-
-        await getGenerationChannel(sequenceId).emit(
-          'generation.image:progress',
-          {
-            frameId: result.frameId,
-            status: 'pending',
-            model: imageModel,
-          }
-        );
-
-        console.log(
+      reconcileOutcomes.set(result.frameId, outcome);
+      if (outcome.kind === 'failed') {
+        console.error(
           '[RegenerateFramesWorkflow]',
-          `Diverged frame ${result.frameId}: snapshot=${snapshot.snapshotInputHash.slice(0, 8)} current=${currentSnapshot.snapshotInputHash.slice(0, 8)}`
+          `Reconcile failed for frame ${result.frameId}: ${outcome.error}`
+        );
+      } else if (outcome.kind === 'skipped-deleted') {
+        console.warn(
+          '[RegenerateFramesWorkflow]',
+          `Frame ${result.frameId} deleted mid-flight; skipping reconciliation`
         );
       }
-    });
+    }
+
+    const divergedFrameIds = [...reconcileOutcomes.entries()]
+      .filter(([, outcome]) => outcome.kind === 'divergent')
+      .map(([frameId]) => frameId);
 
     // Shot variants (the 3x3 grid in the Variants tab) are derived from the
     // primary thumbnail. Image-workflow regenerated the primary; without this
@@ -318,10 +383,30 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
       );
     });
 
-    const failedFrames = imageResults
+    // Success = frames whose primary write was reconciled to the recast
+    // inputs (convergent → primary committed; divergent → alternate row
+    // saved). Image-generation failures, deleted-mid-flight skips, and
+    // reconcile failures are NOT successes — counting them as such would
+    // make the batch summary lie about how many frames were actually updated.
+    const reconciledFrameIds = [...reconcileOutcomes.entries()]
+      .filter(
+        ([, outcome]) =>
+          outcome.kind === 'convergent' || outcome.kind === 'divergent'
+      )
+      .map(([frameId]) => frameId);
+
+    const imageFailedFrameIds = imageResults
       .filter((r) => !r.success)
       .map((r) => r.frameId);
-    const successCount = imageResults.length - failedFrames.length;
+    const reconcileFailedFrameIds = [...reconcileOutcomes.entries()]
+      .filter(([, outcome]) => outcome.kind === 'failed')
+      .map(([frameId]) => frameId);
+    const skippedDeletedFrameIds = [...reconcileOutcomes.entries()]
+      .filter(([, outcome]) => outcome.kind === 'skipped-deleted')
+      .map(([frameId]) => frameId);
+
+    const failedFrames = [...imageFailedFrameIds, ...reconcileFailedFrameIds];
+    const successCount = reconciledFrameIds.length;
 
     await context.run('emit-complete', async () => {
       await emitRecastEvent({
@@ -336,7 +421,7 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
 
     console.log(
       '[RegenerateFramesWorkflow]',
-      `Completed: ${successCount} success, ${failedFrames.length} failed, ${divergedFrameIds.length} diverged`
+      `Completed: ${successCount} success, ${failedFrames.length} failed, ${divergedFrameIds.length} diverged, ${skippedDeletedFrameIds.length} skipped-deleted`
     );
 
     return {
