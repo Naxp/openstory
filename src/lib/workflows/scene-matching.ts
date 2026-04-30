@@ -11,32 +11,70 @@ import type {
   SequenceLocationMinimal,
 } from '@/lib/db/schema';
 
+type CharacterMatchInput = Pick<
+  CharacterMinimal,
+  'name' | 'characterId' | 'consistencyTag'
+>;
+
+// Normalizes any cased/spaced/punctuated form to a snake_case slug so
+// `"GIRL ONE"` and `"girl_one"` compare equal.
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Boolean: does any tag in `characterTags` refer to this character?
+ *
+ * Authoritative match key is the slugified `name` — it's stable across
+ * recast and is what the LLM is told to emit. `characterId` and
+ * `consistencyTag` remain as fallbacks.
+ */
+export function matchCharacterToFrameTags(
+  character: CharacterMatchInput,
+  characterTags: string[]
+): boolean {
+  if (characterTags.length === 0) return false;
+
+  const nameSlug = slugify(character.name);
+  const idSlug = slugify(character.characterId);
+  const consistencySlug = character.consistencyTag
+    ? slugify(character.consistencyTag)
+    : '';
+
+  return characterTags.some((rawTag) => {
+    const tagSlug = slugify(rawTag);
+    if (!tagSlug) return false;
+
+    if (nameSlug && tagSlug.includes(nameSlug)) return true;
+    if (nameSlug && tagSlug.length >= 3 && nameSlug.includes(tagSlug))
+      return true;
+    if (idSlug && tagSlug.includes(idSlug)) return true;
+    if (consistencySlug && tagSlug.includes(consistencySlug)) return true;
+    if (
+      consistencySlug &&
+      tagSlug.length >= 3 &&
+      consistencySlug.includes(tagSlug)
+    )
+      return true;
+    return false;
+  });
+}
+
 /**
  * Match characters to a scene by their continuity tags.
  * Pure function that works in-memory without DB queries.
  */
-export function matchCharactersToScene(
-  allCharacters: CharacterMinimal[],
+export function matchCharactersToScene<T extends CharacterMatchInput>(
+  allCharacters: T[],
   characterTags: string[]
-): CharacterMinimal[] {
+): T[] {
   if (characterTags.length === 0) return [];
-
-  return allCharacters.filter((char) => {
-    const consistencyTag = (char.consistencyTag ?? '').toLowerCase();
-    const charName = char.name.toLowerCase();
-    const charId = char.characterId.toLowerCase();
-
-    return characterTags.some((tag) => {
-      const tagLower = tag.toLowerCase();
-      return (
-        (consistencyTag && tagLower.includes(consistencyTag)) ||
-        (consistencyTag && consistencyTag.includes(tagLower)) ||
-        tagLower.includes(charName) ||
-        (charName.includes(tagLower) && tagLower.length >= 3) ||
-        tagLower.includes(charId)
-      );
-    });
-  });
+  return allCharacters.filter((c) =>
+    matchCharacterToFrameTags(c, characterTags)
+  );
 }
 
 /**

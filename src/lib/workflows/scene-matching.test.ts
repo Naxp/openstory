@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import type { SequenceElementMinimal } from '@/lib/db/schema';
-import { matchElementsToScene } from './scene-matching';
+import type { CharacterMinimal, SequenceElementMinimal } from '@/lib/db/schema';
+import {
+  matchCharacterToFrameTags,
+  matchCharactersToScene,
+  matchElementsToScene,
+} from './scene-matching';
 
 const elements: SequenceElementMinimal[] = [
   {
@@ -18,6 +22,113 @@ const elements: SequenceElementMinimal[] = [
     consistencyTag: 'silver-bottle',
   },
 ];
+
+// Helper: build a CharacterMinimal with sane defaults so tests can override
+// just the fields they care about.
+function makeCharacter(
+  overrides: Partial<CharacterMinimal> & {
+    name: string;
+    characterId: string;
+  }
+): CharacterMinimal {
+  return {
+    id: 'id_' + overrides.characterId,
+    sheetImageUrl: null,
+    sheetStatus: 'completed',
+    physicalDescription: null,
+    consistencyTag: null,
+    ...overrides,
+  };
+}
+
+describe('matchCharacterToFrameTags', () => {
+  // Regression for sequence 01KQE5DTXJ93PB463JNW85TJV5: name "GIRL ONE" must
+  // match snake_case tag emitted by the LLM.
+  it('matches a spaced uppercase name against a snake_case tag', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL ONE',
+      characterId: 'char_girl_one',
+      consistencyTag: 'char_girl_one_scarlett_johansson',
+    });
+    expect(
+      matchCharacterToFrameTags(girlOne, [
+        'girl_one_late_teens_bathroom_morning',
+      ])
+    ).toBe(true);
+  });
+
+  it('matches when the tag is exactly the name slug', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL ONE',
+      characterId: 'char_girl_one',
+    });
+    expect(matchCharacterToFrameTags(girlOne, ['girl_one'])).toBe(true);
+  });
+
+  it('is invariant to hyphens and other punctuation in the name', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL-ONE',
+      characterId: 'char_girl_one',
+    });
+    expect(matchCharacterToFrameTags(girlOne, ['girl_one'])).toBe(true);
+  });
+
+  it('does not match unrelated sibling characters', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL ONE',
+      characterId: 'char_girl_one',
+    });
+    expect(matchCharacterToFrameTags(girlOne, ['boy_two_running'])).toBe(false);
+  });
+
+  it('returns false for an empty tags array', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL ONE',
+      characterId: 'char_girl_one',
+    });
+    expect(matchCharacterToFrameTags(girlOne, [])).toBe(false);
+  });
+
+  it('rejects very short tags on the reverse direction', () => {
+    const girlOne = makeCharacter({
+      name: 'GIRL ONE',
+      characterId: 'char_girl_one',
+    });
+    // Slugifies to "a" — would match "girl_one" reverse-direction without the floor
+    expect(matchCharacterToFrameTags(girlOne, ['a'])).toBe(false);
+  });
+
+  it('matches via characterId fallback when name slug differs', () => {
+    const c = makeCharacter({
+      name: 'Unnamed Stranger',
+      characterId: 'char_001',
+    });
+    expect(matchCharacterToFrameTags(c, ['char_001_in_doorway'])).toBe(true);
+  });
+});
+
+describe('matchCharactersToScene', () => {
+  it('agrees with the singular matcher for the same input', () => {
+    const cast = [
+      makeCharacter({ name: 'GIRL ONE', characterId: 'char_girl_one' }),
+      makeCharacter({ name: 'GIRL TWO', characterId: 'char_girl_two' }),
+      makeCharacter({ name: 'BOY ONE', characterId: 'char_boy_one' }),
+    ];
+    const tags = ['girl_one_bathroom', 'girl_two_lip_gloss'];
+    const matched = matchCharactersToScene(cast, tags);
+    expect(matched.map((c) => c.name).sort()).toEqual(['GIRL ONE', 'GIRL TWO']);
+    for (const c of cast) {
+      expect(matched.includes(c)).toBe(matchCharacterToFrameTags(c, tags));
+    }
+  });
+
+  it('returns an empty array when there are no tags', () => {
+    const cast = [
+      makeCharacter({ name: 'GIRL ONE', characterId: 'char_girl_one' }),
+    ];
+    expect(matchCharactersToScene(cast, [])).toEqual([]);
+  });
+});
 
 describe('matchElementsToScene', () => {
   it('matches by elementTags primary path', () => {
