@@ -1,5 +1,6 @@
 import { getEnv } from '#env';
 import { getProductionDeploymentAppUrl } from '@/lib/utils/environment';
+import { DocsReferrerTracker } from '@/components/docs/docs-referrer-tracker';
 import { DefaultNotFound } from '@/components/error/default-not-found';
 import { Providers } from '@/components/providers';
 import { Button } from '@/components/ui/button';
@@ -156,6 +157,7 @@ function RootLayout() {
       </head>
       <body>
         <Providers queryClient={queryClient}>
+          <DocsReferrerTracker />
           <Outlet />
         </Providers>
         <Scripts />

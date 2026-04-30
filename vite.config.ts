@@ -1,5 +1,6 @@
 // vite.config.ts
 import { cloudflare } from '@cloudflare/vite-plugin';
+import contentCollections from '@content-collections/vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import { nitro } from 'nitro/vite';
 import { visualizer } from 'rollup-plugin-visualizer';
@@ -62,6 +63,7 @@ export default defineConfig({
     host: true,
   },
   plugins: [
+    contentCollections(),
     isDev && devtools(),
     reflectMetadataPolyfill(),
     tailwindcss(),
@@ -97,7 +99,26 @@ export default defineConfig({
     viteReact(),
   ],
   optimizeDeps: {
-    exclude: ['bun'],
+    // Mermaid itself is excluded because pre-bundling its 74MB / 100+ chunks
+    // blocks dev server startup. Its CJS transitive deps must be force-included
+    // so Vite wraps them with proper ESM named-export shims.
+    exclude: ['bun', 'mermaid'],
+    include: [
+      '@braintree/sanitize-url',
+      'cytoscape',
+      'cytoscape-cose-bilkent',
+      'cytoscape-fcose',
+      'd3-sankey',
+      'dayjs',
+      'dayjs/plugin/advancedFormat',
+      'dayjs/plugin/customParseFormat',
+      'dayjs/plugin/duration',
+      'dayjs/plugin/isoWeek',
+      'dompurify',
+      'katex',
+      'roughjs',
+      'ts-dedent',
+    ],
   },
   ssr: {
     noExternal: ['@upstash/realtime', '@videojs/react'],
