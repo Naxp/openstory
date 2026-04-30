@@ -200,15 +200,31 @@ export function buildConvergentWrites(snapshotInputHash: string): {
 }
 
 /**
- * Writes to apply when current inputs no longer match the snapshot. Tags the
- * variant row as a divergence and reverts the speculative primary thumbnail
- * back to `pending` so the next reconciliation regenerates from current
- * inputs and the user's live edits keep ownership.
+ * Writes to apply when current inputs no longer match the snapshot.
+ *
+ *   - `frame`: revert the speculative primary thumbnail on the frame row
+ *     back to `pending` so the next reconciliation regenerates from current
+ *     inputs.
+ *   - `primaryRevert`: clear the speculative URL/status that image-workflow
+ *     pre-wrote to the primary variant row, so the primary slot stops
+ *     pointing at diverged work.
+ *   - `divergentRow`: partial payload for an INSERT that preserves the
+ *     diverged result as an alternate. The workflow supplies frameId,
+ *     sequenceId, variantType, model, and the speculative url; this helper
+ *     supplies the divergence-specific fields so the alternate is
+ *     identifiable in the divergent partial unique index.
  */
 export function buildDivergentWrites(
   snapshotInputHash: string,
   divergedAt: Date
-): { frame: Partial<NewFrame>; variant: Partial<NewFrameVariant> } {
+): {
+  frame: Partial<NewFrame>;
+  primaryRevert: Partial<NewFrameVariant>;
+  divergentRow: Partial<NewFrameVariant> & {
+    inputHash: string;
+    divergedAt: Date;
+  };
+} {
   return {
     frame: {
       thumbnailUrl: null,
@@ -219,6 +235,20 @@ export function buildDivergentWrites(
       thumbnailError: null,
       thumbnailInputHash: null,
     },
-    variant: { inputHash: snapshotInputHash, divergedAt },
+    primaryRevert: {
+      url: null,
+      storagePath: null,
+      previewUrl: null,
+      status: 'pending',
+      workflowRunId: null,
+      generatedAt: null,
+      error: null,
+      inputHash: null,
+    },
+    divergentRow: {
+      inputHash: snapshotInputHash,
+      divergedAt,
+      status: 'completed',
+    },
   };
 }

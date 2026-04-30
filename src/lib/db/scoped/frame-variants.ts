@@ -84,6 +84,10 @@ export function createFrameVariantsMethods(db: Database) {
             frameVariants.variantType,
             frameVariants.model,
           ],
+          // Targets the primary partial unique index; divergent alternates
+          // (divergedAt IS NOT NULL) sit in a separate index and are never
+          // touched by upsert.
+          targetWhere: sql`${frameVariants.divergedAt} IS NULL`,
           set: {
             url: sql.raw(`excluded."url"`),
             storagePath: sql.raw(`excluded."storage_path"`),
@@ -123,6 +127,8 @@ export function createFrameVariantsMethods(db: Database) {
       model: string,
       data: Partial<NewFrameVariant>
     ): Promise<FrameVariant | null> => {
+      // Scoped to the primary row (divergedAt IS NULL) so divergent alternates
+      // sharing the same (frame, type, model) triple are never overwritten.
       const result = await db
         .update(frameVariants)
         .set({ ...data, updatedAt: new Date() })
@@ -130,11 +136,25 @@ export function createFrameVariantsMethods(db: Database) {
           and(
             eq(frameVariants.frameId, frameId),
             eq(frameVariants.variantType, variantType),
-            eq(frameVariants.model, model)
+            eq(frameVariants.model, model),
+            sql`${frameVariants.divergedAt} IS NULL`
           )
         )
         .returning();
       return result.at(0) ?? null;
+    },
+
+    /**
+     * Insert a divergent alternate row. Each call creates a new row keyed by
+     * inputHash within the divergent partial unique index — re-inserting with
+     * the same (frame, type, model, inputHash) will throw, which is correct:
+     * identical inputs do not produce a new alternate.
+     */
+    insertDivergent: async (
+      data: NewFrameVariant & { inputHash: string; divergedAt: Date }
+    ): Promise<FrameVariant> => {
+      const [variant] = await db.insert(frameVariants).values(data).returning();
+      return variant;
     },
 
     isStale: async (

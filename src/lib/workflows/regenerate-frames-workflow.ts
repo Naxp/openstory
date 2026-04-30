@@ -209,10 +209,15 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
           continue;
         }
 
-        // Divergent path. Order matters: revert the speculative primary
-        // thumbnail FIRST, then tag the variant. If the revert fails (DB
-        // error, missing row), we abort before tagging — leaving the variant
-        // un-flagged is better than the inverse, where the UI would say
+        // Divergent path. Three writes in order:
+        //   1. Revert the speculative primary thumbnail on the frame row.
+        //   2. Revert the speculative URL on the primary variant row so the
+        //      primary slot stops pointing at diverged work.
+        //   3. Insert a divergent alternate row preserving the diverged
+        //      result so the UI can offer it for comparison/promotion.
+        // Steps 1 and 2 must precede 3: if step 3 fails, the user keeps
+        // ownership of their live edits (no stale primary), at the cost of
+        // losing the diverged result. The inverse would leave the UI saying
         // "diverged" while the speculative thumbnail still owned the primary.
         const divergedAt = new Date();
         const writes = buildDivergentWrites(
@@ -222,17 +227,26 @@ export const regenerateFramesWorkflow = createScopedWorkflow<
 
         await scopedDb.frames.update(result.frameId, writes.frame);
 
-        const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+        const reverted = await scopedDb.frameVariants.updateByFrameAndModel(
           result.frameId,
           'image',
           imageModel,
-          writes.variant
+          writes.primaryRevert
         );
-        if (!updated) {
+        if (!reverted) {
           throw new Error(
-            `Divergent reconcile: no frame_variants row for frame=${result.frameId} model=${imageModel} — cannot tag divergence without an existing variant row.`
+            `Divergent reconcile: no primary frame_variants row to revert for frame=${result.frameId} model=${imageModel} — image-workflow's dual-write must run before regenerate-frames reconciles.`
           );
         }
+
+        await scopedDb.frameVariants.insertDivergent({
+          frameId: result.frameId,
+          sequenceId,
+          variantType: 'image',
+          model: imageModel,
+          url: result.imageUrl,
+          ...writes.divergentRow,
+        });
         divergedFrameIds.push(result.frameId);
 
         await getGenerationChannel(sequenceId).emit(

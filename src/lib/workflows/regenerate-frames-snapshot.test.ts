@@ -302,11 +302,11 @@ describe('buildConvergentWrites', () => {
 });
 
 describe('buildDivergentWrites', () => {
-  it('reverts the speculative primary thumbnail and tags variant divergence', () => {
+  it('reverts the speculative primary (frame + variant) and emits an alternate row payload', () => {
     const at = new Date('2026-04-30T00:00:00Z');
     const writes = buildDivergentWrites('hash-xyz', at);
 
-    // Primary thumbnail must be fully cleared so the next reconciliation
+    // Frame row: primary thumbnail fully cleared so the next reconciliation
     // regenerates from current inputs and the user's live edits keep
     // ownership.
     expect(writes.frame).toEqual({
@@ -318,9 +318,26 @@ describe('buildDivergentWrites', () => {
       thumbnailError: null,
       thumbnailInputHash: null,
     });
-    expect(writes.variant).toEqual({
+
+    // Primary variant row: speculative URL/status cleared so the primary
+    // slot stops pointing at the diverged work that image-workflow pre-wrote.
+    expect(writes.primaryRevert).toEqual({
+      url: null,
+      storagePath: null,
+      previewUrl: null,
+      status: 'pending',
+      workflowRunId: null,
+      generatedAt: null,
+      error: null,
+      inputHash: null,
+    });
+
+    // Alternate row: divergence-specific fields. The workflow supplies
+    // frameId/sequenceId/variantType/model/url; the helper marks divergence.
+    expect(writes.divergentRow).toEqual({
       inputHash: 'hash-xyz',
       divergedAt: at,
+      status: 'completed',
     });
   });
 });
