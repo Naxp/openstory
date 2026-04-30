@@ -11,6 +11,7 @@ pre-commit:
       exclude:
         - src/routeTree.gen.ts
         - public/mockServiceWorker.js
+        - public/vendor/**
       run: bun run --bun oxlint --type-aware --quiet {staged_files}
       stage_fixed: true
     format:
@@ -18,6 +19,7 @@ pre-commit:
       exclude:
         - src/routeTree.gen.ts
         - public/mockServiceWorker.js
+        - public/vendor/**
       run: bun run --bun oxfmt --write {staged_files}
       stage_fixed: true
     typecheck:

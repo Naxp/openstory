@@ -47,6 +47,7 @@ import { Route as ProtectedLocationsLocationIdRouteImport } from './routes/_prot
 import { Route as ProtectedAdminUsageRouteImport } from './routes/_protected/admin/usage'
 import { Route as ProtectedAdminEvalRouteImport } from './routes/_protected/admin/eval'
 import { Route as ProtectedSequencesIdRouteRouteImport } from './routes/_protected/sequences/$id/route'
+import { Route as ApiSequencesIdCompositionDothtmlRouteImport } from './routes/api/sequences/$id/composition[.]html'
 import { Route as ProtectedSequencesIdTheatreRouteImport } from './routes/_protected/sequences/$id/theatre'
 import { Route as ProtectedSequencesIdScriptRouteImport } from './routes/_protected/sequences/$id/script'
 import { Route as ProtectedSequencesIdScenesRouteImport } from './routes/_protected/sequences/$id/scenes'
@@ -248,6 +249,12 @@ const ProtectedSequencesIdRouteRoute =
     path: '/sequences/$id',
     getParentRoute: () => ProtectedRouteRoute,
   } as any)
+const ApiSequencesIdCompositionDothtmlRoute =
+  ApiSequencesIdCompositionDothtmlRouteImport.update({
+    id: '/api/sequences/$id/composition.html',
+    path: '/api/sequences/$id/composition.html',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ProtectedSequencesIdTheatreRoute =
   ProtectedSequencesIdTheatreRouteImport.update({
     id: '/theatre',
@@ -344,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
   '/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
   '/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/api/sequences/$id/composition.html': typeof ApiSequencesIdCompositionDothtmlRoute
   '/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
   '/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
   '/sequences/$id/cast/': typeof ProtectedSequencesIdCastIndexRoute
@@ -389,6 +397,7 @@ export interface FileRoutesByTo {
   '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
   '/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
   '/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/api/sequences/$id/composition.html': typeof ApiSequencesIdCompositionDothtmlRoute
   '/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
   '/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
   '/sequences/$id/cast': typeof ProtectedSequencesIdCastIndexRoute
@@ -439,6 +448,7 @@ export interface FileRoutesById {
   '/_protected/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
   '/_protected/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
   '/_protected/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/api/sequences/$id/composition.html': typeof ApiSequencesIdCompositionDothtmlRoute
   '/_protected/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
   '/_protected/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
   '/_protected/sequences/$id/cast/': typeof ProtectedSequencesIdCastIndexRoute
@@ -487,6 +497,7 @@ export interface FileRouteTypes {
     | '/sequences/$id/scenes'
     | '/sequences/$id/script'
     | '/sequences/$id/theatre'
+    | '/api/sequences/$id/composition.html'
     | '/sequences/$id/cast/$characterId'
     | '/sequences/$id/locations/$locationId'
     | '/sequences/$id/cast/'
@@ -532,6 +543,7 @@ export interface FileRouteTypes {
     | '/sequences/$id/scenes'
     | '/sequences/$id/script'
     | '/sequences/$id/theatre'
+    | '/api/sequences/$id/composition.html'
     | '/sequences/$id/cast/$characterId'
     | '/sequences/$id/locations/$locationId'
     | '/sequences/$id/cast'
@@ -581,6 +593,7 @@ export interface FileRouteTypes {
     | '/_protected/sequences/$id/scenes'
     | '/_protected/sequences/$id/script'
     | '/_protected/sequences/$id/theatre'
+    | '/api/sequences/$id/composition.html'
     | '/_protected/sequences/$id/cast/$characterId'
     | '/_protected/sequences/$id/locations/$locationId'
     | '/_protected/sequences/$id/cast/'
@@ -606,6 +619,7 @@ export interface RootRouteChildren {
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiTestImageRoute: typeof ApiTestImageRoute
   ApiWorkflowsSplatRoute: typeof ApiWorkflowsSplatRoute
+  ApiSequencesIdCompositionDothtmlRoute: typeof ApiSequencesIdCompositionDothtmlRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -876,6 +890,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedSequencesIdRouteRouteImport
       parentRoute: typeof ProtectedRouteRoute
     }
+    '/api/sequences/$id/composition.html': {
+      id: '/api/sequences/$id/composition.html'
+      path: '/api/sequences/$id/composition.html'
+      fullPath: '/api/sequences/$id/composition.html'
+      preLoaderRoute: typeof ApiSequencesIdCompositionDothtmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_protected/sequences/$id/theatre': {
       id: '/_protected/sequences/$id/theatre'
       path: '/theatre'
@@ -1085,6 +1106,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiTestImageRoute: ApiTestImageRoute,
   ApiWorkflowsSplatRoute: ApiWorkflowsSplatRoute,
+  ApiSequencesIdCompositionDothtmlRoute: ApiSequencesIdCompositionDothtmlRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

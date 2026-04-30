@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Frame } from '@/types/database';
 import { useEffect, useRef } from 'react';
-import { useSequenceComposition } from './sequence-composition';
+import { useSequenceCompositionSrc } from './sequence-composition';
 
 // Browser-only registration of <hyperframes-player>. The package's top-level
 // code calls customElements.define() which is undefined on the server, so we
@@ -66,7 +66,7 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
   onEnded,
   onReady,
 }) => {
-  const { html, playableFrameCount } = useSequenceComposition({
+  const { src, playableFrameCount } = useSequenceCompositionSrc({
     sequenceId,
     frames,
     musicUrl,
@@ -77,7 +77,7 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
   const callbacksRef = useRef({ onTimeUpdate, onEnded, onReady });
   callbacksRef.current = { onTimeUpdate, onEnded, onReady };
 
-  const hasContent = playableFrameCount > 0;
+  const hasContent = playableFrameCount > 0 && src !== null;
 
   useEffect(() => {
     if (!hasContent) return;
@@ -114,7 +114,7 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
   return (
     <hyperframes-player
       ref={playerRef}
-      srcdoc={html}
+      src={src}
       width={width}
       height={height}
       controls={true}

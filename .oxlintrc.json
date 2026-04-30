@@ -13,6 +13,7 @@
   },
   "ignorePatterns": [
     "**/mockServiceWorker.js",
+    "public/vendor/**",
     "*.gen.ts",
     "src/components/ui/**/*.tsx"
   ],

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { Frame } from '@/types/database';
-import { buildSequenceComposition } from './sequence-composition';
+import {
+  buildSequenceComposition,
+  computeCompositionSrc,
+} from './sequence-composition';
 
 const baseFrame = (overrides: Partial<Frame>): Frame =>
   ({
@@ -206,5 +209,123 @@ describe('buildSequenceComposition', () => {
     expect(result.html).not.toMatch(/src="https:\/\/r2\/a\.mp4\?token="/);
     expect(result.html).toContain('&quot;abc&quot;');
     expect(result.html).toContain('&amp;x=1');
+  });
+
+  test('references vendored runtime scripts, not the CDN', () => {
+    const result = buildSequenceComposition({
+      sequenceId: 'seq1',
+      frames: [
+        baseFrame({
+          orderIndex: 0,
+          videoStatus: 'completed',
+          videoUrl: 'https://r2/a.mp4',
+        }),
+      ],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    expect(result.html).toContain(
+      '<script src="/vendor/gsap.min.js"></script>'
+    );
+    expect(result.html).toContain(
+      '<script src="/vendor/hyperframe.runtime.iife.js"></script>'
+    );
+    expect(result.html).not.toContain('cdn.jsdelivr.net');
+  });
+});
+
+describe('computeCompositionSrc', () => {
+  test('returns null src when no playable frames', () => {
+    const result = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    expect(result.src).toBeNull();
+    expect(result.playableFrameCount).toBe(0);
+    expect(result.totalDurationSeconds).toBe(0);
+  });
+
+  test('builds same-origin path with cache-bust version', () => {
+    const result = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [
+        baseFrame({
+          orderIndex: 0,
+          videoStatus: 'completed',
+          videoUrl: 'https://r2/a.mp4',
+          durationMs: 3000,
+        }),
+      ],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    expect(result.src).toMatch(
+      /^\/api\/sequences\/seq1\/composition\.html\?v=[0-9a-z]+$/
+    );
+    expect(result.playableFrameCount).toBe(1);
+    expect(result.totalDurationSeconds).toBe(3);
+  });
+
+  test('version key changes when playable content changes', () => {
+    const a = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [
+        baseFrame({
+          id: 'a',
+          orderIndex: 0,
+          videoStatus: 'completed',
+          videoUrl: 'https://r2/a.mp4',
+        }),
+      ],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    const b = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [
+        baseFrame({
+          id: 'a',
+          orderIndex: 0,
+          videoStatus: 'completed',
+          videoUrl: 'https://r2/a.mp4',
+        }),
+        baseFrame({
+          id: 'b',
+          orderIndex: 1,
+          videoStatus: 'completed',
+          videoUrl: 'https://r2/b.mp4',
+        }),
+      ],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    expect(a.src).not.toBe(b.src);
+  });
+
+  test('version key is stable across pending-only changes', () => {
+    const playable = baseFrame({
+      id: 'a',
+      orderIndex: 0,
+      videoStatus: 'completed',
+      videoUrl: 'https://r2/a.mp4',
+    });
+    const a = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [playable],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    const b = computeCompositionSrc({
+      sequenceId: 'seq1',
+      frames: [
+        playable,
+        baseFrame({ id: 'b', orderIndex: 1, videoStatus: 'pending' }),
+      ],
+      musicUrl: null,
+      aspectRatio: '16:9',
+    });
+    expect(a.src).toBe(b.src);
   });
 });

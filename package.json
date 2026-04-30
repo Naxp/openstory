@@ -109,7 +109,9 @@
     "cf:dev": "BUILD_CLOUDFLARE=1 wrangler dev",
     "cf:preview": "BUILD_CLOUDFLARE=1 vite preview",
     "cf:deploy:prd": "bun --bun run cf:build && wrangler deploy",
-    "knip": "knip"
+    "knip": "knip",
+    "vendor:sync": "bun scripts/sync-vendor-iframe.ts",
+    "postinstall": "bun scripts/sync-vendor-iframe.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1033.0",
@@ -182,6 +184,7 @@
     "@cloudflare/vite-plugin": "^1.33.0",
     "@copilotkit/aimock": "^1.14.3",
     "@faker-js/faker": "^10.4.0",
+    "@hyperframes/core": "^0.4.32",
     "@storybook/addon-a11y": "^10.3.5",
     "@storybook/addon-docs": "^10.3.5",
     "@storybook/addon-onboarding": "^10.3.5",
@@ -203,6 +206,7 @@
     "@typescript/native-preview": "^7.0.0-dev.20260420.1",
     "@vitejs/plugin-react": "^6.0.1",
     "chalk": "^5.6.2",
+    "gsap": "3.13.0",
     "knip": "^6.5.0",
     "lefthook": "^2.1.6",
     "msw": "^2.13.4",
