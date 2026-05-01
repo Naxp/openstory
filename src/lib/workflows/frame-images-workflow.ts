@@ -27,6 +27,10 @@ import {
   matchElementsToScene,
   matchLocationsToScene,
 } from './scene-matching';
+import {
+  computeFrameImagesHashFromDto,
+  type FrameImageSceneSnapshot,
+} from './sheet-snapshots';
 import { generateShotVariantWorkflow } from './shot-variant-workflow';
 
 export const frameImagesWorkflow = createScopedWorkflow<
@@ -35,6 +39,12 @@ export const frameImagesWorkflow = createScopedWorkflow<
 >(
   async (context, scopedDb) => {
     const input = context.requestPayload;
+
+    await context.run('validate-snapshot', async () => {
+      if (context.snapshot) {
+        await context.snapshot.validate();
+      }
+    });
     const {
       scenesWithVisualPrompts,
       charactersWithSheets,
@@ -206,6 +216,25 @@ export const frameImagesWorkflow = createScopedWorkflow<
         `Frame image generation failed for sequence ${input.sequenceId}: ${error}`
       );
       return `Frame image generation failed for sequence ${input.sequenceId}: ${error}`;
+    },
+    snapshot: {
+      // The payload binds per-scene character/location/element sheet hashes
+      // alongside each reference URL. Validation rejects payloads where the
+      // inlined hashes were swapped without recomputing snapshotInputHash.
+      // Per-frame divergence routing into `frame_variants` is performed by
+      // the downstream image-workflow (which writes the actual artifact);
+      // this snapshot config only enforces payload integrity at the batch
+      // boundary. See workflow-snapshots-and-content-hash-staleness.md.
+      computeFromDto: (input) => {
+        const sceneSnapshots: FrameImageSceneSnapshot[] =
+          input.sceneSnapshots ?? [];
+        return computeFrameImagesHashFromDto({ ...input, sceneSnapshots });
+      },
+      computeCurrent: (input) => {
+        const sceneSnapshots: FrameImageSceneSnapshot[] =
+          input.sceneSnapshots ?? [];
+        return computeFrameImagesHashFromDto({ ...input, sceneSnapshots });
+      },
     },
   }
 );

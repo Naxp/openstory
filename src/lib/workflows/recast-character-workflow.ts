@@ -18,6 +18,8 @@ import {
   computeRegenerateFramesBatchHash,
 } from './regenerate-frames-snapshot';
 import { regenerateFramesWorkflow } from './regenerate-frames-workflow';
+import { computeCharacterSheetHashFromDto } from './sheet-snapshots';
+import type { CharacterSheetWorkflowInput } from '@/lib/workflow/types';
 
 export const recastCharacterWorkflow =
   createScopedWorkflow<RecastCharacterWorkflowInput>(
@@ -30,13 +32,26 @@ export const recastCharacterWorkflow =
         `Starting recast for ${input.characterName} with ${input.affectedFrameIds.length} affected frames`
       );
 
-      // Step 1: Generate character sheet showing talent in costume
-      const { body: sheetResult, isFailed: sheetFailed } = await context.invoke(
-        'character-sheet',
-        {
-          workflow: characterSheetWorkflow,
-          label,
-          body: {
+      // Step 1: Generate character sheet showing talent in costume.
+      // Resolve the upstream talent-sheet hash and inline it so the child
+      // workflow can detect divergence if the talent sheet is regenerated
+      // mid-flight.
+      const sheetBody = await context.run(
+        'build-character-sheet-snapshot',
+        async (): Promise<CharacterSheetWorkflowInput> => {
+          const character = await scopedDb.characters.getById(
+            input.characterDbId
+          );
+          let talentSheetInputHash: string | null = null;
+          if (character?.talentId) {
+            const talent = await scopedDb.talent.getWithRelations(
+              character.talentId
+            );
+            const defaultSheet =
+              talent?.sheets.find((s) => s.isDefault) ?? talent?.sheets[0];
+            talentSheetInputHash = defaultSheet?.inputHash ?? null;
+          }
+          const partial: CharacterSheetWorkflowInput = {
             characterDbId: input.characterDbId,
             characterName: input.characterName,
             characterMetadata: input.characterMetadata,
@@ -48,7 +63,20 @@ export const recastCharacterWorkflow =
             talentMetadata: input.talentMetadata,
             talentDescription: input.talentDescription,
             styleConfig: input.styleConfig,
-          },
+            talentSheetInputHash,
+          };
+          partial.snapshotInputHash =
+            await computeCharacterSheetHashFromDto(partial);
+          return partial;
+        }
+      );
+
+      const { body: sheetResult, isFailed: sheetFailed } = await context.invoke(
+        'character-sheet',
+        {
+          workflow: characterSheetWorkflow,
+          label,
+          body: sheetBody,
         }
       );
 

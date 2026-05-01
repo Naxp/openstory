@@ -19,6 +19,7 @@ import {
 import { buildLocationSheetPrompt } from '@/lib/prompts/location-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
+import { triggerWorkflow } from '@/lib/workflow/client';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
@@ -26,6 +27,10 @@ import type {
   LocationSheetWorkflowInput,
   LocationSheetWorkflowResult,
 } from '@/lib/workflow/types';
+import {
+  computeLocationSheetHashCurrent,
+  computeLocationSheetHashFromDto,
+} from './sheet-snapshots';
 
 export const locationSheetWorkflow = createScopedWorkflow<
   LocationSheetWorkflowInput,
@@ -33,6 +38,12 @@ export const locationSheetWorkflow = createScopedWorkflow<
 >(
   async (context, scopedDb) => {
     const input = context.requestPayload;
+
+    await context.run('validate-snapshot', async () => {
+      if (context.snapshot) {
+        await context.snapshot.validate();
+      }
+    });
 
     // Emit realtime event that generation has started
     await context.run('emit-start-event', async () => {
@@ -166,19 +177,84 @@ export const locationSheetWorkflow = createScopedWorkflow<
         };
       });
 
-      // Step 4: Update database with completed reference
-      await context.run('update-database', async () => {
-        console.log(
-          '[LocationSheetWorkflow]',
-          `Updating database for ${input.locationName}`
-        );
+      // Step 4: Divergence-aware database write. If the upstream library
+      // location reference changed mid-flight, discard and re-queue.
+      const reconcileOutcome = await context.run(
+        'reconcile-database',
+        async (): Promise<'convergent' | 'divergent'> => {
+          console.log(
+            '[LocationSheetWorkflow]',
+            `Updating database for ${input.locationName}`
+          );
 
-        await scopedDb.sequenceLocations.updateReference(
-          input.locationDbId,
-          storageResult.url,
-          storageResult.path
-        );
-      });
+          if (context.snapshot) {
+            const currentHash = await context.snapshot.computeCurrent();
+            if (currentHash !== context.snapshot.snapshotInputHash) {
+              return 'divergent';
+            }
+          }
+
+          await scopedDb.sequenceLocations.updateReference(
+            input.locationDbId,
+            storageResult.url,
+            storageResult.path,
+            context.snapshot?.snapshotInputHash ?? null
+          );
+          return 'convergent';
+        }
+      );
+
+      if (reconcileOutcome === 'divergent') {
+        await context.run('emit-stale-and-requeue', async () => {
+          if (input.sequenceId) {
+            await getGenerationChannel(input.sequenceId).emit(
+              'generation.stale:detected',
+              {
+                entityType: 'location',
+                entityId: input.locationDbId,
+                artifact: 'sheet',
+                snapshotInputHash:
+                  context.snapshot?.snapshotInputHash ?? 'unknown',
+              }
+            );
+          }
+
+          const sequenceLocation = await scopedDb.sequenceLocations.getById(
+            input.locationDbId
+          );
+          let refreshedLibraryHash: string | null = null;
+          if (sequenceLocation?.libraryLocationId) {
+            const libraryLocation = await scopedDb.locations.getById(
+              sequenceLocation.libraryLocationId
+            );
+            refreshedLibraryHash = libraryLocation?.referenceInputHash ?? null;
+          }
+
+          const requeuePayload: LocationSheetWorkflowInput = {
+            ...input,
+            libraryLocationReferenceHash: refreshedLibraryHash,
+          };
+          requeuePayload.snapshotInputHash =
+            await computeLocationSheetHashFromDto(requeuePayload);
+
+          await triggerWorkflow('/location-sheet', requeuePayload, {
+            label: input.sequenceId
+              ? `location-sheet:${input.locationDbId}`
+              : undefined,
+            deduplicationId: `location-sheet-requeue-${input.locationDbId}-${requeuePayload.snapshotInputHash.slice(0, 16)}`,
+          });
+
+          console.log(
+            '[LocationSheetWorkflow]',
+            `Diverged for ${input.locationName}; re-queued with current inputs`
+          );
+        });
+        return {
+          referenceImageUrl: storageResult.url,
+          referenceImagePath: storageResult.path,
+          locationDbId: input.locationDbId,
+        };
+      }
 
       referenceImagePath = storageResult.path;
       referenceImageUrl = storageResult.url;
@@ -243,6 +319,11 @@ export const locationSheetWorkflow = createScopedWorkflow<
       }
 
       return `Location reference generation failed for ${input.locationName}`;
+    },
+    snapshot: {
+      computeFromDto: (input) => computeLocationSheetHashFromDto(input),
+      computeCurrent: (input, scopedDb) =>
+        computeLocationSheetHashCurrent(input, scopedDb),
     },
   }
 );

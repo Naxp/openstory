@@ -22,6 +22,7 @@ import {
 } from '@/lib/prompts/character-prompt';
 import { getTalentChannel } from '@/lib/realtime';
 import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
+import { triggerWorkflow } from '@/lib/workflow/client';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
@@ -29,6 +30,10 @@ import type {
   LibraryTalentSheetWorkflowInput,
   LibraryTalentSheetWorkflowResult,
 } from '@/lib/workflow/types';
+import {
+  computeLibraryTalentSheetHashCurrent,
+  computeLibraryTalentSheetHashFromDto,
+} from './sheet-snapshots';
 
 export const libraryTalentSheetWorkflow = createScopedWorkflow<
   LibraryTalentSheetWorkflowInput,
@@ -36,6 +41,12 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
 >(
   async (context, scopedDb) => {
     const input = context.requestPayload;
+
+    await context.run('validate-snapshot', async () => {
+      if (context.snapshot) {
+        await context.snapshot.validate();
+      }
+    });
 
     // Step 1: Validate input
     await context.run('validate-input', async () => {
@@ -144,23 +155,73 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
       };
     });
 
-    // Step 4: Create talent sheet record
-    const sheet = await context.run('create-sheet-record', async () => {
-      console.log(
-        '[LibraryTalentSheetWorkflow]',
-        `Creating sheet record in database`
-      );
+    // Step 4: Divergence-aware sheet record creation. If reference media
+    // changed mid-flight, discard and re-queue with the current set.
+    const sheetReconcile = await context.run(
+      'reconcile-create-sheet',
+      async (): Promise<
+        | {
+            kind: 'convergent';
+            sheet: Awaited<ReturnType<typeof scopedDb.talent.sheets.create>>;
+          }
+        | { kind: 'divergent' }
+      > => {
+        if (context.snapshot) {
+          const currentHash = await context.snapshot.computeCurrent();
+          if (currentHash !== context.snapshot.snapshotInputHash) {
+            return { kind: 'divergent' };
+          }
+        }
+        console.log(
+          '[LibraryTalentSheetWorkflow]',
+          `Creating sheet record in database`
+        );
+        const created = await scopedDb.talent.sheets.create({
+          id: storageResult.sheetId,
+          talentId: input.talentId,
+          name: input.sheetName ?? 'Generated Sheet',
+          imageUrl: storageResult.url,
+          imagePath: storageResult.path,
+          isDefault: false,
+          source: 'ai_generated',
+          inputHash: context.snapshot?.snapshotInputHash ?? null,
+        });
+        return { kind: 'convergent', sheet: created };
+      }
+    );
 
-      return await scopedDb.talent.sheets.create({
-        id: storageResult.sheetId,
-        talentId: input.talentId,
-        name: input.sheetName ?? 'Generated Sheet',
-        imageUrl: storageResult.url,
-        imagePath: storageResult.path,
-        isDefault: false,
-        source: 'ai_generated',
+    if (sheetReconcile.kind === 'divergent') {
+      await context.run('requeue-on-divergence', async () => {
+        console.log(
+          '[LibraryTalentSheetWorkflow]',
+          `Diverged for ${input.talentName}; re-queuing with current reference media`
+        );
+        const talent = await scopedDb.talent.getWithRelations(input.talentId);
+        const refreshedUrls =
+          talent?.media
+            .filter((m) => m.type === 'image')
+            .map((m) => m.url)
+            .sort() ??
+          input.referenceImageUrls ??
+          [];
+        const requeuePayload: LibraryTalentSheetWorkflowInput = {
+          ...input,
+          referenceImageUrls: refreshedUrls,
+        };
+        requeuePayload.snapshotInputHash =
+          await computeLibraryTalentSheetHashFromDto(requeuePayload);
+        await triggerWorkflow('/library-talent-sheet', requeuePayload, {
+          deduplicationId: `library-talent-sheet-requeue-${input.talentId}-${requeuePayload.snapshotInputHash.slice(0, 16)}`,
+        });
       });
-    });
+      return {
+        sheetId: storageResult.sheetId,
+        sheetImageUrl: storageResult.url,
+        sheetImagePath: storageResult.path,
+      };
+    }
+
+    const sheet = sheetReconcile.sheet;
 
     // Emit sheet_ready so the UI can show the sheet and switch to "Generating portrait…"
     await context.run('emit-sheet-ready', async () => {
@@ -315,6 +376,11 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
       });
 
       return `Talent sheet generation failed for ${input.talentName}`;
+    },
+    snapshot: {
+      computeFromDto: (input) => computeLibraryTalentSheetHashFromDto(input),
+      computeCurrent: (input, scopedDb) =>
+        computeLibraryTalentSheetHashCurrent(input, scopedDb),
     },
   }
 );
