@@ -22,7 +22,7 @@ import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import {
   SnapshotDivergedError,
-  SNAPSHOT_DIVERGED_MARKER,
+  SnapshotRequeueDepthExceededError,
   isSnapshotDivergedFailure,
   WorkflowValidationError,
 } from '@/lib/workflow/errors';
@@ -220,62 +220,72 @@ export const characterSheetWorkflow = createScopedWorkflow<
 
       if (reconcileOutcome === 'divergent' && snapshot) {
         const requeueDepth = (input.requeueDepth ?? 0) + 1;
-        await context.run('emit-stale-and-requeue', async () => {
-          if (input.sequenceId) {
-            await getGenerationChannel(input.sequenceId).emit(
-              'generation.stale:detected',
-              {
-                entityType: 'character',
-                entityId: input.characterDbId,
-                artifact: 'sheet',
-                snapshotInputHash: snapshot.snapshotInputHash,
-              }
+        const requeueOutcome = await context.run(
+          'emit-stale-and-requeue',
+          async (): Promise<'requeued' | 'depth-exceeded'> => {
+            if (requeueDepth > MAX_REQUEUE_DEPTH) {
+              console.warn('[CharacterSheetWorkflow] re-queue depth exceeded', {
+                characterDbId: input.characterDbId,
+                characterName: input.characterName,
+                requeueDepth,
+                max: MAX_REQUEUE_DEPTH,
+              });
+              return 'depth-exceeded';
+            }
+
+            // Trigger the re-queued run BEFORE emitting `stale:detected`.
+            // If the trigger throws, the workflow fails and the UI does not
+            // see a stale indicator with no follow-up run arriving.
+            const refreshedTalentHash = await resolveTalentSheetHash(
+              scopedDb,
+              input.characterDbId
             );
-          }
 
-          if (requeueDepth > MAX_REQUEUE_DEPTH) {
-            console.warn('[CharacterSheetWorkflow] re-queue depth exceeded', {
-              characterDbId: input.characterDbId,
-              characterName: input.characterName,
+            const requeuePayload: CharacterSheetWorkflowInput = {
+              ...input,
+              talentSheetInputHash: refreshedTalentHash,
               requeueDepth,
-              max: MAX_REQUEUE_DEPTH,
+            };
+            requeuePayload.snapshotInputHash =
+              await computeCharacterSheetHashFromDto(requeuePayload);
+
+            await triggerWorkflow('/character-sheet', requeuePayload, {
+              label: input.sequenceId
+                ? `character-sheet:${input.characterDbId}`
+                : undefined,
+              deduplicationId: `character-sheet-requeue-${input.characterDbId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
             });
-            return;
+
+            if (input.sequenceId) {
+              await getGenerationChannel(input.sequenceId).emit(
+                'generation.stale:detected',
+                {
+                  entityType: 'character',
+                  entityId: input.characterDbId,
+                  artifact: 'sheet',
+                  snapshotInputHash: snapshot.snapshotInputHash,
+                }
+              );
+            }
+
+            console.log(
+              '[CharacterSheetWorkflow]',
+              `Diverged for ${input.characterName}; re-queued with current inputs (depth=${requeueDepth})`
+            );
+            return 'requeued';
           }
+        );
 
-          // Re-queue with current inputs. The character bible/style/model
-          // travel as-is — only the upstream talent-sheet hash needs to be
-          // refreshed, which the helper does by reading the live talent.
-          const refreshedTalentHash = await resolveTalentSheetHash(
-            scopedDb,
-            input.characterDbId
-          );
-
-          const requeuePayload: CharacterSheetWorkflowInput = {
-            ...input,
-            talentSheetInputHash: refreshedTalentHash,
-            requeueDepth,
-          };
-          requeuePayload.snapshotInputHash =
-            await computeCharacterSheetHashFromDto(requeuePayload);
-
-          await triggerWorkflow('/character-sheet', requeuePayload, {
-            label: input.sequenceId
-              ? `character-sheet:${input.characterDbId}`
-              : undefined,
-            deduplicationId: `character-sheet-requeue-${input.characterDbId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
-          });
-
-          console.log(
-            '[CharacterSheetWorkflow]',
-            `Diverged for ${input.characterName}; re-queued with current inputs (depth=${requeueDepth})`
-          );
-        });
         // Abort the current run rather than returning the orphaned URL.
         // The freshly-uploaded R2 object is intentionally left in place —
         // its path was logged above for cleanup tooling.
+        if (requeueOutcome === 'depth-exceeded') {
+          throw new SnapshotRequeueDepthExceededError(
+            `character-sheet hit MAX_REQUEUE_DEPTH for ${input.characterName}; marking failed`
+          );
+        }
         throw new SnapshotDivergedError(
-          `${SNAPSHOT_DIVERGED_MARKER} character-sheet diverged for ${input.characterName}; re-queued with current inputs`
+          `character-sheet diverged for ${input.characterName}; re-queued with current inputs`
         );
       }
 

@@ -22,7 +22,7 @@ import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import {
   SnapshotDivergedError,
-  SNAPSHOT_DIVERGED_MARKER,
+  SnapshotRequeueDepthExceededError,
   isSnapshotDivergedFailure,
   WorkflowValidationError,
 } from '@/lib/workflow/errors';
@@ -220,57 +220,67 @@ export const locationSheetWorkflow = createScopedWorkflow<
 
       if (reconcileOutcome === 'divergent' && snapshot) {
         const requeueDepth = (input.requeueDepth ?? 0) + 1;
-        await context.run('emit-stale-and-requeue', async () => {
-          if (input.sequenceId) {
-            await getGenerationChannel(input.sequenceId).emit(
-              'generation.stale:detected',
-              {
-                entityType: 'location',
-                entityId: input.locationDbId,
-                artifact: 'sheet',
-                snapshotInputHash: snapshot.snapshotInputHash,
-              }
-            );
-          }
+        const requeueOutcome = await context.run(
+          'emit-stale-and-requeue',
+          async (): Promise<'requeued' | 'depth-exceeded'> => {
+            if (requeueDepth > MAX_REQUEUE_DEPTH) {
+              console.warn('[LocationSheetWorkflow] re-queue depth exceeded', {
+                locationDbId: input.locationDbId,
+                locationName: input.locationName,
+                requeueDepth,
+                max: MAX_REQUEUE_DEPTH,
+              });
+              return 'depth-exceeded';
+            }
 
-          if (requeueDepth > MAX_REQUEUE_DEPTH) {
-            console.warn('[LocationSheetWorkflow] re-queue depth exceeded', {
-              locationDbId: input.locationDbId,
-              locationName: input.locationName,
+            const refreshedLibraryHash =
+              await resolveLibraryLocationReferenceHash(
+                scopedDb,
+                input.locationDbId
+              );
+
+            const requeuePayload: LocationSheetWorkflowInput = {
+              ...input,
+              libraryLocationReferenceHash: refreshedLibraryHash,
               requeueDepth,
-              max: MAX_REQUEUE_DEPTH,
+            };
+            requeuePayload.snapshotInputHash =
+              await computeLocationSheetHashFromDto(requeuePayload);
+
+            await triggerWorkflow('/location-sheet', requeuePayload, {
+              label: input.sequenceId
+                ? `location-sheet:${input.locationDbId}`
+                : undefined,
+              deduplicationId: `location-sheet-requeue-${input.locationDbId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
             });
-            return;
-          }
 
-          const refreshedLibraryHash =
-            await resolveLibraryLocationReferenceHash(
-              scopedDb,
-              input.locationDbId
+            if (input.sequenceId) {
+              await getGenerationChannel(input.sequenceId).emit(
+                'generation.stale:detected',
+                {
+                  entityType: 'location',
+                  entityId: input.locationDbId,
+                  artifact: 'sheet',
+                  snapshotInputHash: snapshot.snapshotInputHash,
+                }
+              );
+            }
+
+            console.log(
+              '[LocationSheetWorkflow]',
+              `Diverged for ${input.locationName}; re-queued with current inputs (depth=${requeueDepth})`
             );
+            return 'requeued';
+          }
+        );
 
-          const requeuePayload: LocationSheetWorkflowInput = {
-            ...input,
-            libraryLocationReferenceHash: refreshedLibraryHash,
-            requeueDepth,
-          };
-          requeuePayload.snapshotInputHash =
-            await computeLocationSheetHashFromDto(requeuePayload);
-
-          await triggerWorkflow('/location-sheet', requeuePayload, {
-            label: input.sequenceId
-              ? `location-sheet:${input.locationDbId}`
-              : undefined,
-            deduplicationId: `location-sheet-requeue-${input.locationDbId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
-          });
-
-          console.log(
-            '[LocationSheetWorkflow]',
-            `Diverged for ${input.locationName}; re-queued with current inputs (depth=${requeueDepth})`
+        if (requeueOutcome === 'depth-exceeded') {
+          throw new SnapshotRequeueDepthExceededError(
+            `location-sheet hit MAX_REQUEUE_DEPTH for ${input.locationName}; marking failed`
           );
-        });
+        }
         throw new SnapshotDivergedError(
-          `${SNAPSHOT_DIVERGED_MARKER} location-sheet diverged for ${input.locationName}; re-queued with current inputs`
+          `location-sheet diverged for ${input.locationName}; re-queued with current inputs`
         );
       }
 

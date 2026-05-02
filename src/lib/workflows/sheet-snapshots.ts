@@ -264,7 +264,7 @@ export async function computeFrameImagesHashFromDto(
     imageModels: input.imageModels ?? null,
     aspectRatio: input.aspectRatio,
     scenes: [...input.sceneSnapshots].sort((a, b) =>
-      a.sceneId < b.sceneId ? -1 : 1
+      a.sceneId.localeCompare(b.sceneId)
     ),
   });
 }

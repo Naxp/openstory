@@ -25,7 +25,7 @@ import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import {
   SnapshotDivergedError,
-  SNAPSHOT_DIVERGED_MARKER,
+  SnapshotRequeueDepthExceededError,
   isSnapshotDivergedFailure,
   WorkflowValidationError,
 } from '@/lib/workflow/errors';
@@ -205,48 +205,61 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
 
     if (sheetReconcile.kind === 'divergent' && snapshot) {
       const requeueDepth = (input.requeueDepth ?? 0) + 1;
-      await context.run('requeue-on-divergence', async () => {
-        console.log(
-          '[LibraryTalentSheetWorkflow]',
-          `Diverged for ${input.talentName}; re-queuing with current reference media (depth=${requeueDepth})`
-        );
-
-        if (requeueDepth > MAX_REQUEUE_DEPTH) {
-          console.warn('[LibraryTalentSheetWorkflow] re-queue depth exceeded', {
-            talentId: input.talentId,
-            talentName: input.talentName,
-            requeueDepth,
-            max: MAX_REQUEUE_DEPTH,
-          });
-          return;
-        }
-
-        const talent = await scopedDb.talent.getWithRelations(input.talentId);
-        // Hard-fail when the talent row vanished: re-queuing with the stale
-        // payload would guarantee another divergence and another billable
-        // generation. Let the next run's validate-input step error out cleanly.
-        if (!talent) {
-          throw new WorkflowValidationError(
-            `Talent ${input.talentId} not found during divergence re-queue`
+      const requeueOutcome = await context.run(
+        'requeue-on-divergence',
+        async (): Promise<'requeued' | 'depth-exceeded'> => {
+          console.log(
+            '[LibraryTalentSheetWorkflow]',
+            `Diverged for ${input.talentName}; re-queuing with current reference media (depth=${requeueDepth})`
           );
+
+          if (requeueDepth > MAX_REQUEUE_DEPTH) {
+            console.warn(
+              '[LibraryTalentSheetWorkflow] re-queue depth exceeded',
+              {
+                talentId: input.talentId,
+                talentName: input.talentName,
+                requeueDepth,
+                max: MAX_REQUEUE_DEPTH,
+              }
+            );
+            return 'depth-exceeded';
+          }
+
+          const talent = await scopedDb.talent.getWithRelations(input.talentId);
+          // Hard-fail when the talent row vanished: re-queuing with the stale
+          // payload would guarantee another divergence and another billable
+          // generation. Let the next run's validate-input step error out cleanly.
+          if (!talent) {
+            throw new WorkflowValidationError(
+              `Talent ${input.talentId} not found during divergence re-queue`
+            );
+          }
+          const refreshedUrls = talent.media
+            .filter((m) => m.type === 'image')
+            .map((m) => m.url)
+            .sort();
+          const requeuePayload: LibraryTalentSheetWorkflowInput = {
+            ...input,
+            referenceImageUrls: refreshedUrls,
+            requeueDepth,
+          };
+          requeuePayload.snapshotInputHash =
+            await computeLibraryTalentSheetHashFromDto(requeuePayload);
+          await triggerWorkflow('/library-talent-sheet', requeuePayload, {
+            deduplicationId: `library-talent-sheet-requeue-${input.talentId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
+          });
+          return 'requeued';
         }
-        const refreshedUrls = talent.media
-          .filter((m) => m.type === 'image')
-          .map((m) => m.url)
-          .sort();
-        const requeuePayload: LibraryTalentSheetWorkflowInput = {
-          ...input,
-          referenceImageUrls: refreshedUrls,
-          requeueDepth,
-        };
-        requeuePayload.snapshotInputHash =
-          await computeLibraryTalentSheetHashFromDto(requeuePayload);
-        await triggerWorkflow('/library-talent-sheet', requeuePayload, {
-          deduplicationId: `library-talent-sheet-requeue-${input.talentId}-${requeuePayload.snapshotInputHash.slice(0, 16)}-d${requeueDepth}`,
-        });
-      });
+      );
+
+      if (requeueOutcome === 'depth-exceeded') {
+        throw new SnapshotRequeueDepthExceededError(
+          `library-talent-sheet hit MAX_REQUEUE_DEPTH for ${input.talentName}; marking failed`
+        );
+      }
       throw new SnapshotDivergedError(
-        `${SNAPSHOT_DIVERGED_MARKER} library-talent-sheet diverged for ${input.talentName}; re-queued with current reference media`
+        `library-talent-sheet diverged for ${input.talentName}; re-queued with current reference media`
       );
     }
 
