@@ -98,6 +98,7 @@ export type CharacterMinimal = Pick<
   | 'name'
   | 'sheetImageUrl'
   | 'sheetStatus'
+  | 'sheetInputHash'
   | 'physicalDescription'
   | 'consistencyTag'
 >;
