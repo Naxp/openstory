@@ -6,6 +6,8 @@ import {
   computeFrameVideoInputHash,
   computeLibraryLocationReferenceInputHash,
   computeLocationSheetInputHash,
+  computeSequenceMusicInputHash,
+  computeSequenceVideoInputHash,
   computeTalentSheetInputHash,
   type CharacterSheetHashInput,
   type FrameAudioHashInput,
@@ -471,5 +473,77 @@ describe('canonical serialization', () => {
         audioModel: 'cassette-v1',
       })
     ).rejects.toThrow(/non-finite/);
+  });
+});
+
+describe('computeSequenceVideoInputHash', () => {
+  const base = {
+    sourceFrameVideos: ['hash-a', 'hash-b', 'hash-c'],
+    targetFps: 24,
+    resolution: { width: 1920, height: 1080 },
+  };
+
+  it('is order-sensitive for source frames', async () => {
+    const a = await computeSequenceVideoInputHash(base);
+    const swapped = await computeSequenceVideoInputHash({
+      ...base,
+      sourceFrameVideos: ['hash-b', 'hash-a', 'hash-c'],
+    });
+    expect(a).not.toBe(swapped);
+  });
+
+  it('reacts to fps and resolution changes', async () => {
+    const a = await computeSequenceVideoInputHash(base);
+    const fps = await computeSequenceVideoInputHash({ ...base, targetFps: 30 });
+    const res = await computeSequenceVideoInputHash({
+      ...base,
+      resolution: { width: 1280, height: 720 },
+    });
+    expect(new Set([a, fps, res]).size).toBe(3);
+  });
+
+  it('treats null fps and null resolution as distinct from set values', async () => {
+    const withVals = await computeSequenceVideoInputHash(base);
+    const noFps = await computeSequenceVideoInputHash({
+      ...base,
+      targetFps: null,
+    });
+    expect(withVals).not.toBe(noFps);
+  });
+});
+
+describe('computeSequenceMusicInputHash', () => {
+  const base = {
+    prompt: 'Cinematic orchestral build',
+    tags: 'cinematic,tension,strings',
+    durationSeconds: 60,
+    audioModel: 'cassette-v1',
+  };
+
+  it('is stable for identical input', async () => {
+    const a = await computeSequenceMusicInputHash(base);
+    const b = await computeSequenceMusicInputHash({ ...base });
+    expect(a).toBe(b);
+  });
+
+  it('reacts to prompt, tags, duration, and model', async () => {
+    const a = await computeSequenceMusicInputHash(base);
+    const prompt = await computeSequenceMusicInputHash({
+      ...base,
+      prompt: 'Soft piano',
+    });
+    const tags = await computeSequenceMusicInputHash({
+      ...base,
+      tags: 'piano,calm',
+    });
+    const duration = await computeSequenceMusicInputHash({
+      ...base,
+      durationSeconds: 90,
+    });
+    const model = await computeSequenceMusicInputHash({
+      ...base,
+      audioModel: 'cassette-v2',
+    });
+    expect(new Set([a, prompt, tags, duration, model]).size).toBe(5);
   });
 });

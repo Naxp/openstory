@@ -118,11 +118,11 @@ export const motionBatchWorkflow =
         } satisfies MergeVideoWorkflowInput,
       });
 
-      // Step 4: If music was generated, mux audio onto merged video
+      // Step 4: If music was generated, mux audio onto merged video.
+      // Resolve both source variants — final mux is a function of (video, music).
       if (includeMusic) {
-        // Get URLs from DB (authoritative, set by child workflows)
-        const mergeAndMusicUrls = await context.run(
-          'get-merge-music-urls',
+        const mergeAndMusicSources = await context.run(
+          'get-merge-music-variants',
           async () => {
             const seq = scopedDb.sequence(sequenceId);
             const [videoStatus, musicStatus] = await Promise.all([
@@ -139,7 +139,36 @@ export const motionBatchWorkflow =
               throw new Error('Music generation completed but no URL found');
             }
 
+            const [videoVariants, musicVariants] = await Promise.all([
+              scopedDb.sequenceVariants.listVideosBySequence(sequenceId),
+              scopedDb.sequenceVariants.listMusicBySequence(sequenceId),
+            ]);
+            const videoVariant = videoVariants.find(
+              (v) =>
+                v.divergedAt === null &&
+                v.url === videoStatus.mergedVideoUrl &&
+                v.status === 'completed'
+            );
+            const musicVariant = musicVariants.find(
+              (v) =>
+                v.divergedAt === null &&
+                v.url === musicStatus.musicUrl &&
+                v.status === 'completed'
+            );
+            if (!videoVariant) {
+              throw new Error(
+                'Merged video variant row not found for completed merge'
+              );
+            }
+            if (!musicVariant) {
+              throw new Error(
+                'Music variant row not found for completed music generation'
+              );
+            }
+
             return {
+              mergedVideoVariantId: videoVariant.id,
+              musicVariantId: musicVariant.id,
               mergedVideoUrl: videoStatus.mergedVideoUrl,
               musicUrl: musicStatus.musicUrl,
             };
@@ -153,8 +182,10 @@ export const motionBatchWorkflow =
             userId: input.userId,
             teamId: input.teamId,
             sequenceId,
-            mergedVideoUrl: mergeAndMusicUrls.mergedVideoUrl,
-            musicUrl: mergeAndMusicUrls.musicUrl,
+            mergedVideoVariantId: mergeAndMusicSources.mergedVideoVariantId,
+            musicVariantId: mergeAndMusicSources.musicVariantId,
+            mergedVideoUrl: mergeAndMusicSources.mergedVideoUrl,
+            musicUrl: mergeAndMusicSources.musicUrl,
           } satisfies MergeAudioVideoWorkflowInput,
         });
       }

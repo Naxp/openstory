@@ -278,3 +278,44 @@ export function computeTalentSheetInputHash(
     imageModel: input.imageModel,
   });
 }
+
+export type SequenceVideoHashInput = {
+  /** Ordered list of source frame video hashes / URLs in stitch order. */
+  sourceFrameVideos: readonly string[];
+  targetFps?: number | null;
+  resolution?: { width: number; height: number } | null;
+};
+
+export function computeSequenceVideoInputHash(
+  input: SequenceVideoHashInput
+): Promise<string> {
+  return sha256Hex({
+    artifact: 'sequence:video',
+    // Order is meaningful — this is the ordered stitch list, not a set.
+    sourceFrameVideos: [...input.sourceFrameVideos].map(trim),
+    targetFps: input.targetFps ?? null,
+    resolution: input.resolution
+      ? { width: input.resolution.width, height: input.resolution.height }
+      : null,
+  });
+}
+
+export type SequenceMusicHashInput = {
+  prompt: string;
+  /** Tag string (comma-joined, as stored on `sequences.musicTags`). */
+  tags: string;
+  durationSeconds: number;
+  audioModel: string;
+};
+
+export function computeSequenceMusicInputHash(
+  input: SequenceMusicHashInput
+): Promise<string> {
+  return sha256Hex({
+    artifact: 'sequence:music',
+    prompt: trim(input.prompt),
+    tags: trim(input.tags),
+    durationSeconds: input.durationSeconds,
+    audioModel: input.audioModel,
+  });
+}

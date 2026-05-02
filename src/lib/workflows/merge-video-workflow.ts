@@ -3,6 +3,7 @@
  * Stitches all frame videos into a single merged video for sequence playback
  */
 
+import { computeSequenceVideoInputHash } from '@/lib/ai/input-hash';
 import { usdToMicros } from '@/lib/billing/money';
 import { getGenerationChannel } from '@/lib/realtime';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
@@ -26,25 +27,46 @@ import type {
 import type { WorkflowContext } from '@upstash/workflow';
 import { mergeAudioVideoWorkflow } from './merge-audio-video-workflow';
 
+const MERGE_VIDEO_WORKFLOW_NAME = 'merge-video';
+
 /**
  * Chain to merge-audio-video if the sequence has a ready music track.
  * This keeps the UI "Merge with Video" CTA honest — it restitches frames
  * and also muxes the existing music onto the fresh output.
+ *
+ * Both the merged video and the music are sourced as variants — `merge-audio-video`
+ * accepts variant ids so the final output is a function of `(video, music)`.
  */
 async function chainAudioMux(
   context: WorkflowContext<MergeVideoWorkflowInput>,
   scopedDb: ScopedDb,
   input: MergeVideoWorkflowInput & { sequenceId: string },
+  mergedVideoVariantId: string,
   mergedVideoUrl: string
 ): Promise<void> {
-  const musicUrl = await context.run('fetch-music-for-mux', async () => {
-    const status = await scopedDb.sequence(input.sequenceId).getMusicStatus();
-    return status?.musicStatus === 'completed'
-      ? (status.musicUrl ?? null)
-      : null;
-  });
+  const musicVariant = await context.run(
+    'fetch-music-variant-for-mux',
+    async () => {
+      const sequenceId = input.sequenceId;
+      const status = await scopedDb.sequence(sequenceId).getMusicStatus();
+      if (status?.musicStatus !== 'completed' || !status.musicUrl) {
+        return null;
+      }
+      const variants =
+        await scopedDb.sequenceVariants.listMusicBySequence(sequenceId);
+      const primary = variants.find(
+        (v) =>
+          v.divergedAt === null &&
+          v.url === status.musicUrl &&
+          v.status === 'completed'
+      );
+      return primary
+        ? { id: primary.id, url: primary.url ?? status.musicUrl }
+        : null;
+    }
+  );
 
-  if (!musicUrl) {
+  if (!musicVariant) {
     return;
   }
 
@@ -55,8 +77,10 @@ async function chainAudioMux(
       userId: input.userId,
       teamId: input.teamId,
       sequenceId: input.sequenceId,
+      mergedVideoVariantId,
+      musicVariantId: musicVariant.id,
       mergedVideoUrl,
-      musicUrl,
+      musicUrl: musicVariant.url,
     } satisfies MergeAudioVideoWorkflowInput,
   });
 }
@@ -80,9 +104,33 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
       `[MergeVideoWorkflow] Starting merge for sequence ${input.sequenceId} with ${input.videoUrls.length} videos`
     );
 
+    const inputHash = await context.run('compute-input-hash', async () => {
+      return computeSequenceVideoInputHash({
+        sourceFrameVideos: input.videoUrls,
+        targetFps: input.targetFps ?? null,
+        resolution: input.resolution ?? null,
+      });
+    });
+
     // Single video: skip merge, use existing video directly
     if (input.videoUrls.length === 1) {
       const singleUrl = input.videoUrls[0];
+
+      const variant = await context.run(
+        'write-video-variant-single',
+        async () => {
+          return scopedDb.sequenceVariants.upsertVideoPrimary({
+            sequenceId: narrowedInput.sequenceId,
+            url: singleUrl,
+            storagePath: null,
+            workflow: MERGE_VIDEO_WORKFLOW_NAME,
+            status: 'completed',
+            generatedAt: new Date(),
+            error: null,
+            inputHash,
+          });
+        }
+      );
 
       await context.run('update-sequence-single', async () => {
         await seq.updateMergedVideoFields({
@@ -99,7 +147,13 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
         );
       });
 
-      await chainAudioMux(context, scopedDb, narrowedInput, singleUrl);
+      await chainAudioMux(
+        context,
+        scopedDb,
+        narrowedInput,
+        variant.id,
+        singleUrl
+      );
       return { mergedVideoUrl: singleUrl, mergedVideoPath: null };
     }
 
@@ -158,6 +212,19 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
       return { path, url: result.publicUrl };
     });
 
+    const variant = await context.run('write-video-variant', async () => {
+      return scopedDb.sequenceVariants.upsertVideoPrimary({
+        sequenceId: narrowedInput.sequenceId,
+        url: storageResult.url,
+        storagePath: storageResult.path,
+        workflow: MERGE_VIDEO_WORKFLOW_NAME,
+        status: 'completed',
+        generatedAt: new Date(),
+        error: null,
+        inputHash,
+      });
+    });
+
     await context.run('update-sequence', async () => {
       await seq.updateMergedVideoFields({
         mergedVideoUrl: storageResult.url,
@@ -181,7 +248,13 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
       `[MergeVideoWorkflow] Completed merge for sequence ${input.sequenceId}`
     );
 
-    await chainAudioMux(context, scopedDb, narrowedInput, storageResult.url);
+    await chainAudioMux(
+      context,
+      scopedDb,
+      narrowedInput,
+      variant.id,
+      storageResult.url
+    );
 
     return {
       mergedVideoUrl: storageResult.url,

@@ -27,10 +27,24 @@ export const mergeAudioVideoWorkflow = createScopedWorkflow<
   async (context, scopedDb) => {
     const input = context.requestPayload;
 
-    const { sequenceId, teamId, mergedVideoUrl, musicUrl } = input;
-    if (!sequenceId || !teamId || !mergedVideoUrl || !musicUrl) {
+    const {
+      sequenceId,
+      teamId,
+      mergedVideoUrl,
+      musicUrl,
+      mergedVideoVariantId,
+      musicVariantId,
+    } = input;
+    if (
+      !sequenceId ||
+      !teamId ||
+      !mergedVideoUrl ||
+      !musicUrl ||
+      !mergedVideoVariantId ||
+      !musicVariantId
+    ) {
       throw new WorkflowValidationError(
-        'Sequence ID, merged video URL, and music URL are required'
+        'Sequence ID, merged video URL, music URL, mergedVideoVariantId, and musicVariantId are required'
       );
     }
     const seq = scopedDb.sequence(sequenceId);

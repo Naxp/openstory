@@ -700,9 +700,18 @@ export interface MusicWorkflowResult {
 
 /**
  * Merge audio+video workflow input
- * Muxes a music track onto the merged video to produce the final output
+ * Muxes a music track onto the merged video to produce the final output.
+ *
+ * The final video is a function of `(merged_video_variant, music_variant)`.
+ * The variant ids identify which row in `sequence_video_variants` /
+ * `sequence_music_variants` was used; the urls are inlined for convenience
+ * so the workflow doesn't read mutable state to find them.
  */
 export interface MergeAudioVideoWorkflowInput extends SequenceWorkflowContext {
+  /** Source merged-video variant id (from `sequence_video_variants`). */
+  mergedVideoVariantId: string;
+  /** Source music variant id (from `sequence_music_variants`). */
+  musicVariantId: string;
   /** URL of the merged video (all frames stitched) */
   mergedVideoUrl: string;
   /** URL of the sequence-level music track */

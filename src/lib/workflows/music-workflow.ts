@@ -1,3 +1,4 @@
+import { computeSequenceMusicInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_MUSIC_MODEL } from '@/lib/ai/models';
 import { uploadAudioToStorage } from '@/lib/audio/audio-storage';
 import { generateMusic } from '@/lib/audio/music-generation';
@@ -112,6 +113,29 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
       if (storageResult.url) {
         audioUrl = storageResult.url;
       }
+      const inputHash = await computeSequenceMusicInputHash({
+        prompt,
+        tags,
+        durationSeconds: actualDuration,
+        audioModel: model,
+      });
+
+      await context.run('write-music-variant', async () => {
+        return scopedDb.sequenceVariants.upsertMusicPrimary({
+          sequenceId,
+          url: audioUrl,
+          storagePath: storageResult.path,
+          prompt,
+          tags,
+          durationSeconds: actualDuration,
+          model,
+          status: 'completed',
+          generatedAt: new Date(),
+          error: null,
+          inputHash,
+        });
+      });
+
       await context.run('update-sequence-music', async () => {
         await scopedDb.sequence(sequenceId).updateMusicFields({
           musicUrl: audioUrl,
