@@ -1,7 +1,7 @@
 import { frameKeys } from '@/hooks/use-frames';
 import { useRealtime } from '@/lib/realtime/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
 const TOAST_DEBOUNCE_MS = 5_000;
@@ -79,4 +79,18 @@ export function useStaleDetected(sequenceId: string | undefined) {
     onData: handleEvent,
     enabled: !!sequenceId,
   });
+
+  // Cancel any pending toast when the sequence changes or the view unmounts —
+  // otherwise a navigation within the 5s debounce window fires a toast for a
+  // sequence the user has already left.
+  useEffect(() => {
+    const state = debounceRef.current;
+    return () => {
+      if (state.timeout) {
+        clearTimeout(state.timeout);
+        state.timeout = null;
+        state.count = 0;
+      }
+    };
+  }, [sequenceId]);
 }

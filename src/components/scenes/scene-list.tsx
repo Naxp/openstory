@@ -20,10 +20,7 @@ type SceneListProps = {
   hideBatchButton?: boolean;
   /** Live divergent alternates for the current sequence (filtered per-frame). */
   divergentVariants?: FrameVariant[];
-  /** Frame ids whose live thumbnail is stale (no divergent alternate yet). */
-  staleThumbnailFrameIds?: Set<string>;
   onCompareDivergent?: (variant: FrameVariant) => void;
-  onRegenerateThumbnail?: (frameId: string) => void;
 };
 
 const isCompleted = (frame: Frame) => {
@@ -43,9 +40,7 @@ const SceneListComponent: React.FC<SceneListProps> = ({
   musicPromptsReady,
   hideBatchButton = false,
   divergentVariants,
-  staleThumbnailFrameIds,
   onCompareDivergent,
-  onRegenerateThumbnail,
 }) => {
   const divergentByFrameId = useMemo(() => {
     const map = new Map<string, FrameVariant>();
@@ -148,16 +143,10 @@ const SceneListComponent: React.FC<SceneListProps> = ({
                   isRegeneratingImage={regeneratingImages.has(frame.id)}
                   isRegeneratingMotion={regeneratingMotion.has(frame.id)}
                   divergentVariantId={divergent?.id}
-                  isThumbnailStale={
-                    !divergent && !!staleThumbnailFrameIds?.has(frame.id)
-                  }
                   onCompareDivergent={
                     divergent
                       ? () => onCompareDivergent?.(divergent)
                       : undefined
-                  }
-                  onRegenerateThumbnail={() =>
-                    onRegenerateThumbnail?.(frame.id)
                   }
                 />
               );
@@ -241,7 +230,17 @@ const areEqual = (
   }
 
   // Compare callback references
-  if (prevProps.onBatchGenerateMotion !== nextProps.onBatchGenerateMotion) {
+  if (
+    prevProps.onBatchGenerateMotion !== nextProps.onBatchGenerateMotion ||
+    prevProps.onCompareDivergent !== nextProps.onCompareDivergent
+  ) {
+    return false;
+  }
+
+  // Divergent / staleness inputs drive corner-dot indicators on each row.
+  // TanStack Query structural sharing keeps the array reference stable when
+  // contents are unchanged, so reference equality is sufficient here.
+  if (prevProps.divergentVariants !== nextProps.divergentVariants) {
     return false;
   }
 

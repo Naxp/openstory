@@ -129,6 +129,8 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
       case 'audio':
         update.audioUrl = variant.url;
         update.audioPath = variant.storagePath;
+        update.audioStatus = 'completed';
+        update.audioError = null;
         update.audioInputHash = variant.inputHash;
         progressEvent = 'audio:progress';
         progressUrlField = 'audioUrl';

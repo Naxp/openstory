@@ -66,7 +66,6 @@ const AssetPreview: React.FC<{
       // adds little here and the variant URL may already be a CDN-resized one.
       // Plain img keeps this simple and aligns with the existing variant
       // selector dialog.
-      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={url}
         alt={alt}

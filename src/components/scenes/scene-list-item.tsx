@@ -1,5 +1,4 @@
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
-import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
 import {
   Card,
   CardDescription,
@@ -29,10 +28,7 @@ type SceneListItemProps = {
    * spec — promoting the alternate resolves both states.
    */
   divergentVariantId?: string;
-  /** True when the live thumbnail's input hash no longer matches upstream. */
-  isThumbnailStale?: boolean;
   onCompareDivergent?: () => void;
-  onRegenerateThumbnail?: () => void;
 };
 
 const SceneListItemComponent: React.FC<SceneListItemProps> = ({
@@ -45,16 +41,12 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
   isRegeneratingImage = false,
   isRegeneratingMotion = false,
   divergentVariantId,
-  isThumbnailStale = false,
   onCompareDivergent,
-  onRegenerateThumbnail,
 }) => {
   // Divergent alternate takes precedence: promoting it resolves staleness too.
   const showDivergentDot = !!divergentVariantId;
-  const showStalenessDot = !showDivergentDot && isThumbnailStale;
   const showStatusIndicator =
     !showDivergentDot &&
-    !showStalenessDot &&
     (isCompleted ||
       (frame && (isRegeneratingImage || isRegeneratingMotion || !isCompleted)));
   // Extract scene data from frame metadata
@@ -98,24 +90,6 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
             // Compare-only entry from the corner; promote/discard live in the dialog.
             onPromote={() => onCompareDivergent?.()}
             onDiscard={() => onCompareDivergent?.()}
-          />
-        </div>
-      )}
-      {showStalenessDot && (
-        <div
-          className="absolute right-3 top-3 z-10"
-          // The corner indicator is itself a focusable button; this wrapper
-          // exists only to halt click propagation so opening the dot doesn't
-          // also select the scene card behind it.
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          role="presentation"
-        >
-          <StalenessIndicator
-            density="corner-dot"
-            artifact="thumbnail"
-            entityType="frame"
-            onRegenerate={() => onRegenerateThumbnail?.()}
           />
         </div>
       )}
@@ -206,8 +180,7 @@ const areEqual = (
     prevProps.variant !== nextProps.variant ||
     prevProps.isRegeneratingImage !== nextProps.isRegeneratingImage ||
     prevProps.isRegeneratingMotion !== nextProps.isRegeneratingMotion ||
-    prevProps.divergentVariantId !== nextProps.divergentVariantId ||
-    prevProps.isThumbnailStale !== nextProps.isThumbnailStale
+    prevProps.divergentVariantId !== nextProps.divergentVariantId
   ) {
     return false;
   }

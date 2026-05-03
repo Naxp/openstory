@@ -21,7 +21,6 @@ import {
   useUndiscardVariant,
 } from '@/hooks/use-frames';
 import { useStaleDetected } from '@/lib/realtime/use-stale-detected';
-import { generateFrameImageFn } from '@/functions/frame-image';
 import { DivergenceCompareDialog } from '@/components/scenes/divergence-compare-dialog';
 import { sequenceKeys, useSequence } from '@/hooks/use-sequences';
 import { useStyle } from '@/hooks/use-styles';
@@ -199,6 +198,9 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
         { sequenceId, frameId: variant.frameId, variantId: variant.id },
         {
           onSuccess: () => {
+            // Only close the dialog after the mutation succeeds — on failure
+            // the user keeps the dialog open and can retry from there.
+            setCompareVariant(null);
             toast('Alternate discarded', {
               action: { label: 'Undo', onClick: restore },
             });
@@ -234,22 +236,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
       );
     },
     [sequenceId, promoteVariant]
-  );
-
-  const handleRegenerateThumbnail = useCallback(
-    async (frameId: string) => {
-      try {
-        await generateFrameImageFn({
-          data: { sequenceId, frameId, regenerateThumbnail: true },
-        });
-        setRegeneratingImages((prev) => addToSet(prev, frameId));
-      } catch (error) {
-        toast.error('Failed to start regeneration', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    },
-    [sequenceId]
   );
 
   const curSelectedFrameId = selectedFrameId || frames?.[0]?.id;
@@ -578,9 +564,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             }
             divergentVariants={divergentVariants}
             onCompareDivergent={(variant) => setCompareVariant(variant)}
-            onRegenerateThumbnail={(frameId) =>
-              void handleRegenerateThumbnail(frameId)
-            }
           />
         </div>
 
@@ -657,10 +640,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
               frame={targetFrame}
               variant={compareVariant}
               onPromote={() => handlePromote(compareVariant)}
-              onDiscard={() => {
-                handleDiscardWithUndo(compareVariant);
-                setCompareVariant(null);
-              }}
+              onDiscard={() => handleDiscardWithUndo(compareVariant)}
               isPromoting={promoteVariant.isPending}
               isDiscarding={discardVariant.isPending}
             />
