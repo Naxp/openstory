@@ -171,11 +171,7 @@ export const LocationSuggestionSelector: React.FC<
           className="gap-2 text-muted-foreground"
         >
           <MapPin className="h-4 w-4" />
-          <span>
-            {selectedLocationIds.length > 0
-              ? `${selectedLocationIds.length} picked · auto for rest`
-              : 'Auto-pick locations'}
-          </span>
+          <span>Locations</span>
         </Button>
 
         {/* Selected location thumbnails */}
@@ -210,20 +206,17 @@ export const LocationSuggestionSelector: React.FC<
           >
             <DialogHeader>
               <DialogTitle>
-                Pre-pick specific locations{' '}
-                <span className="text-sm font-normal text-muted-foreground">
-                  (optional)
-                </span>
+                Select Locations
                 {selectedLocationIds.length > 0 && (
                   <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    — {selectedLocationIds.length} selected
+                    ({selectedLocationIds.length} selected)
                   </span>
                 )}
               </DialogTitle>
               <DialogDescription>
-                Skip this and the AI will auto-extract every location from your
-                script with AI-generated reference shots. Pick locations here
-                only when you want a specific reference.
+                Pick locations here only when you want a specific reference. Any
+                locations you don't pre-pick are auto-extracted from your script
+                and given AI-generated reference shots.
               </DialogDescription>
             </DialogHeader>
 
@@ -296,7 +289,23 @@ export const LocationSuggestionSelector: React.FC<
                   </Button>
                 }
               />
-              <Button type="submit">Done</Button>
+              <Button type="submit" className="h-auto py-1.5">
+                {selectedLocationIds.length > 0 ? (
+                  <span>
+                    Use {selectedLocationIds.length}{' '}
+                    {selectedLocationIds.length === 1
+                      ? 'Location'
+                      : 'Locations'}
+                  </span>
+                ) : (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>Continue</span>
+                    <span className="text-[10px] font-normal opacity-80">
+                      without picking locations
+                    </span>
+                  </span>
+                )}
+              </Button>
             </div>
           </form>
         </DialogContent>
