@@ -704,8 +704,9 @@ export interface MusicWorkflowResult {
  *
  * The final video is a function of `(merged_video_variant, music_variant)`.
  * The variant ids identify which row in `sequence_video_variants` /
- * `sequence_music_variants` was used; the urls are inlined for convenience
- * so the workflow doesn't read mutable state to find them.
+ * `sequence_music_variants` was used; the workflow resolves the source urls
+ * by id (`getVideoById` / `getMusicById`) so the input cannot drift from the
+ * stored variant.
  */
 export interface MergeAudioVideoWorkflowInput extends SequenceWorkflowContext {
   /** Source merged-video variant id (from `sequence_video_variants`). */

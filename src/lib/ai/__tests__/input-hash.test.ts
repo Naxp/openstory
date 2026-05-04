@@ -478,7 +478,11 @@ describe('canonical serialization', () => {
 
 describe('computeSequenceVideoInputHash', () => {
   const base = {
-    sourceFrameVideos: ['hash-a', 'hash-b', 'hash-c'],
+    sourceFrameVideos: [
+      { kind: 'variantHash' as const, hash: 'hash-a' },
+      { kind: 'variantHash' as const, hash: 'hash-b' },
+      { kind: 'variantHash' as const, hash: 'hash-c' },
+    ],
     targetFps: 24,
     resolution: { width: 1920, height: 1080 },
   };
@@ -487,7 +491,11 @@ describe('computeSequenceVideoInputHash', () => {
     const a = await computeSequenceVideoInputHash(base);
     const swapped = await computeSequenceVideoInputHash({
       ...base,
-      sourceFrameVideos: ['hash-b', 'hash-a', 'hash-c'],
+      sourceFrameVideos: [
+        { kind: 'variantHash' as const, hash: 'hash-b' },
+        { kind: 'variantHash' as const, hash: 'hash-a' },
+        { kind: 'variantHash' as const, hash: 'hash-c' },
+      ],
     });
     expect(a).not.toBe(swapped);
   });
@@ -509,6 +517,31 @@ describe('computeSequenceVideoInputHash', () => {
       targetFps: null,
     });
     expect(withVals).not.toBe(noFps);
+  });
+
+  it('distinguishes variantHash kind from url kind for the same string', async () => {
+    const asHash = await computeSequenceVideoInputHash({
+      ...base,
+      sourceFrameVideos: [{ kind: 'variantHash', hash: 'abc' }],
+    });
+    const asUrl = await computeSequenceVideoInputHash({
+      ...base,
+      sourceFrameVideos: [{ kind: 'url', url: 'abc' }],
+    });
+    expect(asHash).not.toBe(asUrl);
+  });
+
+  it('trims leading/trailing whitespace on source frame entries', async () => {
+    const trimmed = await computeSequenceVideoInputHash(base);
+    const padded = await computeSequenceVideoInputHash({
+      ...base,
+      sourceFrameVideos: [
+        { kind: 'variantHash' as const, hash: '  hash-a  ' },
+        { kind: 'variantHash' as const, hash: '\thash-b\n' },
+        { kind: 'variantHash' as const, hash: 'hash-c ' },
+      ],
+    });
+    expect(padded).toBe(trimmed);
   });
 });
 
@@ -545,5 +578,15 @@ describe('computeSequenceMusicInputHash', () => {
       audioModel: 'cassette-v2',
     });
     expect(new Set([a, prompt, tags, duration, model]).size).toBe(5);
+  });
+
+  it('trims leading/trailing whitespace on prompt and tags', async () => {
+    const trimmed = await computeSequenceMusicInputHash(base);
+    const padded = await computeSequenceMusicInputHash({
+      ...base,
+      prompt: '  Cinematic orchestral build  ',
+      tags: '\tcinematic,tension,strings\n',
+    });
+    expect(padded).toBe(trimmed);
   });
 });

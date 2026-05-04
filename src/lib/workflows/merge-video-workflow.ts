@@ -104,7 +104,10 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
 
     const inputHash = await context.run('compute-input-hash', async () => {
       return computeSequenceVideoInputHash({
-        sourceFrameVideos: input.videoUrls,
+        sourceFrameVideos: input.videoUrls.map((url) => ({
+          kind: 'url' as const,
+          url,
+        })),
         targetFps: input.targetFps ?? null,
         resolution: input.resolution ?? null,
       });
