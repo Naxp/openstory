@@ -2,6 +2,7 @@
  * Type definitions for QStash Workflows
  */
 
+import type { SequenceVideoFrameSource } from '@/lib/ai/input-hash';
 import type {
   AUDIO_MODELS,
   IMAGE_MODELS,
@@ -491,6 +492,15 @@ export interface LibraryTalentSheetWorkflowResult {
 export interface MergeVideoWorkflowInput extends SequenceWorkflowContext {
   /** Ordered list of video URLs to merge */
   videoUrls: string[];
+  /**
+   * Ordered list of source frame video identities for input-hashing,
+   * parallel to `videoUrls`. Each entry is `{ kind: 'variantHash', hash }`
+   * when the source frame's video has an `input_hash` (cascades upstream
+   * staleness), or `{ kind: 'url', url }` for legacy frames without one.
+   * Frozen at trigger time; the workflow re-resolves the live hashes for
+   * within-run drift detection.
+   */
+  sourceFrameVideoHashes?: SequenceVideoFrameSource[];
   /** Target FPS for output (1-60, defaults to lowest of inputs) */
   targetFps?: number;
   /** Target resolution (512-2048 per dimension) */
@@ -700,15 +710,19 @@ export interface MusicWorkflowResult {
 
 /**
  * Merge audio+video workflow input
- * Muxes a music track onto the merged video to produce the final output
+ * Muxes a music track onto the merged video to produce the final output.
+ *
+ * The final video is a function of `(merged_video_variant, music_variant)`.
+ * The variant ids identify which row in `sequence_video_variants` /
+ * `sequence_music_variants` was used; the workflow resolves the source urls
+ * by id (`getVideoById` / `getMusicById`) so the input cannot drift from the
+ * stored variant.
  */
 export interface MergeAudioVideoWorkflowInput extends SequenceWorkflowContext {
-  /** URL of the merged video (all frames stitched) */
-  mergedVideoUrl: string;
-  /** URL of the sequence-level music track */
-  musicUrl: string;
-  /** Total duration in milliseconds (for compose track timing) */
-  durationMs?: number;
+  /** Source merged-video variant id (from `sequence_video_variants`). */
+  mergedVideoVariantId: string;
+  /** Source music variant id (from `sequence_music_variants`). */
+  musicVariantId: string;
 }
 
 export interface MergeAudioVideoWorkflowResult {

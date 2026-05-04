@@ -16,6 +16,9 @@ import { frames } from './frames';
 
 import { frameVariants } from './frame-variants';
 
+import { sequenceVideoVariants } from './sequence-video-variants';
+import { sequenceMusicVariants } from './sequence-music-variants';
+
 import { characters } from './characters';
 
 // Location Library (team-level templates)
@@ -81,6 +84,21 @@ export type {
   NewFrameVariant,
   VariantType,
 } from './frame-variants';
+
+// Sequence-level variants (merged video + music)
+export { sequenceVideoVariants, sequenceMusicVariants };
+
+export type {
+  NewSequenceVideoVariant,
+  SequenceVideoVariantStatus,
+  SequenceVideoVariant,
+} from './sequence-video-variants';
+
+export type {
+  NewSequenceMusicVariant,
+  SequenceMusicVariant,
+  SequenceMusicVariantStatus,
+} from './sequence-music-variants';
 
 // Characters (scripted roles)
 export { characters };
@@ -218,6 +236,8 @@ export const schema = {
   sequences,
   frames,
   frameVariants,
+  sequenceVideoVariants,
+  sequenceMusicVariants,
 
   // Characters (scripted roles extracted from script)
   characters,
