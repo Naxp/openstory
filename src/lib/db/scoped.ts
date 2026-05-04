@@ -21,6 +21,7 @@ import {
 import { createCharactersMethods } from '@/lib/db/scoped/characters';
 import { createFramePromptVariantsMethods } from '@/lib/db/scoped/frame-prompt-variants';
 import { createFrameVariantsMethods } from '@/lib/db/scoped/frame-variants';
+import { createSequenceVariantsMethods } from '@/lib/db/scoped/sequence-variants';
 import { createFramesMethods } from '@/lib/db/scoped/frames';
 import { createLibraryMethods } from '@/lib/db/scoped/library';
 import {
@@ -244,6 +245,7 @@ export function createScopedDb(teamId: string, userId: string) {
     frameVariants: createFrameVariantsMethods(db),
     framePromptVariants: createFramePromptVariantsMethods(db),
     sequenceMusicPromptVariants: createSequenceMusicPromptVariantsMethods(db),
+    sequenceVariants: createSequenceVariantsMethods(db),
 
     characters: createCharactersMethods(db),
     sequenceLocations: createSequenceLocationsMethods(db),
@@ -280,6 +282,7 @@ export function createReadOnlyScopedDb(teamId: string) {
     frameVariants: createFrameVariantsMethods(db),
     framePromptVariants: createFramePromptVariantsMethods(db),
     sequenceMusicPromptVariants: createSequenceMusicPromptVariantsMethods(db),
+    sequenceVariants: createSequenceVariantsMethods(db),
 
     characters: createCharactersMethods(db),
     sequenceLocations: createSequenceLocationsMethods(db),

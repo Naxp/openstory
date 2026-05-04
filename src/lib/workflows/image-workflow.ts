@@ -37,14 +37,15 @@ export const generateImageWorkflow = createScopedWorkflow<
     // payload-tamper detection only halts the run from inside `context.run`.
     if (input.sceneSnapshot) {
       await context.run('validate-snapshot', async () => {
-        if (context.snapshot) {
-          await context.snapshot.validate();
+        if (!context.snapshot) {
+          throw new Error(
+            '[ImageWorkflow] sceneSnapshot is present but context.snapshot is undefined — snapshot extension is not configured for this workflow runtime'
+          );
         }
+        await context.snapshot.validate();
       });
     }
 
-    // After validate-snapshot, snapshotInputHash is guaranteed when
-    // sceneSnapshot is present, so this narrows to `string | null` cleanly.
     const snapshotHash: string | null =
       input.sceneSnapshot && input.snapshotInputHash
         ? input.snapshotInputHash
@@ -309,7 +310,7 @@ export const generateImageWorkflow = createScopedWorkflow<
               );
             } catch (emitError) {
               console.error(
-                `[ImageWorkflow] Failed to emit generation.image:progress for frame ${input.frameId}:`,
+                `[ImageWorkflow] Failed to emit failure event for sequence ${input.sequenceId} frame ${input.frameId}:`,
                 emitError
               );
             }
