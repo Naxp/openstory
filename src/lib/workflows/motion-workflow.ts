@@ -29,6 +29,7 @@ import type {
 } from '@/lib/workflow/types';
 import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { WorkflowNonRetryableError } from '@upstash/workflow';
+import { shouldRecordUserEdit } from './user-edit-predicate';
 
 /** Each batch polls in a tight loop for ~30s, then checkpoints for durability */
 const POLL_BATCH_DURATION_MS = 30_000;
@@ -117,7 +118,6 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
             videoStatus: 'generating',
             videoWorkflowRunId: context.workflowRunId,
             motionModel: model,
-            motionPrompt: input.prompt,
           },
           { throwOnMissing: false }
         );
@@ -127,6 +127,22 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
             `[MotionWorkflow] Frame ${input.frameId} was deleted, skipping workflow`
           );
           return { frameDeleted: true };
+        }
+
+        if (
+          shouldRecordUserEdit({
+            userEditedPrompt: input.userEditedPrompt,
+            prompt: input.prompt,
+            currentPrompt: frame.motionPrompt,
+          })
+        ) {
+          await scopedDb.framePromptVariants.write({
+            frameId: input.frameId,
+            promptType: 'motion',
+            text: input.prompt,
+            source: 'user-edit',
+            createdBy: input.userId,
+          });
         }
 
         void getGenerationChannel(input.sequenceId).emit(
@@ -426,8 +442,11 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
             'generation.video:progress',
             { frameId: input.frameId, status: 'failed' }
           );
-        } catch {
-          // Ignore emit errors in failure handler
+        } catch (emitError) {
+          console.error(
+            `[MotionWorkflow] Failed to emit generation.video:progress for frame ${input.frameId}:`,
+            emitError
+          );
         }
       }
 

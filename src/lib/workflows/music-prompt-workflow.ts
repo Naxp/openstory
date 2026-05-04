@@ -5,6 +5,7 @@ import type {
   MusicPromptWorkflowInput,
   MusicPromptWorkflowResult,
 } from '@/lib/workflow/types';
+import { computeMusicPromptInputHash } from '../ai/input-hash';
 import { musicDesignResultSchema } from '../ai/response-schemas';
 import { reinforceInstrumentalTags } from '../prompts/music-prompt';
 import { durableLLMCall } from './llm-call-helper';
@@ -38,17 +39,40 @@ export const generateMusicPromptWorflow = createScopedWorkflow<
       llmCallContext
     );
 
-    // Now save the music prompt to the database
     if (sequenceId) {
+      if (!musicDesignResult.prompt) {
+        throw new Error(
+          `Music prompt generation returned empty prompt for sequence ${sequenceId}`
+        );
+      }
+
+      // The variants helper appends a row tagged 'ai-generated' /
+      // 'regenerated' and updates the cached `musicPrompt` / `musicTags` /
+      // `musicPromptInputHash` on `sequences`. The two writes are
+      // sequential, not transactional — see the helper docstring.
+      const inputHash = await computeMusicPromptInputHash({
+        sceneSummaries,
+        analysisModel: analysisModelId,
+      });
+
       await context.run('save-music-prompt-to-db', async () => {
         const reinforcedTags = reinforceInstrumentalTags(
           musicDesignResult.tags
         );
-        await scopedDb.sequences.updateMusicPrompt(
+
+        const previous =
+          await scopedDb.sequenceMusicPromptVariants.getLatest(sequenceId);
+        const source = previous ? 'regenerated' : 'ai-generated';
+
+        await scopedDb.sequenceMusicPromptVariants.write({
           sequenceId,
-          musicDesignResult.prompt,
-          reinforcedTags
-        );
+          prompt: musicDesignResult.prompt,
+          tags: reinforcedTags,
+          source,
+          inputHash,
+          analysisModel: analysisModelId,
+          createdBy: input.userId,
+        });
       });
     }
 
@@ -71,8 +95,11 @@ export const generateMusicPromptWorflow = createScopedWorkflow<
             'generation.audio:progress',
             { status: 'failed' }
           );
-        } catch {
-          // Ignore emit errors
+        } catch (emitError) {
+          console.error(
+            `[MusicWorkflow] Failed to emit generation.audio:progress for sequence ${input.sequenceId}:`,
+            emitError
+          );
         }
       }
       console.error(

@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'bun:test';
+import type {
+  CharacterBibleEntry,
+  LocationBibleEntry,
+  Scene,
+} from '../scene-analysis.schema';
+import type { StyleConfig } from '@/lib/db/schema';
+import type { MusicSceneSummary } from '@/lib/workflow/types';
 import {
   computeCharacterSheetInputHash,
   computeFrameAudioInputHash,
@@ -6,9 +13,12 @@ import {
   computeFrameVideoInputHash,
   computeLibraryLocationReferenceInputHash,
   computeLocationSheetInputHash,
+  computeMotionPromptInputHash,
+  computeMusicPromptInputHash,
   computeSequenceMusicInputHash,
   computeSequenceVideoInputHash,
   computeTalentSheetInputHash,
+  computeVisualPromptInputHash,
   type CharacterSheetHashInput,
   type FrameAudioHashInput,
   type FrameImageHashInput,
@@ -473,6 +483,193 @@ describe('canonical serialization', () => {
         audioModel: 'cassette-v1',
       })
     ).rejects.toThrow(/non-finite/);
+  });
+});
+
+describe('prompt input hashes', () => {
+  const minimalScene: Scene = {
+    sceneId: 's1',
+    sceneNumber: 1,
+    originalScript: { extract: '', dialogue: [] },
+  };
+
+  const minimalStyle: StyleConfig = {
+    mood: 'neutral',
+    artStyle: 'cinematic',
+    lighting: 'natural',
+    colorPalette: ['neutral'],
+    cameraWork: 'static',
+    referenceFilms: [],
+    colorGrading: 'neutral',
+  };
+
+  const aliceCharacter: CharacterBibleEntry = {
+    characterId: 'c1',
+    name: 'Alice',
+    age: '30',
+    gender: '',
+    ethnicity: '',
+    physicalDescription: '',
+    standardClothing: '',
+    distinguishingFeatures: '',
+    consistencyTag: '',
+  };
+
+  const beachLocation: LocationBibleEntry = {
+    locationId: 'l1',
+    name: 'Beach',
+    type: 'exterior',
+    timeOfDay: '',
+    description: '',
+    architecturalStyle: '',
+    keyFeatures: '',
+    colorPalette: '',
+    lightingSetup: '',
+    ambiance: '',
+    consistencyTag: '',
+    firstMention: { sceneId: '', text: '', lineNumber: 0 },
+  };
+
+  const sceneCtx = {
+    scene: minimalScene,
+    styleConfig: minimalStyle,
+    characterBible: [aliceCharacter],
+    locationBible: [beachLocation],
+    elementBible: [],
+    aspectRatio: '16:9',
+    analysisModel: 'anthropic/claude-haiku-4.5',
+  };
+
+  it('visual and motion prompt hashes are namespaced by artifact and differ', async () => {
+    const visual = await computeVisualPromptInputHash(sceneCtx);
+    const motion = await computeMotionPromptInputHash(sceneCtx);
+    expect(visual).not.toBe(motion);
+    expect(visual).toMatch(/^[0-9a-f]{64}$/);
+    expect(motion).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('changing the analysis model changes the visual prompt hash', async () => {
+    const a = await computeVisualPromptInputHash(sceneCtx);
+    const b = await computeVisualPromptInputHash({
+      ...sceneCtx,
+      analysisModel: 'anthropic/claude-sonnet-4.6',
+    });
+    expect(a).not.toBe(b);
+  });
+
+  it('elementBible changes flow through to both visual and motion prompt hashes', async () => {
+    const withoutElements = sceneCtx;
+    const withElement = {
+      ...sceneCtx,
+      elementBible: [
+        {
+          token: 'LOGO',
+          description: 'Red hex logo',
+          consistencyTag: 'red-hex-logo',
+          firstMention: { sceneId: 's1', text: 'LOGO', lineNumber: 1 },
+        },
+      ],
+    };
+
+    const visualA = await computeVisualPromptInputHash(withoutElements);
+    const visualB = await computeVisualPromptInputHash(withElement);
+    const motionA = await computeMotionPromptInputHash(withoutElements);
+    const motionB = await computeMotionPromptInputHash(withElement);
+
+    expect(visualA).not.toBe(visualB);
+    expect(motionA).not.toBe(motionB);
+  });
+
+  const baseSummary: MusicSceneSummary = {
+    sceneId: 's1',
+    title: 'Opening',
+    storyBeat: 'Establish tone',
+    durationSeconds: 10,
+    location: 'INT. STUDIO - NIGHT',
+    timeOfDay: 'night',
+    visualSummary: 'Wide shot, low key lighting',
+  };
+
+  it('music prompt hash is stable for equivalent inputs and changes with sceneSummaries', async () => {
+    const a = await computeMusicPromptInputHash({
+      sceneSummaries: [baseSummary],
+      analysisModel: 'm',
+    });
+    const b = await computeMusicPromptInputHash({
+      sceneSummaries: [{ ...baseSummary }],
+      analysisModel: 'm',
+    });
+    const c = await computeMusicPromptInputHash({
+      sceneSummaries: [{ ...baseSummary, storyBeat: 'Twist reveal' }],
+      analysisModel: 'm',
+    });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+
+  it('hash excludes LLM output: same upstream context with different prompts/continuity hashes the same', async () => {
+    const upstream = await computeVisualPromptInputHash(sceneCtx);
+    const enriched = await computeVisualPromptInputHash({
+      ...sceneCtx,
+      scene: {
+        ...minimalScene,
+        prompts: {
+          visual: {
+            fullPrompt: 'A wholly different prompt produced by the LLM',
+            negativePrompt: 'blurry',
+            components: {
+              sceneDescription: 'foo',
+              subject: 'bar',
+              environment: '',
+              lighting: '',
+              camera: '',
+              composition: '',
+              style: '',
+              technical: '',
+              atmosphere: '',
+            },
+          },
+        },
+        continuity: {
+          characterTags: ['alice'],
+          environmentTag: 'beach',
+          colorPalette: 'warm',
+          lightingSetup: 'golden hour',
+          styleTag: 'cinematic',
+        },
+      },
+    });
+    expect(upstream).toBe(enriched);
+
+    const motionUpstream = await computeMotionPromptInputHash(sceneCtx);
+    const motionEnriched = await computeMotionPromptInputHash({
+      ...sceneCtx,
+      scene: {
+        ...minimalScene,
+        prompts: {
+          motion: {
+            fullPrompt: 'Camera dolly in slowly',
+            components: {
+              cameraMovement: 'dolly',
+              startPosition: '',
+              endPosition: '',
+              durationSeconds: 5,
+              speed: 'slow',
+              smoothness: 'smooth',
+              subjectTracking: '',
+              equipment: '',
+            },
+            parameters: {
+              durationSeconds: 5,
+              fps: 30,
+              motionAmount: 'medium',
+              cameraControl: { pan: 0, tilt: 0, zoom: 0, movement: '' },
+            },
+          },
+        },
+      },
+    });
+    expect(motionUpstream).toBe(motionEnriched);
   });
 });
 

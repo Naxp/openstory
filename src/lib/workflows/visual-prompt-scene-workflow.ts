@@ -8,6 +8,7 @@
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { VisualPromptSceneWorkflowInput } from '@/lib/workflow/types';
+import { computeVisualPromptInputHash } from '../ai/input-hash';
 import {
   type VisualPromptWithContinuity,
   visualPromptWithContinuitySchema,
@@ -75,17 +76,56 @@ export const visualPromptSceneWorkflow = createScopedWorkflow<
     );
 
     if (sequenceId && frameId) {
+      if (!result.visual.fullPrompt) {
+        throw new Error(
+          `Visual prompt generation returned empty fullPrompt for scene ${scene.sceneId}`
+        );
+      }
+
+      const inputHash = await computeVisualPromptInputHash({
+        scene,
+        styleConfig,
+        characterBible,
+        locationBible,
+        elementBible,
+        aspectRatio,
+        analysisModel: analysisModelId,
+      });
+
+      const enrichedScene = {
+        ...scene,
+        prompts: {
+          ...scene.prompts,
+          visual: result.visual,
+        },
+        continuity: result.continuity,
+      };
+
       await context.run('save-visual-prompt-to-db', async () => {
-        await scopedDb.frames.update(frameId, {
-          metadata: scene,
-          imagePrompt: scene.prompts?.visual?.fullPrompt,
+        const previous = await scopedDb.framePromptVariants.getLatest(
+          frameId,
+          'visual'
+        );
+        const source = previous ? 'regenerated' : 'ai-generated';
+
+        await scopedDb.frames.update(frameId, { metadata: enrichedScene });
+
+        await scopedDb.framePromptVariants.write({
+          frameId,
+          promptType: 'visual',
+          text: result.visual.fullPrompt,
+          components: result.visual.components ?? null,
+          source,
+          inputHash,
+          analysisModel: analysisModelId,
         });
+
         await getGenerationChannel(sequenceId).emit(
           'generation.frame:updated',
           {
             frameId,
             updateType: 'visual-prompt',
-            metadata: scene,
+            metadata: enrichedScene,
           }
         );
       });

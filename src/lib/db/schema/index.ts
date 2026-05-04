@@ -16,6 +16,10 @@ import { frames } from './frames';
 
 import { frameVariants } from './frame-variants';
 
+import { framePromptVariants } from './frame-prompt-variants';
+
+import { sequenceMusicPromptVariants } from './sequence-music-prompt-variants';
+
 import { sequenceVideoVariants } from './sequence-video-variants';
 import { sequenceMusicVariants } from './sequence-music-variants';
 
@@ -84,6 +88,25 @@ export type {
   NewFrameVariant,
   VariantType,
 } from './frame-variants';
+
+// Frame Prompt Variants (visual/motion prompt history)
+export { framePromptVariants };
+
+export type {
+  FramePromptType,
+  FramePromptVariant,
+  FramePromptVariantComponents,
+  NewFramePromptVariant,
+  PromptVariantSource,
+} from './frame-prompt-variants';
+
+// Sequence Music Prompt Variants (music prompt history)
+export { sequenceMusicPromptVariants };
+
+export type {
+  NewSequenceMusicPromptVariant,
+  SequenceMusicPromptVariant,
+} from './sequence-music-prompt-variants';
 
 // Sequence-level variants (merged video + music)
 export { sequenceVideoVariants, sequenceMusicVariants };
@@ -236,6 +259,8 @@ export const schema = {
   sequences,
   frames,
   frameVariants,
+  framePromptVariants,
+  sequenceMusicPromptVariants,
   sequenceVideoVariants,
   sequenceMusicVariants,
 

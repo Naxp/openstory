@@ -394,21 +394,35 @@ export const generateMusicFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const { sequence, user } = context;
 
-    if (data.prompt || data.tags) {
-      await context.scopedDb.sequences.updateMusicPrompt(
-        sequence.id,
-        data.prompt ?? sequence.musicPrompt ?? '',
-        data.tags ?? sequence.musicTags ?? ''
+    const effectivePrompt = data.prompt ?? sequence.musicPrompt;
+    const effectiveTags = data.tags ?? sequence.musicTags;
+
+    if (!effectivePrompt) {
+      throw new Error(
+        'Music prompt has not been generated yet — generate the storyboard first before editing music inputs.'
       );
+    }
+    if (!effectiveTags) {
+      throw new Error('Music tags are required.');
+    }
+
+    // Persist the user's intent before triggering the workflow. Both
+    // `data.prompt` and `data.tags` are surfaced as a single user-edit
+    // revision; the variants helper updates the cached columns on `sequences`
+    // alongside the row insert so a tags-only edit isn't dropped.
+    if (data.prompt !== undefined || data.tags !== undefined) {
+      await context.scopedDb.sequenceMusicPromptVariants.write({
+        sequenceId: sequence.id,
+        prompt: effectivePrompt,
+        tags: effectiveTags,
+        source: 'user-edit',
+        createdBy: user.id,
+      });
     }
 
     const allFrames = await context.scopedDb.frames.listBySequence(
       data.sequenceId
     );
-
-    // For explicit calls with overrides, build input directly
-    const effectivePrompt = data.prompt ?? sequence.musicPrompt;
-    const effectiveTags = data.tags ?? sequence.musicTags;
 
     const totalDuration = allFrames.reduce((sum, frame) => {
       const seconds = frame.durationMs
@@ -425,10 +439,6 @@ export const generateMusicFn = createServerFn({ method: 'POST' })
       model:
         data.model && isValidAudioModel(data.model) ? data.model : undefined,
     };
-
-    if (!effectivePrompt || !effectiveTags) {
-      throw new Error('No music prompt or tags found');
-    }
 
     const musicInput: MusicWorkflowInput = {
       ...baseInput,

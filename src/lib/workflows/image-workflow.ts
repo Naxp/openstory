@@ -18,6 +18,7 @@ import {
   computeImageWorkflowHashFromDto,
   persistImageResult,
 } from './image-workflow-snapshot';
+import { shouldRecordUserEdit } from './user-edit-predicate';
 
 type ImageWorkflowResult = {
   imageUrl: string;
@@ -73,7 +74,6 @@ export const generateImageWorkflow = createScopedWorkflow<
               thumbnailStatus: 'generating',
               thumbnailWorkflowRunId: context.workflowRunId,
               imageModel: model,
-              imagePrompt: input.prompt,
             },
             { throwOnMissing: false }
           );
@@ -84,6 +84,22 @@ export const generateImageWorkflow = createScopedWorkflow<
               `Frame ${input.frameId} was deleted, skipping`
             );
             return null;
+          }
+
+          if (
+            shouldRecordUserEdit({
+              userEditedPrompt: input.userEditedPrompt,
+              prompt: input.prompt,
+              currentPrompt: frame.imagePrompt,
+            })
+          ) {
+            await scopedDb.framePromptVariants.write({
+              frameId: input.frameId,
+              promptType: 'visual',
+              text: input.prompt,
+              source: 'user-edit',
+              createdBy: input.userId,
+            });
           }
 
           // Dual-write: upsert frame_variants row

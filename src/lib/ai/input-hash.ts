@@ -23,7 +23,8 @@
  * Throws on values that JSON.stringify would silently elide or coerce
  * (`undefined`, functions, symbols, `NaN`, `±Infinity`) — those would produce
  * hash collisions across semantically distinct inputs. Callers must normalize
- * optional fields to `null` before passing in.
+ * `undefined` optionals to `null` (or use `trim()` for free-text fields, which
+ * coerces nullish to `''`) before passing in.
  */
 function canonicalize(
   value: unknown,
@@ -276,6 +277,103 @@ export function computeTalentSheetInputHash(
     },
     referenceMediaHashes: sortedRefs(input.referenceMediaHashes),
     imageModel: input.imageModel,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Prompt input hashes
+//
+// Prompts are themselves AI-generated artifacts. The hash captures only the
+// upstream context the LLM was given — scene metadata, style config,
+// character / location / element bibles, aspect ratio, and the analysis
+// model. The LLM's output (`scene.prompts`, `scene.continuity`) is
+// deliberately excluded; including it would make every regeneration produce a
+// different hash for identical inputs, since LLM output is non-deterministic.
+// ---------------------------------------------------------------------------
+
+import type {
+  CharacterBibleEntry,
+  ElementBibleEntry,
+  LocationBibleEntry,
+  Scene,
+} from './scene-analysis.schema';
+import type { MusicSceneSummary } from '@/lib/workflow/types';
+import type { StyleConfig } from '@/lib/db/schema';
+
+export type PromptSceneContextHashInput = {
+  /**
+   * Scene the prompt is being generated for. `prompts` and `continuity` are
+   * stripped before hashing — they are downstream LLM output, not input.
+   */
+  scene: Scene;
+  /** Sequence style config (look/feel knobs that influence prompt phrasing). */
+  styleConfig: StyleConfig;
+  /** Character bible entries; order is preserved (scene-defined ordering). */
+  characterBible: readonly CharacterBibleEntry[];
+  /** Location bible entries; order is preserved. */
+  locationBible: readonly LocationBibleEntry[];
+  /** Element bible entries; order is preserved. */
+  elementBible?: readonly ElementBibleEntry[];
+  /** Aspect ratio influences composition guidance in the prompt. */
+  aspectRatio: string;
+  /** Analysis model id (e.g. `anthropic/claude-haiku-4.5`). */
+  analysisModel: string;
+};
+
+/**
+ * Strip the LLM-output fields off a scene so the hash represents only the
+ * pre-prompt input surface.
+ */
+function sceneInputContext(
+  scene: Scene
+): Omit<Scene, 'prompts' | 'continuity'> {
+  const { prompts: _prompts, continuity: _continuity, ...context } = scene;
+  return context;
+}
+
+export function computeVisualPromptInputHash(
+  input: PromptSceneContextHashInput
+): Promise<string> {
+  return sha256Hex({
+    artifact: 'frame:visual-prompt',
+    scene: sceneInputContext(input.scene),
+    styleConfig: input.styleConfig,
+    characterBible: input.characterBible,
+    locationBible: input.locationBible,
+    elementBible: input.elementBible ?? null,
+    aspectRatio: trim(input.aspectRatio),
+    analysisModel: trim(input.analysisModel),
+  });
+}
+
+export function computeMotionPromptInputHash(
+  input: PromptSceneContextHashInput
+): Promise<string> {
+  return sha256Hex({
+    artifact: 'frame:motion-prompt',
+    scene: sceneInputContext(input.scene),
+    styleConfig: input.styleConfig,
+    characterBible: input.characterBible,
+    locationBible: input.locationBible,
+    elementBible: input.elementBible ?? null,
+    aspectRatio: trim(input.aspectRatio),
+    analysisModel: trim(input.analysisModel),
+  });
+}
+
+export type MusicPromptInputHashInput = {
+  /** Compact scene summaries fed to the music LLM — the actual upstream input. */
+  sceneSummaries: readonly MusicSceneSummary[];
+  analysisModel: string;
+};
+
+export function computeMusicPromptInputHash(
+  input: MusicPromptInputHashInput
+): Promise<string> {
+  return sha256Hex({
+    artifact: 'sequence:music-prompt',
+    sceneSummaries: input.sceneSummaries,
+    analysisModel: trim(input.analysisModel),
   });
 }
 

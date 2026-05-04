@@ -73,6 +73,14 @@ export interface ImageWorkflowInput extends SequenceWorkflowContext {
   aspectRatio?: AspectRatio;
   /** Hash over `(prompt, model, aspectRatio, sceneSnapshot)`; validated at start. */
   snapshotInputHash?: string;
+  /**
+   * `true` when `prompt` came from a user edit (typed in the UI). `false` for
+   * auto paths (storyboard generation, smart-retry, preview, scene split)
+   * where `prompt` may be reassembled from `frame.metadata.prompts.visual`
+   * and would not match the bare `frame.imagePrompt`. Drives whether the
+   * workflow appends a `user-edit` variant row.
+   */
+  userEditedPrompt?: boolean;
 }
 
 /**
@@ -180,6 +188,14 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
   fps?: number;
   motionBucket?: number;
   aspectRatio?: AspectRatio; // "16:9", "9:16", "1:1"
+  /**
+   * `true` when `prompt` came from a user edit (typed in the UI). `false` for
+   * auto paths (batch generation, smart-retry) where `prompt` was produced by
+   * `resolveMotionPrompt` and may include model-specific dialogue/audio
+   * assembly that does not match the bare `frame.motionPrompt`. Drives whether
+   * the workflow appends a `user-edit` variant row.
+   */
+  userEditedPrompt?: boolean;
 }
 
 /**
@@ -395,6 +411,7 @@ export interface MotionPromptWorkflowInput extends SequenceWorkflowContext {
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameMapping?: FrameMapping;
@@ -407,6 +424,7 @@ export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext 
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameId?: string;
@@ -746,6 +764,8 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
     fps?: number;
     motionBucket?: number;
     aspectRatio?: AspectRatio;
+    /** See `MotionWorkflowInput.userEditedPrompt`. */
+    userEditedPrompt?: boolean;
   }>;
   /** When true, generate music in parallel and mux into final video */
   includeMusic: boolean;
@@ -811,6 +831,7 @@ export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   videoModel?: ImageToVideoModel;

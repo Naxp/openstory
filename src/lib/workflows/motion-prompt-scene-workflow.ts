@@ -5,8 +5,10 @@
  * Uses three-step durable pattern: prepare → context.call → log
  */
 
+import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
+import { computeMotionPromptInputHash } from '../ai/input-hash';
 import {
   type MotionPrompt,
   motionPromptSchema,
@@ -26,6 +28,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
       aspectRatio,
       characterBible,
       locationBible,
+      elementBible = [],
       styleConfig,
       analysisModelId,
       sequenceId,
@@ -54,6 +57,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
             scene: JSON.stringify(scene, null, 2),
             characterBible: JSON.stringify(characterBible, null, 2),
             locationBible: JSON.stringify(locationBible, null, 2),
+            elementBible: JSON.stringify(elementBible, null, 2),
             styleConfig: JSON.stringify(styleConfig, null, 2),
             aspectRatio,
           },
@@ -84,18 +88,62 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
     );
 
     if (sequenceId && frameId) {
+      if (!motionPrompt.fullPrompt) {
+        throw new Error(
+          `Motion prompt generation returned empty fullPrompt for scene ${scene.sceneId}`
+        );
+      }
+
+      const inputHash = await computeMotionPromptInputHash({
+        scene,
+        styleConfig,
+        characterBible,
+        locationBible,
+        elementBible,
+        aspectRatio,
+        analysisModel: analysisModelId,
+      });
+
+      const enrichedScene = {
+        ...scene,
+        prompts: {
+          ...scene.prompts,
+          motion: motionPrompt,
+        },
+      };
+
       await context.run('save-motion-prompt-to-db', async () => {
-        await scopedDb.frames.update(frameId, {
-          metadata: scene,
-          motionPrompt: motionPrompt.fullPrompt,
+        const previous = await scopedDb.framePromptVariants.getLatest(
+          frameId,
+          'motion'
+        );
+        const source = previous ? 'regenerated' : 'ai-generated';
+
+        await scopedDb.frames.update(frameId, { metadata: enrichedScene });
+
+        await scopedDb.framePromptVariants.write({
+          frameId,
+          promptType: 'motion',
+          text: motionPrompt.fullPrompt,
+          components: motionPrompt.components,
+          parameters: motionPrompt.parameters,
+          source,
+          inputHash,
+          analysisModel: analysisModelId,
         });
       });
     }
     return { sceneId: scene.sceneId, motionPrompt };
   },
   {
-    failureFunction: async () => {
-      return `Motion prompt generation failed`;
+    failureFunction: async ({ context, failStatus, failResponse }) => {
+      const error = sanitizeFailResponse(failResponse);
+      console.error('[MotionPromptSceneWorkflow] Failed', {
+        workflowRunId: context.workflowRunId,
+        failStatus,
+        failResponse: error,
+      });
+      return `Motion prompt generation failed: ${error}`;
     },
   }
 );
