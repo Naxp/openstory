@@ -32,10 +32,8 @@ export const generateImageWorkflow = createScopedWorkflow<
   async (context, scopedDb) => {
     const input = context.requestPayload;
 
-    // Validate the inlined snapshot inside the body. Upstash swallows
-    // runStarted-middleware throws to console.error, so payload-tamper
-    // detection only halts the run when the throw originates inside
-    // `context.run`. Skipped when the caller did not opt into the snapshot.
+    // Upstash swallows runStarted-middleware throws to console.error, so
+    // payload-tamper detection only halts the run from inside `context.run`.
     if (input.sceneSnapshot) {
       await context.run('validate-snapshot', async () => {
         if (context.snapshot) {
@@ -44,10 +42,8 @@ export const generateImageWorkflow = createScopedWorkflow<
       });
     }
 
-    // Source of truth for whether this run opted into the snapshot pattern.
-    // After `validate-snapshot`, a non-null hash is guaranteed when
-    // `sceneSnapshot` is present (the validator throws otherwise), so the
-    // type narrows to `string | null` without needing `?? null` at use sites.
+    // After validate-snapshot, snapshotInputHash is guaranteed when
+    // sceneSnapshot is present, so this narrows to `string | null` cleanly.
     const snapshotHash: string | null =
       input.sceneSnapshot && input.snapshotInputHash
         ? input.snapshotInputHash
