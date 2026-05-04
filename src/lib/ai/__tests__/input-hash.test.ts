@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'bun:test';
+import type {
+  CharacterBibleEntry,
+  LocationBibleEntry,
+  Scene,
+} from '../scene-analysis.schema';
+import type { StyleConfig } from '@/lib/db/schema';
+import type { MusicPromptWorkflowResult } from '@/lib/workflow/types';
 import {
   computeCharacterSheetInputHash,
   computeFrameAudioInputHash,
@@ -478,11 +485,54 @@ describe('canonical serialization', () => {
 });
 
 describe('prompt input hashes', () => {
+  const minimalScene: Scene = {
+    sceneId: 's1',
+    sceneNumber: 1,
+    originalScript: { extract: '', dialogue: [] },
+  };
+
+  const minimalStyle: StyleConfig = {
+    mood: 'neutral',
+    artStyle: 'cinematic',
+    lighting: 'natural',
+    colorPalette: ['neutral'],
+    cameraWork: 'static',
+    referenceFilms: [],
+    colorGrading: 'neutral',
+  };
+
+  const aliceCharacter: CharacterBibleEntry = {
+    characterId: 'c1',
+    name: 'Alice',
+    age: '30',
+    gender: '',
+    ethnicity: '',
+    physicalDescription: '',
+    standardClothing: '',
+    distinguishingFeatures: '',
+    consistencyTag: '',
+  };
+
+  const beachLocation: LocationBibleEntry = {
+    locationId: 'l1',
+    name: 'Beach',
+    type: 'exterior',
+    timeOfDay: '',
+    description: '',
+    architecturalStyle: '',
+    keyFeatures: '',
+    colorPalette: '',
+    lightingSetup: '',
+    ambiance: '',
+    consistencyTag: '',
+    firstMention: { sceneId: '', text: '', lineNumber: 0 },
+  };
+
   const sceneCtx = {
-    scene: { sceneId: 's1', durationSeconds: 5 },
-    styleConfig: { mood: 'neutral' },
-    characterBible: [{ name: 'Alice' }],
-    locationBible: [{ name: 'Beach' }],
+    scene: minimalScene,
+    styleConfig: minimalStyle,
+    characterBible: [aliceCharacter],
+    locationBible: [beachLocation],
     elementBible: [],
     aspectRatio: '16:9',
     analysisModel: 'anthropic/claude-haiku-4.5',
@@ -505,17 +555,64 @@ describe('prompt input hashes', () => {
     expect(a).not.toBe(b);
   });
 
+  it('elementBible changes flow through to both visual and motion prompt hashes', async () => {
+    const withoutElements = sceneCtx;
+    const withElement = {
+      ...sceneCtx,
+      elementBible: [
+        {
+          token: 'LOGO',
+          description: 'Red hex logo',
+          consistencyTag: 'red-hex-logo',
+          firstMention: { sceneId: 's1', text: 'LOGO', lineNumber: 1 },
+        },
+      ],
+    };
+
+    const visualA = await computeVisualPromptInputHash(withoutElements);
+    const visualB = await computeVisualPromptInputHash(withElement);
+    const motionA = await computeMotionPromptInputHash(withoutElements);
+    const motionB = await computeMotionPromptInputHash(withElement);
+
+    expect(visualA).not.toBe(visualB);
+    expect(motionA).not.toBe(motionB);
+  });
+
+  const baseScene = {
+    sceneId: 's1',
+    musicDesign: {
+      presence: 'full' as const,
+      style: 'orchestral',
+      mood: 'epic',
+      atmosphere: 'open',
+    },
+  };
+
+  const baseMusicDesign: MusicPromptWorkflowResult = {
+    scenes: [baseScene],
+    tags: 'instrumental, orchestral, epic',
+    prompt: 'epic orchestral score',
+  };
+
   it('music prompt hash is stable for equivalent inputs and changes with musicDesign', async () => {
     const a = await computeMusicPromptInputHash({
-      musicDesign: { mood: 'epic' },
+      musicDesign: baseMusicDesign,
       analysisModel: 'm',
     });
     const b = await computeMusicPromptInputHash({
-      musicDesign: { mood: 'epic' },
+      musicDesign: { ...baseMusicDesign },
       analysisModel: 'm',
     });
     const c = await computeMusicPromptInputHash({
-      musicDesign: { mood: 'somber' },
+      musicDesign: {
+        ...baseMusicDesign,
+        scenes: [
+          {
+            ...baseScene,
+            musicDesign: { ...baseScene.musicDesign, mood: 'somber' },
+          },
+        ],
+      },
       analysisModel: 'm',
     });
     expect(a).toBe(b);

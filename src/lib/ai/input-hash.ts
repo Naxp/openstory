@@ -294,17 +294,26 @@ export function computeTalentSheetInputHash(
 // trimmed; missing optionals normalize to null.
 // ---------------------------------------------------------------------------
 
+import type {
+  CharacterBibleEntry,
+  ElementBibleEntry,
+  LocationBibleEntry,
+  Scene,
+} from './scene-analysis.schema';
+import type { MusicPromptWorkflowResult } from '@/lib/workflow/types';
+import type { StyleConfig } from '@/lib/db/schema';
+
 export type PromptSceneContextHashInput = {
-  /** The Scene metadata object (or relevant subset) — must be JSON-serializable. */
-  scene: unknown;
-  /** Style config object — JSON-serializable. */
-  styleConfig: unknown;
-  /** Character bible entries — JSON-serializable; ordering preserved. */
-  characterBible: unknown;
-  /** Location bible entries — JSON-serializable; ordering preserved. */
-  locationBible: unknown;
-  /** Element bible entries — JSON-serializable; ordering preserved. */
-  elementBible?: unknown;
+  /** Scene metadata used to compose the prompt. */
+  scene: Scene;
+  /** Sequence style config (look/feel knobs that influence prompt phrasing). */
+  styleConfig: StyleConfig;
+  /** Character bible entries; order is preserved (scene-defined ordering). */
+  characterBible: readonly CharacterBibleEntry[];
+  /** Location bible entries; order is preserved. */
+  locationBible: readonly LocationBibleEntry[];
+  /** Element bible entries; order is preserved. */
+  elementBible?: readonly ElementBibleEntry[];
   /** Aspect ratio influences composition guidance in the prompt. */
   aspectRatio: string;
   /** Analysis model id (e.g. `anthropic/claude-haiku-4.5`). */
@@ -316,10 +325,10 @@ export function computeVisualPromptInputHash(
 ): Promise<string> {
   return sha256Hex({
     artifact: 'frame:visual-prompt',
-    scene: input.scene ?? null,
-    styleConfig: input.styleConfig ?? null,
-    characterBible: input.characterBible ?? null,
-    locationBible: input.locationBible ?? null,
+    scene: input.scene,
+    styleConfig: input.styleConfig,
+    characterBible: input.characterBible,
+    locationBible: input.locationBible,
     elementBible: input.elementBible ?? null,
     aspectRatio: trim(input.aspectRatio),
     analysisModel: trim(input.analysisModel),
@@ -331,10 +340,10 @@ export function computeMotionPromptInputHash(
 ): Promise<string> {
   return sha256Hex({
     artifact: 'frame:motion-prompt',
-    scene: input.scene ?? null,
-    styleConfig: input.styleConfig ?? null,
-    characterBible: input.characterBible ?? null,
-    locationBible: input.locationBible ?? null,
+    scene: input.scene,
+    styleConfig: input.styleConfig,
+    characterBible: input.characterBible,
+    locationBible: input.locationBible,
     elementBible: input.elementBible ?? null,
     aspectRatio: trim(input.aspectRatio),
     analysisModel: trim(input.analysisModel),
@@ -342,8 +351,13 @@ export function computeMotionPromptInputHash(
 }
 
 export type MusicPromptInputHashInput = {
-  /** Sequence-level music design (mood/atmosphere/style) object. */
-  musicDesign: unknown;
+  /**
+   * Music design / synthesis result that produced the cached music prompt.
+   * Today this is the full `MusicPromptWorkflowResult` (per-scene musicDesign
+   * + synthesized tags + prompt) — anything that changes here changes the
+   * prompt.
+   */
+  musicDesign: MusicPromptWorkflowResult;
   analysisModel: string;
 };
 
@@ -352,7 +366,7 @@ export function computeMusicPromptInputHash(
 ): Promise<string> {
   return sha256Hex({
     artifact: 'sequence:music-prompt',
-    musicDesign: input.musicDesign ?? null,
+    musicDesign: input.musicDesign,
     analysisModel: trim(input.analysisModel),
   });
 }

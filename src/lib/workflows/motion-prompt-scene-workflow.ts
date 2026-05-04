@@ -27,6 +27,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
       aspectRatio,
       characterBible,
       locationBible,
+      elementBible = [],
       styleConfig,
       analysisModelId,
       sequenceId,
@@ -55,6 +56,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
             scene: JSON.stringify(scene, null, 2),
             characterBible: JSON.stringify(characterBible, null, 2),
             locationBible: JSON.stringify(locationBible, null, 2),
+            elementBible: JSON.stringify(elementBible, null, 2),
             styleConfig: JSON.stringify(styleConfig, null, 2),
             aspectRatio,
           },
@@ -94,6 +96,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
             styleConfig,
             characterBible,
             locationBible,
+            elementBible,
             aspectRatio,
             analysisModel: analysisModelId,
           });

@@ -394,11 +394,16 @@ export const generateMusicFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const { sequence, user } = context;
 
-    if (data.prompt || data.tags) {
+    // Variants only capture meaningful prompt history. If the caller
+    // supplies just `tags` and there is no existing AI prompt to inherit,
+    // skip the write rather than persist an empty `prompt` row.
+    const variantPrompt = data.prompt ?? sequence.musicPrompt;
+    const hasUserChange = data.prompt !== undefined || data.tags !== undefined;
+    if (hasUserChange && variantPrompt) {
       await context.scopedDb.sequenceMusicPromptVariants.write({
         sequenceId: sequence.id,
-        prompt: data.prompt ?? sequence.musicPrompt ?? '',
-        tags: data.tags ?? sequence.musicTags ?? '',
+        prompt: variantPrompt,
+        tags: data.tags ?? sequence.musicTags ?? null,
         source: 'user-edit',
         createdBy: user.id,
       });

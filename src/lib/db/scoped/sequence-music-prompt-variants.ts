@@ -1,9 +1,11 @@
 /**
  * Scoped Sequence Music Prompt Variants Sub-module
  *
- * Atomically appends a new revision row to `sequence_music_prompt_variants`
- * and updates the cached `musicPrompt` / `musicTags` columns on `sequences`
- * plus the `music_prompt_input_hash` column.
+ * Appends a new revision row to `sequence_music_prompt_variants` and
+ * updates the cached `musicPrompt` / `musicTags` / `musicPromptInputHash`
+ * columns on `sequences`. Sequential, not transactional — see the
+ * equivalent docstring in `frame-prompt-variants.ts` for the durability
+ * story.
  *
  * See docs/architecture/workflow-snapshots-and-content-hash-staleness.md
  * § "Stage 4: prompt versioning".
@@ -32,15 +34,18 @@ export type WriteSequenceMusicPromptVariantInput = {
 export function createSequenceMusicPromptVariantsMethods(db: Database) {
   return {
     /**
-     * Insert a music prompt variant row and update the cached `musicPrompt`
-     * / `musicTags` / `musicPromptInputHash` columns on `sequences` in a
-     * single transaction. Returns the inserted row.
+     * Append a music prompt variant row and update the cached
+     * `musicPrompt` / `musicTags` / `musicPromptInputHash` columns on
+     * `sequences`. Returns the inserted row.
+     *
+     * Sequential, not transactional — variant row is the source of truth;
+     * the cached columns can be reconciled from the latest variant.
      */
     write: async (
       input: WriteSequenceMusicPromptVariantInput
     ): Promise<SequenceMusicPromptVariant> => {
-      // Append + update is logically atomic; performed sequentially today
-      // (see the equivalent note in frame-prompt-variants.ts).
+      // Append first so a crash can't leave a stale pointer with no row
+      // behind it.
       const [variant] = await db
         .insert(sequenceMusicPromptVariants)
         .values({

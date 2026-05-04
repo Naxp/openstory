@@ -9,11 +9,28 @@
  * § "Stage 4: prompt versioning".
  */
 
+import type {
+  MotionPromptComponents,
+  MotionPromptParameters,
+  VisualPromptComponents,
+} from '@/lib/ai/scene-analysis.schema';
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { generateId } from '../id';
 import { user } from './auth';
 import { frames } from './frames';
+
+/**
+ * The shape of `components` depends on `promptType`:
+ *   - `'visual'` rows store `VisualPromptComponents` (sceneDescription /
+ *     subject / lighting / …)
+ *   - `'motion'` rows store `MotionPromptComponents` (cameraMovement /
+ *     speed / …)
+ * User-edits without structured components persist `null`.
+ */
+export type FramePromptVariantComponents =
+  | VisualPromptComponents
+  | MotionPromptComponents;
 
 export const FRAME_PROMPT_TYPES = ['visual', 'motion'] as const;
 export type FramePromptType = (typeof FRAME_PROMPT_TYPES)[number];
@@ -41,9 +58,13 @@ export const framePromptVariants = sqliteTable(
     text: text('text').notNull(),
     // Structured prompt components (when available — visual prompts split into
     // composition / lighting / etc.; user-edits may not have components).
-    components: text('components', { mode: 'json' }).$type<unknown>(),
-    // Model parameters used to render the prompt (size, seed, …).
-    parameters: text('parameters', { mode: 'json' }).$type<unknown>(),
+    components: text('components', {
+      mode: 'json',
+    }).$type<FramePromptVariantComponents>(),
+    // Motion-only: timing / speed / camera parameters. Visual rows store null.
+    parameters: text('parameters', {
+      mode: 'json',
+    }).$type<MotionPromptParameters>(),
 
     source: text('source').$type<PromptVariantSource>().notNull(),
 

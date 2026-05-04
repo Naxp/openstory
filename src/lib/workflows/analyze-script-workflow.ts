@@ -307,6 +307,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
           aspectRatio,
           characterBible,
           locationBible,
+          elementBible,
           styleConfig,
           analysisModelId,
           videoModel,

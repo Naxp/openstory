@@ -92,6 +92,7 @@ export { framePromptVariants };
 export type {
   FramePromptType,
   FramePromptVariant,
+  FramePromptVariantComponents,
   NewFramePromptVariant,
   PromptVariantSource,
 } from './frame-prompt-variants';

@@ -364,6 +364,7 @@ export interface MotionPromptWorkflowInput extends SequenceWorkflowContext {
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameMapping?: FrameMapping;
@@ -376,6 +377,7 @@ export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext 
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameId?: string;
@@ -731,6 +733,7 @@ export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
+  elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   videoModel?: ImageToVideoModel;
