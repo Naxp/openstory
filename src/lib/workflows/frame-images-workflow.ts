@@ -108,6 +108,12 @@ export const frameImagesWorkflow = createScopedWorkflow<
 
     const imageSize = aspectRatioToImageSize(aspectRatio);
 
+    // Build a sceneId→snapshot index once so the per-(scene, model) inner loop
+    // doesn't repeat O(snapshots) `find` work for every frame × model combo.
+    const sceneSnapshotsById = new Map<string, FrameImageSceneSnapshot>(
+      (input.sceneSnapshots ?? []).map((s) => [s.sceneId, s])
+    );
+
     // Generate frame images in parallel (for each scene, for each model)
     const imageUrls = await Promise.all(
       scenesWithVisualPrompts.map(async (scene) => {
@@ -140,12 +146,10 @@ export const frameImagesWorkflow = createScopedWorkflow<
           ...elementRefs,
         ];
 
-        // Locate the per-scene snapshot inlined into our payload. Bound to
-        // sceneId rather than index so a re-ordered `sceneSnapshots` array
-        // (e.g. analyze-script sorts by sceneId; we don't) still maps right.
-        const sceneSnapshot = input.sceneSnapshots?.find(
-          (s) => s.sceneId === scene.sceneId
-        );
+        // Bound to sceneId rather than index so a re-ordered `sceneSnapshots`
+        // array (e.g. analyze-script sorts by sceneId; we don't) still maps
+        // right.
+        const sceneSnapshot = sceneSnapshotsById.get(scene.sceneId);
 
         // Generate with each selected model in parallel
         const modelResults = await Promise.all(
