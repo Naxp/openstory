@@ -25,6 +25,7 @@ import {
 } from './merge-video-workflow';
 import { generateMotionWorkflow } from './motion-workflow';
 import { generateMusicWorkflow } from './music-workflow';
+import { buildMergeVideoSourcesFromFrames } from './sequence-snapshots';
 
 export const motionBatchWorkflow =
   createScopedWorkflow<BatchMotionMusicWorkflowInput>(
@@ -94,14 +95,18 @@ export const motionBatchWorkflow =
         ...(musicInvocation ? [musicInvocation] : []),
       ]);
 
-      // Step 2: Collect video URLs from DB (authoritative order)
-      const videoUrls = await context.run('collect-video-urls', async () => {
-        const frames = await scopedDb.frames.listBySequence(sequenceId);
-        return frames
-          .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((f) => f.videoUrl)
-          .filter((url): url is string => Boolean(url));
-      });
+      // Step 2: Collect video URLs and inline each frame's videoInputHash for
+      // the merge-video snapshot pattern. Frames without a videoUrl are skipped.
+      const { videoUrls, sourceFrameVideoHashes } = await context.run(
+        'collect-video-urls',
+        async () => {
+          const frames = await scopedDb.frames.listBySequence(sequenceId);
+          const sorted = [...frames].sort(
+            (a, b) => a.orderIndex - b.orderIndex
+          );
+          return buildMergeVideoSourcesFromFrames(sorted);
+        }
+      );
 
       if (videoUrls.length === 0) {
         throw new WorkflowValidationError(
@@ -118,6 +123,7 @@ export const motionBatchWorkflow =
           teamId: input.teamId,
           sequenceId,
           videoUrls,
+          sourceFrameVideoHashes,
         } satisfies MergeVideoWorkflowInput,
       });
 

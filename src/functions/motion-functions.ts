@@ -22,6 +22,7 @@ import type {
 } from '@/lib/workflow/types';
 
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
+import { buildMergeVideoSourcesFromFrames } from '@/lib/workflows/sequence-snapshots';
 
 import { frameAccessMiddleware, sequenceAccessMiddleware } from './middleware';
 
@@ -233,16 +234,16 @@ export const triggerMergeVideoFn = createServerFn({ method: 'POST' })
       errorMessage: 'Insufficient credits for video merge',
     });
 
-    const videoUrls = frames
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((f) => f.videoUrl)
-      .filter((url): url is string => Boolean(url));
+    const sorted = [...frames].sort((a, b) => a.orderIndex - b.orderIndex);
+    const { videoUrls, sourceFrameVideoHashes } =
+      buildMergeVideoSourcesFromFrames(sorted);
 
     const workflowInput: MergeVideoWorkflowInput = {
       userId: user.id,
       teamId,
       sequenceId: sequence.id,
       videoUrls,
+      sourceFrameVideoHashes,
     };
 
     const workflowRunId = await triggerWorkflow('/merge-video', workflowInput, {

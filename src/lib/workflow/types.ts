@@ -2,6 +2,7 @@
  * Type definitions for QStash Workflows
  */
 
+import type { SequenceVideoFrameSource } from '@/lib/ai/input-hash';
 import type {
   AUDIO_MODELS,
   IMAGE_MODELS,
@@ -491,6 +492,15 @@ export interface LibraryTalentSheetWorkflowResult {
 export interface MergeVideoWorkflowInput extends SequenceWorkflowContext {
   /** Ordered list of video URLs to merge */
   videoUrls: string[];
+  /**
+   * Ordered list of source frame video identities for input-hashing,
+   * parallel to `videoUrls`. Each entry is `{ kind: 'variantHash', hash }`
+   * when the source frame's video has an `input_hash` (cascades upstream
+   * staleness), or `{ kind: 'url', url }` for legacy frames without one.
+   * Frozen at trigger time; the workflow re-resolves the live hashes for
+   * within-run drift detection.
+   */
+  sourceFrameVideoHashes?: SequenceVideoFrameSource[];
   /** Target FPS for output (1-60, defaults to lowest of inputs) */
   targetFps?: number;
   /** Target resolution (512-2048 per dimension) */

@@ -186,6 +186,46 @@ describe('createSequenceVariantsMethods — video', () => {
     expect(all[0].url).toBe('https://example.com/v1-resigned.mp4');
   });
 
+  it('writeVideoVariant forks to divergent when currentHash differs from inputHash (within-run drift)', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    // No prior primary; the only divergence signal is within-run drift.
+    const result = await methods.writeVideoVariant({
+      sequenceId,
+      url: 'https://example.com/drifted.mp4',
+      storagePath: null,
+      workflow: 'merge-video',
+      status: 'completed',
+      generatedAt: new Date(),
+      error: null,
+      inputHash: 'snapshot-hash',
+      currentHash: 'live-hash',
+    });
+    expect(result.divergent).toBe(true);
+    expect(result.variant.divergedAt).not.toBeNull();
+    // The divergent row stores the trigger-time snapshot (idempotent on retry).
+    expect(result.variant.inputHash).toBe('snapshot-hash');
+
+    const primary = await methods.getVideoPrimary(sequenceId, 'merge-video');
+    expect(primary).toBeNull();
+  });
+
+  it('writeVideoVariant routes to primary when currentHash equals inputHash', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    const result = await methods.writeVideoVariant({
+      sequenceId,
+      url: 'https://example.com/converged.mp4',
+      storagePath: null,
+      workflow: 'merge-video',
+      status: 'completed',
+      generatedAt: new Date(),
+      error: null,
+      inputHash: 'same-hash',
+      currentHash: 'same-hash',
+    });
+    expect(result.divergent).toBe(false);
+    expect(result.variant.divergedAt).toBeNull();
+  });
+
   it('writeVideoVariant forks to divergent when existing primary has different hash', async () => {
     const methods = createSequenceVariantsMethods(db);
     await methods.writeVideoVariant({

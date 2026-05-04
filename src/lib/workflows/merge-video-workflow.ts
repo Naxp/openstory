@@ -3,7 +3,6 @@
  * Stitches all frame videos into a single merged video for sequence playback
  */
 
-import { computeSequenceVideoInputHash } from '@/lib/ai/input-hash';
 import { usdToMicros } from '@/lib/billing/money';
 import { getGenerationChannel } from '@/lib/realtime';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
@@ -26,6 +25,10 @@ import type {
 } from '@/lib/workflow/types';
 import type { WorkflowContext } from '@upstash/workflow';
 import { mergeAudioVideoWorkflow } from './merge-audio-video-workflow';
+import {
+  computeSequenceVideoHashCurrent,
+  computeSequenceVideoHashFromDto,
+} from './sequence-snapshots';
 
 export const MERGE_VIDEO_WORKFLOW_NAME = 'merge-video';
 
@@ -103,19 +106,17 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
     );
 
     const inputHash = await context.run('compute-input-hash', async () => {
-      return computeSequenceVideoInputHash({
-        sourceFrameVideos: input.videoUrls.map((url) => ({
-          kind: 'url' as const,
-          url,
-        })),
-        targetFps: input.targetFps ?? null,
-        resolution: input.resolution ?? null,
-      });
+      return computeSequenceVideoHashFromDto(input);
     });
 
     // Single video: skip merge, use existing video directly
     if (input.videoUrls.length === 1) {
       const singleUrl = input.videoUrls[0];
+
+      const currentHash = await context.run(
+        'compute-current-hash-single',
+        async () => computeSequenceVideoHashCurrent(input, scopedDb)
+      );
 
       const writeResult = await context.run(
         'write-video-variant-single',
@@ -129,6 +130,7 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
             generatedAt: new Date(),
             error: null,
             inputHash,
+            currentHash,
           });
         }
       );
@@ -219,6 +221,10 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
       return { path, url: result.publicUrl };
     });
 
+    const currentHash = await context.run('compute-current-hash', async () =>
+      computeSequenceVideoHashCurrent(input, scopedDb)
+    );
+
     const writeResult = await context.run('write-video-variant', async () => {
       return scopedDb.sequenceVariants.writeVideoVariant({
         sequenceId: narrowedInput.sequenceId,
@@ -229,6 +235,7 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
         generatedAt: new Date(),
         error: null,
         inputHash,
+        currentHash,
       });
     });
 

@@ -201,29 +201,41 @@ export function createSequenceVariantsMethods(db: Database) {
     insertDivergentVideo,
 
     /**
-     * Write a completed video variant. If a completed primary already exists
-     * with a different `inputHash`, the new row is written as a divergent
-     * alternate so the previous primary is preserved. Otherwise upserts the
-     * primary in place. Callers should skip live `sequences.mergedVideo*`
+     * Write a completed video variant. Routes to a divergent alternate when:
+     *   1. **Within-run drift**: caller passes `currentHash` and it differs
+     *      from `inputHash` (the trigger-time snapshot) — upstream inputs
+     *      changed between trigger and write.
+     *   2. **Across-run drift**: an existing completed primary has a
+     *      different `inputHash` — a previous run's output differs from this
+     *      one's inputs.
+     * Otherwise upserts the primary in place. The divergent row's stored
+     * `inputHash` is always the trigger-time snapshot (idempotent on retry of
+     * the same workflow run). Callers should skip live `sequences.mergedVideo*`
      * updates when `divergent` is true.
      */
     writeVideoVariant: async (
-      data: NewSequenceVideoVariant & { inputHash: string }
+      data: NewSequenceVideoVariant & {
+        inputHash: string;
+        currentHash?: string;
+      }
     ): Promise<WriteVariantResult<SequenceVideoVariant>> => {
-      const existing = await getVideoPrimary(data.sequenceId, data.workflow);
-      const isDivergent =
+      const { currentHash, ...rest } = data;
+      const withinRunDrift =
+        currentHash !== undefined && currentHash !== rest.inputHash;
+      const existing = await getVideoPrimary(rest.sequenceId, rest.workflow);
+      const acrossRunDrift =
         existing !== null &&
         existing.status === 'completed' &&
         existing.inputHash !== null &&
-        existing.inputHash !== data.inputHash;
-      if (isDivergent) {
+        existing.inputHash !== rest.inputHash;
+      if (withinRunDrift || acrossRunDrift) {
         const variant = await insertDivergentVideo({
-          ...data,
+          ...rest,
           divergedAt: new Date(),
         });
         return { variant, divergent: true };
       }
-      const variant = await upsertVideoPrimary(data);
+      const variant = await upsertVideoPrimary(rest);
       return { variant, divergent: false };
     },
 
