@@ -461,7 +461,7 @@ export const addCharacterToLibraryFn = createServerFn({ method: 'POST' })
         metadata: {
           characterId: character.characterId,
           name: character.name,
-          age: character.age ?? undefined, // eslint-disable-line @typescript-eslint/no-unnecessary-condition -- runtime guard
+          age: character.age ?? '',
           gender: character.gender ?? '',
           ethnicity: character.ethnicity ?? '',
           physicalDescription: character.physicalDescription ?? '',
