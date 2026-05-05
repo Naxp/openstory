@@ -23,6 +23,7 @@ type EvalSequenceRowProps = {
   maxSceneCount: number;
   sequenceIndex: number;
   framesLoading: boolean;
+  divergence?: { hasVideo: boolean; hasMusic: boolean };
   openDialog: OpenDialogState;
   onOpenDialogChange: (state: OpenDialogState) => void;
   onNavigateToCell: (sequenceIndex: number, sceneIndex: number) => void;
@@ -35,6 +36,7 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
   maxSceneCount,
   sequenceIndex,
   framesLoading,
+  divergence,
   openDialog,
   onOpenDialogChange,
   onNavigateToCell,
@@ -49,7 +51,7 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
         className="sticky left-0 z-10 bg-background shrink-0 h-full"
         style={{ width: METADATA_WIDTH }}
       >
-        <EvalSequenceMetadata sequence={sequence} />
+        <EvalSequenceMetadata sequence={sequence} divergence={divergence} />
       </div>
       <div
         className="sticky z-10 bg-background shrink-0 h-full border-r border-b p-2 flex items-center justify-center"
