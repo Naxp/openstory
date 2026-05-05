@@ -1,35 +1,29 @@
 import { getChannelHistoryFn } from '@/functions/realtime-history';
 import { useRealtime } from '@/lib/realtime/client';
+import type { StaleDetectedPayload } from '@/lib/realtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { talentKeys } from './use-talent';
 
 type GenerationPhase = 'sheet' | 'portrait';
 
-type SheetProgressEvent = {
-  event: string;
-  data: {
-    talentId: string;
-    status: 'generating' | 'sheet_ready' | 'completed' | 'failed';
-    sheetId?: string;
-    sheetImageUrl?: string;
-    headshotImageUrl?: string;
-    error?: string;
-  };
+type SheetProgressData = {
+  talentId: string;
+  status: 'generating' | 'sheet_ready' | 'completed' | 'failed';
+  sheetId?: string;
+  sheetImageUrl?: string;
+  headshotImageUrl?: string;
+  error?: string;
 };
 
-type StaleDetectedEvent = {
-  event: string;
-  data: {
-    entityType: string;
-    entityId: string;
-    artifact?: string;
-    snapshotInputHash: string;
-    divergedVariantId?: string;
-  };
-};
-
-type TalentRealtimeEvent = SheetProgressEvent | StaleDetectedEvent;
+// Discriminated by `event` so narrowing on the event name reaches the right
+// branch. `StaleDetectedPayload` is the schema's discriminated union
+// (z.discriminatedUnion('entityType', ...)), so `data.entityType` narrows to
+// the literal — a hand-rolled `entityType: string` widening would defeat that
+// and was the structural pattern behind the round-1 talent-channel routing bug.
+type TalentRealtimeEvent =
+  | { event: 'talent.sheet:progress'; data: SheetProgressData }
+  | { event: 'generation.stale:detected'; data: StaleDetectedPayload };
 
 /**
  * Determine the current generation state from a sequence of history events.
@@ -101,12 +95,8 @@ export function useTalentSheetRealtime(talentId?: string) {
 
   const handleEvent = useCallback(
     (event: TalentRealtimeEvent) => {
-      const { event: eventName, data } = event;
-
-      if (eventName === 'generation.stale:detected') {
-        if ('entityType' in data && data.entityType !== 'talent') {
-          return;
-        }
+      if (event.event === 'generation.stale:detected') {
+        if (event.data.entityType !== 'talent') return;
         // Divergent talent sheet was parked in `talent_sheet_variants`. The
         // workflow already emitted `talent.sheet:progress` with status
         // `completed` against the new variant sheet, so the spinner clears
@@ -123,9 +113,9 @@ export function useTalentSheetRealtime(talentId?: string) {
         return;
       }
 
-      if (eventName !== 'talent.sheet:progress') return;
-      if (!('talentId' in data) || data.talentId !== talentId) return;
-      const sheetData = data;
+      if (event.event !== 'talent.sheet:progress') return;
+      const sheetData = event.data;
+      if (sheetData.talentId !== talentId) return;
 
       switch (sheetData.status) {
         case 'generating':

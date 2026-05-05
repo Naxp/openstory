@@ -45,8 +45,13 @@ export async function resolveTalentSheetHash(
   const character = await scopedDb.characters.getById(characterDbId);
   if (!character?.talentId) return null;
   const talent = await scopedDb.talent.getWithRelations(character.talentId);
+  // Exclude divergent sheets from the fallback identity. A divergent row's
+  // `inputHash` represents the parked workflow's snapshot, not the talent's
+  // current upstream identity — binding a downstream character sheet to it
+  // would fork off a stale lineage from first-time generation onward.
+  const convergentSheets = talent?.sheets.filter((s) => !s.divergedAt) ?? [];
   const defaultSheet =
-    talent?.sheets.find((s) => s.isDefault) ?? talent?.sheets[0];
+    convergentSheets.find((s) => s.isDefault) ?? convergentSheets[0];
   return defaultSheet?.inputHash ?? null;
 }
 

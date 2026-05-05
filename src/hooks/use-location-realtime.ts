@@ -1,32 +1,24 @@
 import { getChannelHistoryFn } from '@/functions/realtime-history';
 import { useRealtime } from '@/lib/realtime/client';
+import type { StaleDetectedPayload } from '@/lib/realtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { locationLibraryKeys } from './use-location-library';
 import { libraryLocationKeys } from './use-sequence-locations';
 
-type SheetProgressEvent = {
-  event: string;
-  data: {
-    locationId: string;
-    status: 'generating' | 'completed' | 'failed';
-    sheetImageUrl?: string;
-    error?: string;
-  };
+type SheetProgressData = {
+  locationId: string;
+  status: 'generating' | 'completed' | 'failed';
+  sheetImageUrl?: string;
+  error?: string;
 };
 
-type StaleDetectedEvent = {
-  event: string;
-  data: {
-    entityType: string;
-    entityId: string;
-    artifact?: string;
-    snapshotInputHash: string;
-    divergedVariantId?: string;
-  };
-};
-
-type LocationRealtimeEvent = SheetProgressEvent | StaleDetectedEvent;
+// Discriminated by `event` so narrowing on the event name reaches the right
+// branch. `StaleDetectedPayload` is the schema's discriminated union, so
+// `data.entityType` narrows to the literal — see use-talent-realtime.ts.
+type LocationRealtimeEvent =
+  | { event: 'location.sheet:progress'; data: SheetProgressData }
+  | { event: 'generation.stale:detected'; data: StaleDetectedPayload };
 
 /**
  * Determine the current generation state from channel history.
@@ -81,12 +73,8 @@ export function useLocationSheetRealtime(locationId?: string) {
 
   const handleEvent = useCallback(
     (event: LocationRealtimeEvent) => {
-      const { event: eventName, data } = event;
-
-      if (eventName === 'generation.stale:detected') {
-        if ('entityType' in data && data.entityType !== 'library-location') {
-          return;
-        }
+      if (event.event === 'generation.stale:detected') {
+        if (event.data.entityType !== 'library-location') return;
         // Library-location reference diverged into `location_sheet_variants`.
         // The library row's primary reference is unchanged. Refetch detail
         // and list so any variant-surfacing UI picks up the new alternate.
@@ -101,9 +89,9 @@ export function useLocationSheetRealtime(locationId?: string) {
         return;
       }
 
-      if (eventName !== 'location.sheet:progress') return;
-      if (!('locationId' in data) || data.locationId !== locationId) return;
-      const sheetData = data;
+      if (event.event !== 'location.sheet:progress') return;
+      const sheetData = event.data;
+      if (sheetData.locationId !== locationId) return;
 
       switch (sheetData.status) {
         case 'generating':

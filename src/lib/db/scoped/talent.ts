@@ -145,14 +145,21 @@ function createTalentReadMethods(db: Database, teamId: string) {
 
       const talentWithoutDefault = fetchedIds.filter((id) => !sheetMap.has(id));
       if (talentWithoutDefault.length > 0) {
+        // Exclude divergent sheets from the "any sheet" fallback so a
+        // divergent first-time-generation row cannot be cast as the talent's
+        // identity by downstream consumers (e.g. talent-matching workflow,
+        // which reads `defaultSheet?.imageUrl` for the LLM matching prompt).
         const fallbackSheets = await db
           .select()
           .from(talentSheets)
           .where(
-            sql`${talentSheets.talentId} IN (${sql.join(
-              talentWithoutDefault.map((id) => sql`${id}`),
-              sql`, `
-            )})`
+            and(
+              sql`${talentSheets.talentId} IN (${sql.join(
+                talentWithoutDefault.map((id) => sql`${id}`),
+                sql`, `
+              )})`,
+              sql`${talentSheets.divergedAt} IS NULL`
+            )
           )
           .orderBy(desc(talentSheets.createdAt));
 

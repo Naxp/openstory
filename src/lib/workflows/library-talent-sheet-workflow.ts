@@ -184,17 +184,27 @@ export const libraryTalentSheetWorkflow = createScopedWorkflow<
           snapshot ? await snapshot.computeCurrent() : null
         );
 
-        const created = await scopedDb.talent.sheets.create({
-          id: storageResult.sheetId,
-          talentId: input.talentId,
-          name: input.sheetName ?? 'Generated Sheet',
-          imageUrl: storageResult.url,
-          imagePath: storageResult.path,
-          isDefault: false,
-          source: 'ai_generated',
-          inputHash: snapshot?.snapshotInputHash ?? null,
-          divergedAt: decision.kind === 'divergent' ? new Date() : null,
-        });
+        // QStash retries this step verbatim if any later call inside it (e.g.
+        // saveDivergentTalentSheet's realtime emit) throws transiently.
+        // talent.sheets.create is keyed on a stable PK we passed from the
+        // upload step, so a retry would raise SQLITE_CONSTRAINT_PRIMARYKEY
+        // without this pre-check — short-circuit on the existing row.
+        const existing = await scopedDb.talent.sheets.getById(
+          storageResult.sheetId
+        );
+        const created =
+          existing ??
+          (await scopedDb.talent.sheets.create({
+            id: storageResult.sheetId,
+            talentId: input.talentId,
+            name: input.sheetName ?? 'Generated Sheet',
+            imageUrl: storageResult.url,
+            imagePath: storageResult.path,
+            isDefault: false,
+            source: 'ai_generated',
+            inputHash: snapshot?.snapshotInputHash ?? null,
+            divergedAt: decision.kind === 'divergent' ? new Date() : null,
+          }));
 
         if (decision.kind === 'divergent') {
           console.warn('[LibraryTalentSheetWorkflow] divergence detected', {
