@@ -76,6 +76,48 @@ function loadFixturesRecursive(dirPath: string): Fixture[] {
   return fixtures;
 }
 
+// Workflow prompts embed runtime ULIDs (talent/location/sequence IDs) that
+// drift across fresh DB seeds — recorded `01KQRR…` won't substring-match a
+// fresh CI run's `01KQW2…`. Rewrite each fixture's `userMessage` into a
+// RegExp where ULIDs/UUIDs become wildcards so matching is ID-tolerant.
+// Mirrors `fal-handler.ts:normalizeForHash`, which solves the same problem
+// for fal request hashing.
+const ULID_TOKEN_RE = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
+const UUID_TOKEN_RE =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+const ULID_OR_UUID_SPLIT_RE = new RegExp(
+  `(${ULID_TOKEN_RE.source}|${UUID_TOKEN_RE.source})`,
+  'i'
+);
+
+function escapeRegex(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function tolerantUserMessageRegex(userMessage: string): RegExp {
+  const segments = userMessage.split(ULID_OR_UUID_SPLIT_RE);
+  const pattern = segments
+    .map((segment, idx) => {
+      // Split keeps capture groups, so odd indices are matched tokens.
+      if (idx % 2 === 0) return escapeRegex(segment);
+      return segment.includes('-')
+        ? '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+        : '[0-9A-HJKMNP-TV-Z]{26}';
+    })
+    .join('');
+  return new RegExp(pattern);
+}
+
+function tolerateRuntimeIds(fixtures: Fixture[]): Fixture[] {
+  for (const fixture of fixtures) {
+    const message = fixture.match.userMessage;
+    if (typeof message === 'string') {
+      fixture.match.userMessage = tolerantUserMessageRegex(message);
+    }
+  }
+  return fixtures;
+}
+
 let mockServer: LLMock | null = null;
 
 export async function startAimockServer(): Promise<string> {
@@ -97,7 +139,9 @@ export async function startAimockServer(): Promise<string> {
   // Load any previously recorded fixtures
   if (existsSync(FIXTURE_DIR)) {
     mockServer.addFixtures(
-      stampSystemFingerprint(loadFixturesRecursive(FIXTURE_DIR))
+      tolerateRuntimeIds(
+        stampSystemFingerprint(loadFixturesRecursive(FIXTURE_DIR))
+      )
     );
   }
 
