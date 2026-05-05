@@ -309,7 +309,7 @@ describe('frame_variants discard / undiscard / listDivergent', () => {
       inputHash: 'h1',
       divergedAt: new Date('2026-04-29T00:00:00Z'),
     });
-    const methods = createFrameVariantsMethods(asDatabase(db));
+    const methods = createFrameVariantsMethods(db);
 
     const ts = await methods.discard(v.id);
     expect(ts).toBeInstanceOf(Date);
@@ -339,7 +339,7 @@ describe('frame_variants discard / undiscard / listDivergent', () => {
       discardedAt: new Date('2026-05-02T00:00:00Z'),
     });
 
-    const methods = createFrameVariantsMethods(asDatabase(db));
+    const methods = createFrameVariantsMethods(db);
     const rows = await methods.listDivergentByFrame(frameId, 'image');
     const ids = rows.map((r) => r.id);
     expect(ids).toEqual([a.id, b.id]);

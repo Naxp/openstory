@@ -4,8 +4,13 @@
  */
 
 import type { Database } from '@/lib/db/client';
-import type { FrameVariant, NewFrameVariant } from '@/lib/db/schema';
-import { frameVariants } from '@/lib/db/schema';
+import type {
+  Frame,
+  FrameVariant,
+  NewFrame,
+  NewFrameVariant,
+} from '@/lib/db/schema';
+import { frameVariants, frames } from '@/lib/db/schema';
 import type { VariantType } from '@/lib/db/schema/frame-variants';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -256,6 +261,57 @@ export function createFrameVariantsMethods(db: Database) {
         throw new Error(`FrameVariant ${variantId} not found`);
       }
       return discardedAt;
+    },
+
+    /**
+     * Atomically replace the live primary on `frames` with the variant's
+     * fields and soft-delete the variant. Both writes go through a single
+     * `db.batch()` so a partial failure cannot leave the live primary updated
+     * while the variant still appears in the divergent list (or vice versa).
+     *
+     * Pre-checks existence rather than relying on returning(), because
+     * libSQL `batch()` commits both UPDATEs even when the WHERE matches no
+     * rows — a JS-side throw after commit would still leave one side
+     * mutated.
+     */
+    promoteAtomically: async (
+      frameId: string,
+      frameUpdate: Partial<NewFrame>,
+      variantId: string
+    ): Promise<{ frame: Frame; discardedAt: Date }> => {
+      const [existingFrame] = await db
+        .select({ id: frames.id })
+        .from(frames)
+        .where(eq(frames.id, frameId));
+      if (!existingFrame) {
+        throw new Error(`Frame ${frameId} not found`);
+      }
+      const [existingVariant] = await db
+        .select({ id: frameVariants.id })
+        .from(frameVariants)
+        .where(eq(frameVariants.id, variantId));
+      if (!existingVariant) {
+        throw new Error(`FrameVariant ${variantId} not found`);
+      }
+
+      const now = new Date();
+      const updateFrame = db
+        .update(frames)
+        .set({ ...frameUpdate, updatedAt: now })
+        .where(eq(frames.id, frameId))
+        .returning();
+      const discardVariant = db
+        .update(frameVariants)
+        .set({ discardedAt: now, updatedAt: now })
+        .where(eq(frameVariants.id, variantId))
+        .returning();
+      const [frameRows] = await db.batch([updateFrame, discardVariant]);
+      // Existence was checked above; an empty result here would mean the row
+      // was deleted between the pre-check and the batch — surface it.
+      if (frameRows.length === 0) {
+        throw new Error(`Frame ${frameId} disappeared during promote`);
+      }
+      return { frame: frameRows[0], discardedAt: now };
     },
 
     /**

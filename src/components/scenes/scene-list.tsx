@@ -123,9 +123,6 @@ const SceneListComponent: React.FC<SceneListProps> = ({
                 aspectRatio={aspectRatio}
                 isActive={false}
                 isCompleted={false}
-                onSelect={function (): void {
-                  throw new Error('Function not implemented.');
-                }}
               />
             ))}
 

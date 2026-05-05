@@ -83,15 +83,19 @@ export const frameKeys = {
 
 // Hook to fetch the live (non-discarded) divergent alternates for a sequence.
 // The corner-dot indicator and inline banner both filter this list per frame.
-export function useDivergentVariants(sequenceId?: string) {
+export function useDivergentVariants(
+  sequenceId?: string,
+  options?: { refetchInterval?: number | false }
+) {
   return useQuery<FrameVariant[]>({
     queryKey: frameKeys.divergentVariants(sequenceId ?? ''),
     queryFn: async () => {
-      if (!sequenceId) return [];
+      if (!sequenceId) throw new Error('sequenceId is required');
       return getDivergentVariantsFn({ data: { sequenceId } });
     },
     enabled: !!sequenceId,
     staleTime: 30_000,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { Frame, FrameVariant } from '@/lib/db/schema';
 import type { VariantType } from '@/lib/db/schema/frame-variants';
 
@@ -104,6 +105,25 @@ export const DivergenceCompareDialog: React.FC<
   const label = ARTIFACT_LABEL[variant.variantType];
   const busy = isPromoting || isDiscarding;
 
+  // Two-click confirm: promote replaces the live primary and (for image)
+  // clears downstream video. CLAUDE.md requires a confirmation step or undo
+  // window for destructive ops; two-click avoids nested modals here.
+  const [confirmingPromote, setConfirmingPromote] = useState(false);
+  // Reset the confirm state whenever the dialog re-opens or the variant
+  // changes, so a fresh open never starts mid-confirm.
+  useEffect(() => {
+    if (!open) setConfirmingPromote(false);
+  }, [open, variant.id]);
+
+  const handlePromoteClick = () => {
+    if (confirmingPromote) {
+      onPromote();
+      setConfirmingPromote(false);
+      return;
+    }
+    setConfirmingPromote(true);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
@@ -147,6 +167,18 @@ export const DivergenceCompareDialog: React.FC<
           </div>
         )}
 
+        {confirmingPromote && (
+          <div
+            className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+            role="alert"
+            aria-live="polite"
+          >
+            Promote replaces the current {label}
+            {variant.variantType === 'image' && ' and clears the live video'}.
+            Click Promote again to confirm.
+          </div>
+        )}
+
         <DialogFooter className="flex flex-row justify-end gap-2">
           <Button
             type="button"
@@ -165,9 +197,14 @@ export const DivergenceCompareDialog: React.FC<
           >
             Cancel
           </Button>
-          <Button type="button" onClick={onPromote} disabled={busy}>
+          <Button
+            type="button"
+            onClick={handlePromoteClick}
+            disabled={busy}
+            variant={confirmingPromote ? 'destructive' : 'default'}
+          >
             {isPromoting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Promote
+            {confirmingPromote ? 'Confirm Promote' : 'Promote'}
           </Button>
         </DialogFooter>
       </DialogContent>

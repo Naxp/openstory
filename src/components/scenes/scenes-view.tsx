@@ -176,7 +176,12 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   });
 
   // Divergent alternates + realtime stale:detected wiring (issue #625).
-  const { data: divergentVariants } = useDivergentVariants(sequenceId);
+  // Mirror the frames-list polling fallback so the corner-dot still updates
+  // when realtime is down.
+  const { data: divergentVariants } = useDivergentVariants(
+    sequenceId,
+    shouldPoll ? { refetchInterval: 2000 } : undefined
+  );
   useStaleDetected(sequenceId);
   const promoteVariant = usePromoteVariantToPrimary();
   const discardVariant = useDiscardVariant();
@@ -188,11 +193,21 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   const handleDiscardWithUndo = useCallback(
     (variant: FrameVariant) => {
       const restore = () => {
-        undiscardVariant.mutate({
-          sequenceId,
-          frameId: variant.frameId,
-          variantId: variant.id,
-        });
+        undiscardVariant.mutate(
+          {
+            sequenceId,
+            frameId: variant.frameId,
+            variantId: variant.id,
+          },
+          {
+            onError: (error) => {
+              toast.error('Failed to restore alternate', {
+                description:
+                  error instanceof Error ? error.message : 'Unknown error',
+              });
+            },
+          }
+        );
       };
       discardVariant.mutate(
         { sequenceId, frameId: variant.frameId, variantId: variant.id },
@@ -216,6 +231,18 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     },
     [sequenceId, discardVariant, undiscardVariant]
   );
+
+  // If the frame backing the open compare dialog disappears (e.g. concurrent
+  // delete from another tab), close the dialog explicitly with a toast rather
+  // than silently null-rendering it.
+  useEffect(() => {
+    if (!compareVariant || !frames) return;
+    const stillExists = frames.some((f) => f.id === compareVariant.frameId);
+    if (!stillExists) {
+      toast.info('Scene was removed.');
+      setCompareVariant(null);
+    }
+  }, [compareVariant, frames]);
 
   const handlePromote = useCallback(
     (variant: FrameVariant) => {

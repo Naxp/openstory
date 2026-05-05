@@ -1,5 +1,5 @@
 import { DEFAULT_IMAGE_MODEL, safeTextToImageModel } from '@/lib/ai/models';
-import type { NewFrame } from '@/lib/db/schema';
+import type { FrameVariant, NewFrame } from '@/lib/db/schema';
 import { getGenerationChannel } from '@/lib/realtime';
 import { getVideoDownloadUrl } from '@/lib/motion/video-storage';
 import {
@@ -58,6 +58,69 @@ export const getDivergentVariantsFn = createServerFn({ method: 'GET' })
     );
   });
 
+type PromoteProgressEvent =
+  | 'image:progress'
+  | 'video:progress'
+  | 'audio:progress';
+type PromoteProgressUrlField = 'thumbnailUrl' | 'videoUrl' | 'audioUrl';
+
+/**
+ * Build the per-variantType `frames` update payload and matching realtime
+ * progress event metadata for a promote-variant operation. Exported (and
+ * pure) for unit testing — the server-fn handler wraps this in auth +
+ * persistence.
+ */
+export function buildPromoteUpdate(variant: FrameVariant): {
+  update: Partial<NewFrame>;
+  progressEvent: PromoteProgressEvent;
+  progressUrlField: PromoteProgressUrlField;
+} {
+  const update: Partial<NewFrame> = {};
+  let progressEvent: PromoteProgressEvent;
+  let progressUrlField: PromoteProgressUrlField;
+
+  switch (variant.variantType) {
+    case 'image':
+      update.thumbnailUrl = variant.url;
+      update.thumbnailPath = variant.storagePath;
+      update.thumbnailStatus = 'completed';
+      update.thumbnailError = null;
+      update.thumbnailInputHash = variant.inputHash;
+      update.imageModel = variant.model;
+      // Downstream video is now misaligned with the new image — mark stale
+      // by clearing it; the user will regenerate.
+      update.videoUrl = null;
+      update.videoPath = null;
+      update.videoStatus = 'pending';
+      update.videoWorkflowRunId = null;
+      update.videoGeneratedAt = null;
+      update.videoError = null;
+      progressEvent = 'image:progress';
+      progressUrlField = 'thumbnailUrl';
+      break;
+    case 'video':
+      update.videoUrl = variant.url;
+      update.videoPath = variant.storagePath;
+      update.videoStatus = 'completed';
+      update.videoError = null;
+      update.videoInputHash = variant.inputHash;
+      progressEvent = 'video:progress';
+      progressUrlField = 'videoUrl';
+      break;
+    case 'audio':
+      update.audioUrl = variant.url;
+      update.audioPath = variant.storagePath;
+      update.audioStatus = 'completed';
+      update.audioError = null;
+      update.audioInputHash = variant.inputHash;
+      progressEvent = 'audio:progress';
+      progressUrlField = 'audioUrl';
+      break;
+  }
+
+  return { update, progressEvent, progressUrlField };
+}
+
 /**
  * Promote a divergent alternate to be the live primary for its variant type.
  * Copies the variant's url/path into the matching frames column, updates the
@@ -89,65 +152,25 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
       throw new Error('Variant has no asset to promote');
     }
 
-    const update: Partial<NewFrame> = {};
-    let progressEvent:
-      | 'image:progress'
-      | 'video:progress'
-      | 'audio:progress'
-      | null = null;
-    let progressUrlField: 'thumbnailUrl' | 'videoUrl' | 'audioUrl' | null =
-      null;
+    const { update, progressEvent, progressUrlField } =
+      buildPromoteUpdate(variant);
 
-    switch (variant.variantType) {
-      case 'image':
-        update.thumbnailUrl = variant.url;
-        update.thumbnailPath = variant.storagePath;
-        update.thumbnailStatus = 'completed';
-        update.thumbnailError = null;
-        update.thumbnailInputHash = variant.inputHash;
-        update.imageModel = variant.model;
-        // Downstream video is now misaligned with the new image — mark stale
-        // by clearing it; the user will regenerate.
-        update.videoUrl = null;
-        update.videoPath = null;
-        update.videoStatus = 'pending';
-        update.videoWorkflowRunId = null;
-        update.videoGeneratedAt = null;
-        update.videoError = null;
-        progressEvent = 'image:progress';
-        progressUrlField = 'thumbnailUrl';
-        break;
-      case 'video':
-        update.videoUrl = variant.url;
-        update.videoPath = variant.storagePath;
-        update.videoStatus = 'completed';
-        update.videoError = null;
-        update.videoInputHash = variant.inputHash;
-        progressEvent = 'video:progress';
-        progressUrlField = 'videoUrl';
-        break;
-      case 'audio':
-        update.audioUrl = variant.url;
-        update.audioPath = variant.storagePath;
-        update.audioStatus = 'completed';
-        update.audioError = null;
-        update.audioInputHash = variant.inputHash;
-        progressEvent = 'audio:progress';
-        progressUrlField = 'audioUrl';
-        break;
-    }
+    // Atomic: a partial failure can't leave the live primary updated with the
+    // variant still appearing in the divergent list (or vice versa).
+    const { frame: updatedFrame } =
+      await scopedDb.frameVariants.promoteAtomically(
+        frame.id,
+        update,
+        variant.id
+      );
 
-    const updatedFrame = await scopedDb.frames.update(frame.id, update);
-    if (!updatedFrame) {
-      throw new Error(`Frame ${frame.id} not found`);
-    }
-    // Soft-delete the promoted variant so it disappears from the alternate
-    // listing without losing recovery audit trail.
-    await scopedDb.frameVariants.discard(variant.id);
-
-    if (progressEvent && progressUrlField) {
+    // Realtime emit is purely cache-busting — TanStack Query refetches on the
+    // mutation onSuccess invalidation regardless. A failed emit must not
+    // surface to the user as "promote failed" when the DB already committed.
+    const channel = getGenerationChannel(data.sequenceId);
+    try {
       const url = updatedFrame[progressUrlField] ?? variant.url;
-      await getGenerationChannel(data.sequenceId).emit(
+      await channel.emit(
         `generation.${progressEvent}`,
         progressEvent === 'audio:progress'
           ? {
@@ -168,6 +191,18 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
                 model: variant.model,
               }
       );
+      // Promoting an image clears the downstream video — emit a paired
+      // video:progress event so listeners deriving motion-banner state from
+      // realtime (not just cache) reset immediately.
+      if (variant.variantType === 'image') {
+        await channel.emit('generation.video:progress', {
+          frameId: frame.id,
+          status: 'pending',
+          videoUrl: undefined,
+        });
+      }
+    } catch (error) {
+      console.error('[promoteVariantFn] realtime emit failed', error);
     }
 
     return { frame: updatedFrame, variantId: variant.id };

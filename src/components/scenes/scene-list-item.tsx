@@ -60,16 +60,21 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
     ? undefined
     : (metadata?.originalScript.extract ?? frame.description ?? '');
 
+  // Skeleton state (no frame): suppress click handling and pointer cursor so
+  // a click during the loading window does not invoke the (now-undefined)
+  // onSelect callback or appear interactive.
+  const isSkeleton = !frame;
   return (
     <Card
       className={cn(
-        '@container/scene relative cursor-pointer transition-all',
+        '@container/scene relative transition-all',
+        isSkeleton ? 'pointer-events-none' : 'cursor-pointer',
         isActive ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
         variant === 'responsive' && '@[280px]/scene:py-3',
         variant === 'horizontal' && 'py-3',
         'py-3'
       )}
-      onClick={onSelect}
+      onClick={isSkeleton ? undefined : onSelect}
     >
       {showDivergentDot && (
         <div
