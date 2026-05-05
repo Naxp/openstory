@@ -54,6 +54,10 @@ export const characterSheetVariants = sqliteTable(
 
     inputHash: text('input_hash'),
     divergedAt: integer('diverged_at', { mode: 'timestamp' }),
+    // Soft-delete marker for divergent alternates the user has dismissed.
+    // Mirrors `frame_variants.discardedAt` so the artifact stays addressable
+    // for the toast Undo action.
+    discardedAt: integer('discarded_at', { mode: 'timestamp' }),
 
     createdAt: integer('created_at', { mode: 'timestamp' })
       .$defaultFn(() => new Date())

@@ -54,6 +54,9 @@ export const talentSheetVariants = sqliteTable(
 
     inputHash: text('input_hash'),
     divergedAt: integer('diverged_at', { mode: 'timestamp' }),
+    // Soft-delete marker for divergent alternates the user has dismissed.
+    // Mirrors `frame_variants.discardedAt`.
+    discardedAt: integer('discarded_at', { mode: 'timestamp' }),
 
     createdAt: integer('created_at', { mode: 'timestamp' })
       .$defaultFn(() => new Date())

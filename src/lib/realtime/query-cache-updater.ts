@@ -1,4 +1,6 @@
+import { characterSheetVariantKeys } from '@/hooks/use-character-sheet-variants';
 import { frameKeys } from '@/hooks/use-frames';
+import { locationSheetVariantKeys } from '@/hooks/use-location-sheet-variants';
 import { sequenceCharacterKeys } from '@/hooks/use-sequence-characters';
 import { sequenceLocationKeys } from '@/hooks/use-sequence-locations';
 import { sequenceKeys } from '@/hooks/use-sequences';
@@ -267,6 +269,13 @@ export function updateQueryCacheFromEvent(
             sequenceCharacterKeys.list(sequenceId),
             `sequence-characters:${sequenceId}`
           );
+          // Stage 2 issue #626 — surface the new alternate via the corner-dot
+          // and detail-view banner.
+          debouncedInvalidate(
+            queryClient,
+            characterSheetVariantKeys.divergentBySequence(sequenceId),
+            `character-sheet-divergent:${sequenceId}`
+          );
           break;
 
         case 'location':
@@ -276,6 +285,11 @@ export function updateQueryCacheFromEvent(
             queryClient,
             sequenceLocationKeys.list(sequenceId),
             `sequence-locations:${sequenceId}`
+          );
+          debouncedInvalidate(
+            queryClient,
+            locationSheetVariantKeys.divergentBySequence(sequenceId),
+            `location-sheet-divergent:${sequenceId}`
           );
           break;
 
