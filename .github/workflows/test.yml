@@ -131,6 +131,15 @@ jobs:
 
       - name: Start QStash
         run: |
+          # public.ecr.aws rate-limits anonymous pulls per IP; GitHub
+          # runners share egress IPs and hit the cap during busy hours.
+          # Retry the pull separately so transient 429s don't fail the job.
+          for attempt in 1 2 3 4 5; do
+            if docker pull public.ecr.aws/upstash/qstash:latest; then
+              break
+            fi
+            sleep $((attempt * 10))
+          done
           docker run -d --name qstash \
             --add-host=host.docker.internal:host-gateway \
             -p 8080:8080 \
