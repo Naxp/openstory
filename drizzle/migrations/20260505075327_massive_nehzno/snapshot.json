@@ -483,6 +483,16 @@
     },
     {
       "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "discarded_at",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "integer",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -1978,6 +1988,16 @@
       "default": null,
       "generated": null,
       "name": "diverged_at",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "discarded_at",
       "entityType": "columns",
       "table": "location_sheet_variants"
     },
@@ -3968,6 +3988,16 @@
       "default": null,
       "generated": null,
       "name": "diverged_at",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "discarded_at",
       "entityType": "columns",
       "table": "talent_sheet_variants"
     },
