@@ -1,11 +1,10 @@
 /**
- * Sheet workflow divergence routing (Stage 2).
+ * Sheet workflow divergence routing.
  *
  * Helpers for the character/location/talent sheet workflows to decide, at
  * write time, whether the freshly generated artifact is convergent (apply as
  * primary) or divergent (save to a `*_sheet_variants` table without
- * disturbing the live entity). Mirrors the per-frame divergence routing
- * already in place for `frame_variants`.
+ * disturbing the live entity).
  *
  * The decision is a hash comparison: callers pass the `snapshotInputHash`
  * computed when the workflow was triggered (frozen in the QStash payload)
@@ -16,7 +15,11 @@
 
 import type { ScopedDb } from '@/lib/db/scoped';
 import type { LocationSheetVariantParentType } from '@/lib/db/schema';
-import { getGenerationChannel } from '@/lib/realtime';
+import {
+  getGenerationChannel,
+  getLocationChannel,
+  getTalentChannel,
+} from '@/lib/realtime';
 
 export type SheetDivergenceDecision =
   | { kind: 'convergent' }
@@ -26,10 +29,9 @@ export function decideSheetDivergence(
   snapshotInputHash: string | null | undefined,
   currentInputHash: string | null | undefined
 ): SheetDivergenceDecision {
-  // Either side missing means we can't prove divergence; treat as convergent
-  // and let the parent row's hash get backfilled on write. This matches the
-  // Stage 1 frame-variants policy of treating null hashes as
-  // "unknown — never stale" rather than forcing a false-positive divergence.
+  // Either side missing → can't prove divergence; treat as convergent. Matches
+  // the project-wide "null hash = unknown, never stale" policy applied to
+  // pre-hash-tracking rows (see workflow/types.ts on `RegenerateFrameSnapshot`).
   if (!snapshotInputHash || !currentInputHash) {
     return { kind: 'convergent' };
   }
@@ -43,36 +45,11 @@ export function decideSheetDivergence(
   };
 }
 
-type EmitArgs = {
-  sequenceId?: string;
-  entityType: 'character' | 'location' | 'library-location' | 'talent';
-  entityId: string;
-  artifact: 'sheet';
-  snapshotInputHash: string;
-  divergedVariantId: string;
-};
-
-async function emitStaleDetected({
-  sequenceId,
-  entityType,
-  entityId,
-  artifact,
-  snapshotInputHash,
-  divergedVariantId,
-}: EmitArgs): Promise<void> {
-  await getGenerationChannel(sequenceId).emit('generation.stale:detected', {
-    entityType,
-    entityId,
-    artifact,
-    snapshotInputHash,
-    divergedVariantId,
-  });
-}
-
 export type SaveDivergentCharacterSheetArgs = {
   scopedDb: ScopedDb;
   characterId: string;
-  sequenceId?: string;
+  /** Required: character sheet workflows are sequence-scoped. */
+  sequenceId: string;
   model: string;
   url: string;
   storagePath?: string;
@@ -90,7 +67,7 @@ export async function saveDivergentCharacterSheet({
   workflowRunId,
   snapshotInputHash,
 }: SaveDivergentCharacterSheetArgs): Promise<string> {
-  const variant = await scopedDb.characterSheetVariants.insert({
+  const variant = await scopedDb.characterSheetVariants.insertDivergent({
     characterId,
     model,
     url,
@@ -101,8 +78,7 @@ export async function saveDivergentCharacterSheet({
     inputHash: snapshotInputHash,
     divergedAt: new Date(),
   });
-  await emitStaleDetected({
-    sequenceId,
+  await getGenerationChannel(sequenceId).emit('generation.stale:detected', {
     entityType: 'character',
     entityId: characterId,
     artifact: 'sheet',
@@ -112,11 +88,47 @@ export async function saveDivergentCharacterSheet({
   return variant.id;
 }
 
+/**
+ * Discriminated parent for location sheets: a single variants table services
+ * both sequence-scoped locations and library locations, so callers must pass
+ * the parent kind alongside its id. The kind also drives realtime channel
+ * routing — sequence locations notify via the sequence channel, library
+ * locations via the per-location channel.
+ *
+ * Discriminator strings are pinned to `LocationSheetVariantParentType` via
+ * `Extract<…>`. The bidirectional enum-coverage assert below converts
+ * enum drift in either direction (DB enum gains/loses a value, or this
+ * union does) into a TS error in this file — without it, `Extract<X, 'a'>`
+ * resolves to `'a'` regardless of new enum members and the drift goes
+ * undetected.
+ */
+export type LocationSheetParent =
+  | {
+      type: Extract<LocationSheetVariantParentType, 'sequence_location'>;
+      id: string;
+      sequenceId: string;
+    }
+  | {
+      type: Extract<LocationSheetVariantParentType, 'library_location'>;
+      id: string;
+    };
+
+// Bidirectional enum-coverage check: every parent kind maps to a union
+// branch and every union branch's discriminator is a known parent kind. If
+// either side gains a value not present in the other, this constant fails
+// to type-check with a "Type 'never' is not assignable to type 'true'" error.
+type _LocationSheetParentCoversEnum =
+  LocationSheetVariantParentType extends LocationSheetParent['type']
+    ? LocationSheetParent['type'] extends LocationSheetVariantParentType
+      ? true
+      : never
+    : never;
+const _locationSheetParentCoversEnum: _LocationSheetParentCoversEnum = true;
+void _locationSheetParentCoversEnum;
+
 export type SaveDivergentLocationSheetArgs = {
   scopedDb: ScopedDb;
-  parentType: LocationSheetVariantParentType;
-  parentId: string;
-  sequenceId?: string;
+  parent: LocationSheetParent;
   model: string;
   url: string;
   storagePath?: string;
@@ -126,18 +138,17 @@ export type SaveDivergentLocationSheetArgs = {
 
 export async function saveDivergentLocationSheet({
   scopedDb,
-  parentType,
-  parentId,
-  sequenceId,
+  parent,
   model,
   url,
   storagePath,
   workflowRunId,
   snapshotInputHash,
 }: SaveDivergentLocationSheetArgs): Promise<string> {
-  const variant = await scopedDb.locationSheetVariants.insert({
+  const parentType: LocationSheetVariantParentType = parent.type;
+  const variant = await scopedDb.locationSheetVariants.insertDivergent({
     parentType,
-    parentId,
+    parentId: parent.id,
     model,
     url,
     storagePath: storagePath ?? null,
@@ -147,23 +158,50 @@ export async function saveDivergentLocationSheet({
     inputHash: snapshotInputHash,
     divergedAt: new Date(),
   });
-  await emitStaleDetected({
-    sequenceId,
-    entityType:
-      parentType === 'library_location' ? 'library-location' : 'location',
-    entityId: parentId,
-    artifact: 'sheet',
-    snapshotInputHash,
-    divergedVariantId: variant.id,
-  });
+
+  switch (parent.type) {
+    case 'library_location':
+      await getLocationChannel(parent.id).emit('generation.stale:detected', {
+        entityType: 'library-location',
+        entityId: parent.id,
+        artifact: 'sheet',
+        snapshotInputHash,
+        divergedVariantId: variant.id,
+      });
+      break;
+    case 'sequence_location':
+      await getGenerationChannel(parent.sequenceId).emit(
+        'generation.stale:detected',
+        {
+          entityType: 'location',
+          entityId: parent.id,
+          artifact: 'sheet',
+          snapshotInputHash,
+          divergedVariantId: variant.id,
+        }
+      );
+      break;
+    default: {
+      // Exhaustive guard — adding a new parent kind without a routing case
+      // here triggers a TS error rather than a silent fall-through.
+      const _exhaustive: never = parent;
+      throw new Error(
+        `Unhandled location sheet parent: ${JSON.stringify(_exhaustive)}`
+      );
+    }
+  }
   return variant.id;
 }
 
 export type SaveDivergentTalentSheetArgs = {
   scopedDb: ScopedDb;
   talentSheetId: string;
-  /** For realtime channel routing; talent workflows don't use sequence channels. */
-  sequenceId?: string;
+  /**
+   * Parent talent id — used for realtime channel routing. Required: the
+   * talent channel is the only place the talent UI subscribes for stale
+   * events. Passing nothing here would silently drop the notification.
+   */
+  talentId: string;
   model: string;
   url: string;
   storagePath?: string;
@@ -174,14 +212,14 @@ export type SaveDivergentTalentSheetArgs = {
 export async function saveDivergentTalentSheet({
   scopedDb,
   talentSheetId,
-  sequenceId,
+  talentId,
   model,
   url,
   storagePath,
   workflowRunId,
   snapshotInputHash,
 }: SaveDivergentTalentSheetArgs): Promise<string> {
-  const variant = await scopedDb.talentSheetVariants.insert({
+  const variant = await scopedDb.talentSheetVariants.insertDivergent({
     talentSheetId,
     model,
     url,
@@ -192,8 +230,7 @@ export async function saveDivergentTalentSheet({
     inputHash: snapshotInputHash,
     divergedAt: new Date(),
   });
-  await emitStaleDetected({
-    sequenceId,
+  await getTalentChannel(talentId).emit('generation.stale:detected', {
     entityType: 'talent',
     entityId: talentSheetId,
     artifact: 'sheet',

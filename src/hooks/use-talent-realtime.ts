@@ -18,6 +18,19 @@ type SheetProgressEvent = {
   };
 };
 
+type StaleDetectedEvent = {
+  event: string;
+  data: {
+    entityType: string;
+    entityId: string;
+    artifact?: string;
+    snapshotInputHash: string;
+    divergedVariantId?: string;
+  };
+};
+
+type TalentRealtimeEvent = SheetProgressEvent | StaleDetectedEvent;
+
 /**
  * Determine the current generation state from a sequence of history events.
  * Returns the phase if generation is still in flight, null otherwise.
@@ -87,13 +100,34 @@ export function useTalentSheetRealtime(talentId?: string) {
   }, [talentId, queryClient]);
 
   const handleEvent = useCallback(
-    (event: SheetProgressEvent) => {
+    (event: TalentRealtimeEvent) => {
       const { event: eventName, data } = event;
 
-      if (eventName !== 'talent.sheet:progress') return;
-      if (data.talentId !== talentId) return;
+      if (eventName === 'generation.stale:detected') {
+        if ('entityType' in data && data.entityType !== 'talent') {
+          return;
+        }
+        // Divergent talent sheet was parked in `talent_sheet_variants`. The
+        // workflow already emitted `talent.sheet:progress` with status
+        // `completed` against the new variant sheet, so the spinner clears
+        // through that path. Refresh the talent detail/list so the new
+        // (non-default) sheet appears in the sheets list.
+        if (talentId) {
+          void queryClient.invalidateQueries({
+            queryKey: talentKeys.detail(talentId),
+          });
+        }
+        void queryClient.invalidateQueries({
+          queryKey: talentKeys.lists(),
+        });
+        return;
+      }
 
-      switch (data.status) {
+      if (eventName !== 'talent.sheet:progress') return;
+      if (!('talentId' in data) || data.talentId !== talentId) return;
+      const sheetData = data;
+
+      switch (sheetData.status) {
         case 'generating':
           setIsGenerating(true);
           setPhase('sheet');
@@ -105,7 +139,7 @@ export function useTalentSheetRealtime(talentId?: string) {
           setPhase('portrait');
           // Invalidate to show the new sheet immediately
           void queryClient.invalidateQueries({
-            queryKey: talentKeys.detail(data.talentId),
+            queryKey: talentKeys.detail(sheetData.talentId),
           });
           break;
 
@@ -115,7 +149,7 @@ export function useTalentSheetRealtime(talentId?: string) {
           setError(null);
           // Invalidate talent queries to refresh sheets and headshot
           void queryClient.invalidateQueries({
-            queryKey: talentKeys.detail(data.talentId),
+            queryKey: talentKeys.detail(sheetData.talentId),
           });
           // Also invalidate list to show new headshot in talent grid
           void queryClient.invalidateQueries({
@@ -125,7 +159,7 @@ export function useTalentSheetRealtime(talentId?: string) {
 
         case 'failed':
           setIsGenerating(false);
-          setError(data.error ?? 'Sheet generation failed');
+          setError(sheetData.error ?? 'Sheet generation failed');
           break;
       }
     },
@@ -134,7 +168,7 @@ export function useTalentSheetRealtime(talentId?: string) {
 
   const { status } = useRealtime({
     channels: talentId ? [`talent:${talentId}`] : [],
-    events: ['talent.sheet:progress'] as const,
+    events: ['talent.sheet:progress', 'generation.stale:detected'] as const,
     onData: handleEvent,
     enabled: !!talentId,
   });

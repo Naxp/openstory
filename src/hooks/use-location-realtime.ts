@@ -15,6 +15,19 @@ type SheetProgressEvent = {
   };
 };
 
+type StaleDetectedEvent = {
+  event: string;
+  data: {
+    entityType: string;
+    entityId: string;
+    artifact?: string;
+    snapshotInputHash: string;
+    divergedVariantId?: string;
+  };
+};
+
+type LocationRealtimeEvent = SheetProgressEvent | StaleDetectedEvent;
+
 /**
  * Determine the current generation state from channel history.
  */
@@ -67,13 +80,32 @@ export function useLocationSheetRealtime(locationId?: string) {
   }, [locationId]);
 
   const handleEvent = useCallback(
-    (event: SheetProgressEvent) => {
+    (event: LocationRealtimeEvent) => {
       const { event: eventName, data } = event;
 
-      if (eventName !== 'location.sheet:progress') return;
-      if (data.locationId !== locationId) return;
+      if (eventName === 'generation.stale:detected') {
+        if ('entityType' in data && data.entityType !== 'library-location') {
+          return;
+        }
+        // Library-location reference diverged into `location_sheet_variants`.
+        // The library row's primary reference is unchanged. Refetch detail
+        // and list so any variant-surfacing UI picks up the new alternate.
+        if (locationId) {
+          void queryClient.invalidateQueries({
+            queryKey: locationLibraryKeys.detail(locationId),
+          });
+        }
+        void queryClient.invalidateQueries({
+          queryKey: libraryLocationKeys.all,
+        });
+        return;
+      }
 
-      switch (data.status) {
+      if (eventName !== 'location.sheet:progress') return;
+      if (!('locationId' in data) || data.locationId !== locationId) return;
+      const sheetData = data;
+
+      switch (sheetData.status) {
         case 'generating':
           setIsGenerating(true);
           setError(null);
@@ -94,7 +126,7 @@ export function useLocationSheetRealtime(locationId?: string) {
 
         case 'failed':
           setIsGenerating(false);
-          setError(data.error ?? 'Sheet generation failed');
+          setError(sheetData.error ?? 'Sheet generation failed');
           break;
       }
     },
@@ -103,7 +135,7 @@ export function useLocationSheetRealtime(locationId?: string) {
 
   const { status } = useRealtime({
     channels: locationId ? [`location:${locationId}`] : [],
-    events: ['location.sheet:progress'] as const,
+    events: ['location.sheet:progress', 'generation.stale:detected'] as const,
     onData: handleEvent,
     enabled: !!locationId,
   });

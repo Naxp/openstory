@@ -34,14 +34,6 @@ import type {
 export type { FrameImageSceneSnapshot } from '@/lib/workflow/types';
 
 /**
- * Hard cap on snapshot-divergence re-queues for a single workflow chain.
- * Each re-queue runs `generateImageWithProvider` + `deductWorkflowCredits`
- * before the divergence check, so an upstream that thrashes in a tight loop
- * would otherwise burn credits indefinitely.
- */
-export const MAX_REQUEUE_DEPTH = 5;
-
-/**
  * Resolve the upstream talent-sheet's `input_hash` for a sequence character.
  * Returns `null` when the character has no talent assignment, when the talent
  * has no sheets, or when the sheet predates hash tracking.

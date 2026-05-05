@@ -10,6 +10,7 @@ import type {
 } from '@/lib/db/schema';
 import { talentSheetVariants } from '@/lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { insertDivergentRaceTolerant } from './divergent-insert';
 
 export function createTalentSheetVariantsMethods(db: Database) {
   return {
@@ -48,6 +49,36 @@ export function createTalentSheetVariantsMethods(db: Database) {
         throw new Error('Failed to insert talent sheet variant');
       }
       return row;
+    },
+
+    /**
+     * Idempotent on (talentSheetId, model, inputHash) within the divergent
+     * partial unique index. Tolerant to QStash step retry and cross-run race;
+     * see `divergent-insert.ts` for the rationale.
+     */
+    insertDivergent: async (
+      values: NewTalentSheetVariant & {
+        inputHash: string;
+        divergedAt: Date;
+      }
+    ): Promise<TalentSheetVariant> => {
+      const findExisting = () =>
+        db
+          .select()
+          .from(talentSheetVariants)
+          .where(
+            and(
+              eq(talentSheetVariants.talentSheetId, values.talentSheetId),
+              eq(talentSheetVariants.model, values.model),
+              eq(talentSheetVariants.inputHash, values.inputHash),
+              sql`${talentSheetVariants.divergedAt} IS NOT NULL`
+            )
+          );
+      return insertDivergentRaceTolerant({
+        findExisting,
+        insert: () => db.insert(talentSheetVariants).values(values).returning(),
+        errorMessage: 'Failed to insert talent sheet variant',
+      });
     },
 
     discard: async (id: string): Promise<void> => {

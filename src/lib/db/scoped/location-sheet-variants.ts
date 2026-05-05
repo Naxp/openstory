@@ -15,6 +15,7 @@ import type {
 } from '@/lib/db/schema';
 import { locationSheetVariants } from '@/lib/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
+import { insertDivergentRaceTolerant } from './divergent-insert';
 
 export function createLocationSheetVariantsMethods(db: Database) {
   return {
@@ -61,6 +62,38 @@ export function createLocationSheetVariantsMethods(db: Database) {
         throw new Error('Failed to insert location sheet variant');
       }
       return row;
+    },
+
+    /**
+     * Idempotent on (parentType, parentId, model, inputHash) within the
+     * divergent partial unique index. Tolerant to QStash step retry and
+     * cross-run race; see `divergent-insert.ts` for the rationale.
+     */
+    insertDivergent: async (
+      values: NewLocationSheetVariant & {
+        inputHash: string;
+        divergedAt: Date;
+      }
+    ): Promise<LocationSheetVariant> => {
+      const findExisting = () =>
+        db
+          .select()
+          .from(locationSheetVariants)
+          .where(
+            and(
+              eq(locationSheetVariants.parentType, values.parentType),
+              eq(locationSheetVariants.parentId, values.parentId),
+              eq(locationSheetVariants.model, values.model),
+              eq(locationSheetVariants.inputHash, values.inputHash),
+              sql`${locationSheetVariants.divergedAt} IS NOT NULL`
+            )
+          );
+      return insertDivergentRaceTolerant({
+        findExisting,
+        insert: () =>
+          db.insert(locationSheetVariants).values(values).returning(),
+        errorMessage: 'Failed to insert location sheet variant',
+      });
     },
 
     discard: async (id: string): Promise<void> => {

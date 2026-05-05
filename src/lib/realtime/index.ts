@@ -269,15 +269,26 @@ export function getRealtime() {
 }
 
 /**
+ * Build a no-op channel stub when an id is missing. Logs a warning so a
+ * dropped emit is observable in production rather than silently lost — the
+ * channel-id helpers below are server-only, and a missing id is always a
+ * bug at the call site.
+ */
+function noopChannel(label: string): { emit: () => null } {
+  console.warn(
+    `[realtime] dropping ${label} emit: missing channel id — caller should guard on id presence before emitting`
+  );
+  return { emit: () => null };
+}
+
+/**
  * Get a channel for a specific sequence to emit/receive events.
  * @param sequenceId - The sequence ID to use as the channel identifier
  */
 export function getGenerationChannel(sequenceId?: string) {
   return sequenceId
     ? getRealtime().channel(sequenceId)
-    : {
-        emit: () => null,
-      };
+    : noopChannel('generation');
 }
 
 /**
@@ -287,9 +298,7 @@ export function getGenerationChannel(sequenceId?: string) {
 export function getTalentChannel(talentId?: string) {
   return talentId
     ? getRealtime().channel(`talent:${talentId}`)
-    : {
-        emit: () => null,
-      };
+    : noopChannel('talent');
 }
 
 /**
@@ -299,7 +308,5 @@ export function getTalentChannel(talentId?: string) {
 export function getLocationChannel(locationId?: string) {
   return locationId
     ? getRealtime().channel(`location:${locationId}`)
-    : {
-        emit: () => null,
-      };
+    : noopChannel('location');
 }
