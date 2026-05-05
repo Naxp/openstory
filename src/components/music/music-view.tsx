@@ -35,6 +35,8 @@ type MusicViewProps = {
   isGeneratingMusic: boolean;
   onMergeVideoAndMusic: () => void;
   isMergingVideoAndMusic: boolean;
+  /** Banner rendered above the audio player while `musicStatus === 'completed'`. */
+  divergentBanner?: React.ReactNode;
 };
 
 type LoadingButtonProps = React.ComponentProps<typeof Button> & {
@@ -130,6 +132,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
   isGeneratingMusic,
   onMergeVideoAndMusic,
   isMergingVideoAndMusic,
+  divergentBanner,
 }) => {
   const {
     musicStatus,
@@ -175,6 +178,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
       <StatusPanel
         icon={<Volume2 className="h-10 w-10 text-muted-foreground" />}
       >
+        {divergentBanner}
         <audio
           controls
           src={musicUrl}

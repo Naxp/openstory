@@ -1,8 +1,11 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "70f79083-5dde-4b66-8b42-065744ce7bb3",
-  "prevIds": ["992a9c6e-0be1-4304-ac78-d1f77c3856c6"],
+  "id": "0b8f3e2c-93dd-49df-8b76-e2b779bed9d5",
+  "prevIds": [
+    "9605b368-2d17-427f-a234-bd13adddf76a",
+    "606ba03e-4bad-4be8-9399-a2279dc4f11e"
+  ],
   "ddl": [
     {
       "name": "account",
@@ -10,6 +13,10 @@
     },
     {
       "name": "audio",
+      "entityType": "tables"
+    },
+    {
+      "name": "character_sheet_variants",
       "entityType": "tables"
     },
     {
@@ -49,6 +56,10 @@
       "entityType": "tables"
     },
     {
+      "name": "location_sheet_variants",
+      "entityType": "tables"
+    },
+    {
       "name": "location_sheets",
       "entityType": "tables"
     },
@@ -69,6 +80,14 @@
       "entityType": "tables"
     },
     {
+      "name": "sequence_music_variants",
+      "entityType": "tables"
+    },
+    {
+      "name": "sequence_video_variants",
+      "entityType": "tables"
+    },
+    {
       "name": "sequences",
       "entityType": "tables"
     },
@@ -86,6 +105,10 @@
     },
     {
       "name": "talent_media",
+      "entityType": "tables"
+    },
+    {
+      "name": "talent_sheet_variants",
       "entityType": "tables"
     },
     {
@@ -356,6 +379,136 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "character_id",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text(100)",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_path",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generated_at",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "character_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "characters"
     },
     {
@@ -400,7 +553,7 @@
     },
     {
       "type": "text",
-      "notNull": true,
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -1139,6 +1292,26 @@
       "table": "frames"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "variant_image_generated_at",
+      "entityType": "columns",
+      "table": "frames"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "variant_image_error",
+      "entityType": "columns",
+      "table": "frames"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -1687,6 +1860,146 @@
       "name": "updated_at",
       "entityType": "columns",
       "table": "location_library"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent_type",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent_id",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text(100)",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_path",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generated_at",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "location_sheet_variants"
     },
     {
       "type": "text",
@@ -2289,6 +2602,16 @@
       "table": "sequence_locations"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reference_input_hash",
+      "entityType": "columns",
+      "table": "sequence_locations"
+    },
+    {
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -2407,6 +2730,316 @@
       "name": "created_by",
       "entityType": "columns",
       "table": "sequence_music_prompt_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sequence_id",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_path",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tags",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "duration_seconds",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text(100)",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generated_at",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "discarded_at",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "sequence_music_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sequence_id",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_path",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text(100)",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generated_at",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "discarded_at",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "sequence_video_variants"
     },
     {
       "type": "text",
@@ -3236,6 +3869,136 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "talent_sheet_id",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text(100)",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_path",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_run_id",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "generated_at",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_hash",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "talent_sheets"
     },
     {
@@ -3315,6 +4078,16 @@
       "default": null,
       "generated": null,
       "name": "input_hash",
+      "entityType": "columns",
+      "table": "talent_sheets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "diverged_at",
       "entityType": "columns",
       "table": "talent_sheets"
     },
@@ -4122,6 +4895,17 @@
       "table": "audio"
     },
     {
+      "columns": ["character_id"],
+      "tableTo": "characters",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_character_sheet_variants_character_id_characters_id_fk",
+      "entityType": "fks",
+      "table": "character_sheet_variants"
+    },
+    {
       "columns": ["sequence_id"],
       "tableTo": "sequences",
       "columnsTo": ["id"],
@@ -4375,6 +5159,28 @@
       "table": "sequence_music_prompt_variants"
     },
     {
+      "columns": ["sequence_id"],
+      "tableTo": "sequences",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_sequence_music_variants_sequence_id_sequences_id_fk",
+      "entityType": "fks",
+      "table": "sequence_music_variants"
+    },
+    {
+      "columns": ["sequence_id"],
+      "tableTo": "sequences",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_sequence_video_variants_sequence_id_sequences_id_fk",
+      "entityType": "fks",
+      "table": "sequence_video_variants"
+    },
+    {
       "columns": ["team_id"],
       "tableTo": "teams",
       "columnsTo": ["id"],
@@ -4483,6 +5289,17 @@
       "name": "talent_media_talent_id_talent_id_fk",
       "entityType": "fks",
       "table": "talent_media"
+    },
+    {
+      "columns": ["talent_sheet_id"],
+      "tableTo": "talent_sheets",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_talent_sheet_variants_talent_sheet_id_talent_sheets_id_fk",
+      "entityType": "fks",
+      "table": "talent_sheet_variants"
     },
     {
       "columns": ["talent_id"],
@@ -4640,6 +5457,13 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "character_sheet_variants_pk",
+      "table": "character_sheet_variants",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "characters_pk",
       "table": "characters",
       "entityType": "pks"
@@ -4703,6 +5527,13 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "location_sheet_variants_pk",
+      "table": "location_sheet_variants",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "location_sheets_pk",
       "table": "location_sheets",
       "entityType": "pks"
@@ -4738,6 +5569,20 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "sequence_music_variants_pk",
+      "table": "sequence_music_variants",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "sequence_video_variants_pk",
+      "table": "sequence_video_variants",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "sequences_pk",
       "table": "sequences",
       "entityType": "pks"
@@ -4768,6 +5613,13 @@
       "nameExplicit": false,
       "name": "talent_media_pk",
       "table": "talent_media",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "talent_sheet_variants_pk",
+      "table": "talent_sheet_variants",
       "entityType": "pks"
     },
     {
@@ -4874,6 +5726,60 @@
       "name": "idx_audio_team_id",
       "entityType": "indexes",
       "table": "audio"
+    },
+    {
+      "columns": [
+        {
+          "value": "character_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_character_sheet_variants_character",
+      "entityType": "indexes",
+      "table": "character_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "character_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"character_sheet_variants\".\"diverged_at\" IS NULL",
+      "origin": "manual",
+      "name": "character_sheet_variants_primary_key",
+      "entityType": "indexes",
+      "table": "character_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "character_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"character_sheet_variants\".\"diverged_at\" IS NOT NULL",
+      "origin": "manual",
+      "name": "character_sheet_variants_divergent_key",
+      "entityType": "indexes",
+      "table": "character_sheet_variants"
     },
     {
       "columns": [
@@ -4990,6 +5896,28 @@
       "where": null,
       "origin": "manual",
       "name": "idx_frame_prompt_variants_frame_type_created",
+      "entityType": "indexes",
+      "table": "frame_prompt_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "frame_id",
+          "isExpression": false
+        },
+        {
+          "value": "prompt_type",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"frame_prompt_variants\".\"input_hash\" IS NOT NULL",
+      "origin": "manual",
+      "name": "uq_frame_prompt_variants_frame_type_input_hash",
       "entityType": "indexes",
       "table": "frame_prompt_variants"
     },
@@ -5232,6 +6160,72 @@
     {
       "columns": [
         {
+          "value": "parent_type",
+          "isExpression": false
+        },
+        {
+          "value": "parent_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_location_sheet_variants_parent",
+      "entityType": "indexes",
+      "table": "location_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "parent_type",
+          "isExpression": false
+        },
+        {
+          "value": "parent_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"location_sheet_variants\".\"diverged_at\" IS NULL",
+      "origin": "manual",
+      "name": "location_sheet_variants_primary_key",
+      "entityType": "indexes",
+      "table": "location_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "parent_type",
+          "isExpression": false
+        },
+        {
+          "value": "parent_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"location_sheet_variants\".\"diverged_at\" IS NOT NULL",
+      "origin": "manual",
+      "name": "location_sheet_variants_divergent_key",
+      "entityType": "indexes",
+      "table": "location_sheet_variants"
+    },
+    {
+      "columns": [
+        {
           "value": "location_id",
           "isExpression": false
         }
@@ -5380,6 +6374,132 @@
       "name": "idx_sequence_music_prompt_variants_sequence_created",
       "entityType": "indexes",
       "table": "sequence_music_prompt_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"sequence_music_prompt_variants\".\"input_hash\" IS NOT NULL",
+      "origin": "manual",
+      "name": "uq_sequence_music_prompt_variants_sequence_input_hash",
+      "entityType": "indexes",
+      "table": "sequence_music_prompt_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_sequence_music_variants_sequence",
+      "entityType": "indexes",
+      "table": "sequence_music_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"sequence_music_variants\".\"diverged_at\" IS NULL",
+      "origin": "manual",
+      "name": "sequence_music_variants_primary_key",
+      "entityType": "indexes",
+      "table": "sequence_music_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"sequence_music_variants\".\"diverged_at\" IS NOT NULL",
+      "origin": "manual",
+      "name": "sequence_music_variants_divergent_key",
+      "entityType": "indexes",
+      "table": "sequence_music_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_sequence_video_variants_sequence",
+      "entityType": "indexes",
+      "table": "sequence_video_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        },
+        {
+          "value": "workflow",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"sequence_video_variants\".\"diverged_at\" IS NULL",
+      "origin": "manual",
+      "name": "sequence_video_variants_primary_key",
+      "entityType": "indexes",
+      "table": "sequence_video_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "sequence_id",
+          "isExpression": false
+        },
+        {
+          "value": "workflow",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"sequence_video_variants\".\"diverged_at\" IS NOT NULL",
+      "origin": "manual",
+      "name": "sequence_video_variants_divergent_key",
+      "entityType": "indexes",
+      "table": "sequence_video_variants"
     },
     {
       "columns": [
@@ -5548,6 +6668,60 @@
       "name": "idx_talent_media_type",
       "entityType": "indexes",
       "table": "talent_media"
+    },
+    {
+      "columns": [
+        {
+          "value": "talent_sheet_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_talent_sheet_variants_talent_sheet",
+      "entityType": "indexes",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "talent_sheet_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"talent_sheet_variants\".\"diverged_at\" IS NULL",
+      "origin": "manual",
+      "name": "talent_sheet_variants_primary_key",
+      "entityType": "indexes",
+      "table": "talent_sheet_variants"
+    },
+    {
+      "columns": [
+        {
+          "value": "talent_sheet_id",
+          "isExpression": false
+        },
+        {
+          "value": "model",
+          "isExpression": false
+        },
+        {
+          "value": "input_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"talent_sheet_variants\".\"diverged_at\" IS NOT NULL",
+      "origin": "manual",
+      "name": "talent_sheet_variants_divergent_key",
+      "entityType": "indexes",
+      "table": "talent_sheet_variants"
     },
     {
       "columns": [

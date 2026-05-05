@@ -142,6 +142,7 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
         // to 'completed' and emit a terminal event so the UI doesn't hang on
         // a spinner. The alternate is preserved in `sequence_music_variants`
         // for future surfacing.
+        const divergedVariantId = writeResult.variant.id;
         await context.run('update-sequence-music-divergent', async () => {
           const seq = scopedDb.sequence(sequenceId);
           const status = await seq.getMusicStatus();
@@ -150,16 +151,21 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
             musicError: null,
           });
 
-          await getGenerationChannel(sequenceId).emit(
-            'generation.audio:progress',
-            {
-              status: 'completed',
-              ...(status?.musicUrl ? { audioUrl: status.musicUrl } : {}),
-            }
-          );
+          const channel = getGenerationChannel(sequenceId);
+          await channel.emit('generation.audio:progress', {
+            status: 'completed',
+            ...(status?.musicUrl ? { audioUrl: status.musicUrl } : {}),
+          });
+          await channel.emit('generation.stale:detected', {
+            entityType: 'sequence',
+            entityId: sequenceId,
+            artifact: 'music',
+            snapshotInputHash: inputHash,
+            divergedVariantId,
+          });
         });
         console.log(
-          `[MusicWorkflow] Diverged music result for sequence ${sequenceId}; preserved as alternate (variant=${writeResult.variant.id})`
+          `[MusicWorkflow] Diverged music result for sequence ${sequenceId}; preserved as alternate (variant=${divergedVariantId})`
         );
       } else {
         await context.run('update-sequence-music', async () => {

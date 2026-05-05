@@ -278,6 +278,43 @@ export function updateQueryCacheFromEvent(
             `sequence-locations:${sequenceId}`
           );
           break;
+
+        case 'sequence': {
+          // Sequence-level merged-video or music diverged into
+          // `sequence_video_variants` / `sequence_music_variants`. Refresh the
+          // matching divergent-list query so the inline banner appears, plus
+          // the sequence detail (its `mergedVideoStatus`/`musicStatus` may
+          // have just settled back to 'completed').
+          const artifact = getString(data, 'artifact');
+          if (artifact === 'merged-video') {
+            debouncedInvalidate(
+              queryClient,
+              ['sequence-divergent-video', sequenceId],
+              `sequence-divergent-video:${sequenceId}`
+            );
+          } else if (artifact === 'music') {
+            debouncedInvalidate(
+              queryClient,
+              ['sequence-divergent-music', sequenceId],
+              `sequence-divergent-music:${sequenceId}`
+            );
+          }
+          debouncedInvalidate(
+            queryClient,
+            sequenceKeys.detail(sequenceId),
+            `sequence:${sequenceId}`
+          );
+          // Team-aggregate dashboard query: corner-dot on /sequences depends
+          // on it, and the dashboard route doesn't subscribe to per-sequence
+          // channels — invalidate here so a divergence appearing while the
+          // user sits on the dashboard surfaces without staleTime/focus delay.
+          debouncedInvalidate(
+            queryClient,
+            ['sequence-divergent-by-team'],
+            'sequence-divergent-by-team'
+          );
+          break;
+        }
       }
       break;
     }
