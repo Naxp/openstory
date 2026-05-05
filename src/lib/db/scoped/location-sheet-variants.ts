@@ -18,7 +18,7 @@ import {
   locationSheetVariants,
   sequenceLocations,
 } from '@/lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { insertDivergentRaceTolerant } from './divergent-insert';
 
 type PromoteLocationUpdate = {
@@ -94,10 +94,7 @@ export function createLocationSheetVariantsMethods(db: Database) {
         .where(
           and(
             eq(locationSheetVariants.parentType, parentType),
-            sql`${locationSheetVariants.parentId} IN (${sql.join(
-              parentIds.map((id) => sql`${id}`),
-              sql`,`
-            )})`,
+            inArray(locationSheetVariants.parentId, parentIds),
             sql`${locationSheetVariants.divergedAt} IS NOT NULL`,
             sql`${locationSheetVariants.discardedAt} IS NULL`
           )
@@ -161,10 +158,7 @@ export function createLocationSheetVariantsMethods(db: Database) {
       });
     },
 
-    /**
-     * Soft-delete a divergent alternate. Mirrors `frame_variants.discard` so
-     * the toast Undo can restore.
-     */
+    /** Soft-delete a divergent alternate; preserves the row for the toast Undo. */
     discard: async (variantId: string): Promise<Date> => {
       const discardedAt = new Date();
       const result = await db
@@ -202,11 +196,43 @@ export function createLocationSheetVariantsMethods(db: Database) {
       variantId: string
     ): Promise<{ discardedAt: Date }> => {
       const [existingVariant] = await db
-        .select({ id: locationSheetVariants.id })
+        .select({
+          id: locationSheetVariants.id,
+          parentType: locationSheetVariants.parentType,
+          parentId: locationSheetVariants.parentId,
+        })
         .from(locationSheetVariants)
         .where(eq(locationSheetVariants.id, variantId));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       if (!existingVariant) {
         throw new Error(`LocationSheetVariant ${variantId} not found`);
+      }
+      if (
+        existingVariant.parentType !== parentType ||
+        existingVariant.parentId !== parentId
+      ) {
+        throw new Error(
+          `LocationSheetVariant ${variantId} parent (${existingVariant.parentType}:${existingVariant.parentId}) does not match promote target (${parentType}:${parentId})`
+        );
+      }
+
+      const existingParent =
+        parentType === 'sequence_location'
+          ? (
+              await db
+                .select({ id: sequenceLocations.id })
+                .from(sequenceLocations)
+                .where(eq(sequenceLocations.id, parentId))
+            )[0]
+          : (
+              await db
+                .select({ id: locationLibrary.id })
+                .from(locationLibrary)
+                .where(eq(locationLibrary.id, parentId))
+            )[0];
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+      if (!existingParent) {
+        throw new Error(`${parentType} ${parentId} not found`);
       }
 
       const now = new Date();

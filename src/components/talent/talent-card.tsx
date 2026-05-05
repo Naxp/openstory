@@ -5,7 +5,6 @@ import { Sparkles, User } from 'lucide-react';
 
 type TalentCardProps = {
   character: CharacterWithTalent;
-  /** Stage 2 issue #626 — passed from the parent list when divergent. */
   divergentVariantId?: string;
 };
 

@@ -24,7 +24,6 @@ export const LocationLibraryList: React.FC<LocationLibraryListProps> = ({
   const locationIds = locations?.map((l) => l.id) ?? [];
   const { isGenerating } = useLocationSheetsRealtime(locationIds);
 
-  // Stage 2 issue #626 — drive corner-dot per library location.
   const { data: divergentVariants } = useLibraryLocationDivergentVariants();
   const divergentByLocationId = useMemo(() => {
     const map = new Map<string, string>();

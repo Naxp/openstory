@@ -25,9 +25,7 @@ export const TalentLibraryList: React.FC<TalentLibraryListProps> = ({
   const talentIds = talent?.map((t) => t.id) ?? [];
   const { isGenerating } = useTalentSheetsRealtime(talentIds);
 
-  // Stage 2 issue #626 — drive corner-dot per talent. The team-level query
-  // returns one row per active divergent sheet across the visible talents;
-  // we collapse to a single dot per talent (oldest divergence wins).
+  // Collapse divergent variants to one dot per talent (oldest divergence wins).
   const { data: divergentVariants } = useTeamTalentDivergentVariants();
   const sheetIdToTalentId = useMemo(() => {
     const map = new Map<string, string>();

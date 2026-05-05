@@ -122,16 +122,16 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
     enabled: !!sequenceId,
   });
 
-  // Stage 2 staleness/divergence wiring (issue #626).
   const { data: divergentVariants } =
     useSequenceLocationDivergentVariants(sequenceId);
+  const invalidateDivergentKeys = useCallback(
+    () => [locationSheetVariantKeys.divergentBySequence(sequenceId)],
+    [sequenceId]
+  );
   useSheetStaleDetected({
     channelId: sequenceId,
     entityTypes: ['location'],
-    invalidateKeys: useCallback(
-      () => [locationSheetVariantKeys.divergentBySequence(sequenceId)],
-      [sequenceId]
-    ),
+    invalidateKeys: invalidateDivergentKeys,
   });
   const promoteVariant = usePromoteSequenceLocationSheetVariant();
   const discardVariant = useDiscardSequenceLocationSheetVariant();
@@ -150,6 +150,7 @@ export const LocationDetailView: React.FC<LocationDetailViewProps> = ({
         undiscardVariant.mutate(
           { sequenceId, variantId: variant.id },
           {
+            onSuccess: () => toast.success('Alternate restored'),
             onError: (error) => {
               toast.error('Failed to restore alternate', {
                 description:

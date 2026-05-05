@@ -29,7 +29,9 @@ import { generateId } from '@/lib/db/id';
 import {
   characterSheetVariants,
   characters,
+  locationLibrary,
   locationSheetVariants,
+  sequenceLocations,
   sequences,
   styles,
   talent,
@@ -60,6 +62,8 @@ async function seed() {
   await db.delete(talentSheetVariants);
   await db.delete(talentSheets);
   await db.delete(characters);
+  await db.delete(sequenceLocations);
+  await db.delete(locationLibrary);
   await db.delete(talent);
   await db.delete(sequences);
   await db.delete(styles);
@@ -305,13 +309,6 @@ describe('talent-sheet-variants insertDivergent', () => {
   });
 });
 
-// ----------------------------------------------------------------------------
-// Stage 2 UI (issue #626) — soft-delete + promote tests for the three
-// scoped sheet-variant modules. The existing `insertDivergent` cases above
-// already pin the schema-level partial-index split; these tests pin the new
-// promote/discard/undiscard verbs that drive the divergent-banner UI.
-// ----------------------------------------------------------------------------
-
 describe('character-sheet-variants discard / undiscard / promote', () => {
   it('discard sets discardedAt and undiscard clears it', async () => {
     const methods = createCharacterSheetVariantsMethods(db);
@@ -458,5 +455,348 @@ describe('talent-sheet-variants discard / promote', () => {
 
     const after = await methods.getById(variant.id);
     expect(after?.discardedAt).not.toBeNull();
+  });
+});
+
+// Negative-case coverage for promoteAtomically. The contract is that a
+// failed pre-check must throw before the batch runs, so the live primary is
+// not updated and the variant is not soft-deleted. These pin that contract.
+
+describe('character-sheet-variants promoteAtomically negative cases', () => {
+  it('throws when the character does not exist; variant is not soft-deleted', async () => {
+    const methods = createCharacterSheetVariantsMethods(db);
+    const divergedAt = new Date('2026-04-29T00:00:00Z');
+    const variant = await methods.insertDivergent({
+      characterId,
+      model: 'flux-pro',
+      url: 'https://example.com/x.png',
+      status: 'completed',
+      inputHash: 'h',
+      divergedAt,
+    });
+
+    expect(
+      methods.promoteAtomically(
+        generateId(),
+        {
+          sheetImageUrl: variant.url,
+          sheetImagePath: null,
+          sheetInputHash: variant.inputHash,
+        },
+        variant.id
+      )
+    ).rejects.toThrow(/not found/);
+
+    const after = await methods.getById(variant.id);
+    expect(after?.discardedAt).toBeNull();
+  });
+
+  it('throws when the variant does not exist; character is not updated', async () => {
+    const methods = createCharacterSheetVariantsMethods(db);
+    expect(
+      methods.promoteAtomically(
+        characterId,
+        {
+          sheetImageUrl: 'https://example.com/x.png',
+          sheetImagePath: null,
+          sheetInputHash: 'h',
+        },
+        generateId()
+      )
+    ).rejects.toThrow(/not found/);
+
+    const [character] = await db
+      .select()
+      .from(characters)
+      .where(eq(characters.id, characterId));
+    expect(character.sheetImageUrl).toBeNull();
+    expect(character.sheetInputHash).toBeNull();
+  });
+});
+
+describe('location-sheet-variants promoteAtomically negative cases', () => {
+  async function seedSequenceLocation() {
+    const [loc] = await db
+      .insert(sequenceLocations)
+      .values({
+        sequenceId,
+        locationId: `loc_${generateId()}`,
+        name: 'L',
+      })
+      .returning();
+    return loc;
+  }
+  async function seedLibraryLocation() {
+    const [loc] = await db
+      .insert(locationLibrary)
+      .values({ teamId: team.id, name: 'L' })
+      .returning();
+    return loc;
+  }
+
+  it('promotes a sequence_location parent and discards the variant', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    const loc = await seedSequenceLocation();
+    const divergedAt = new Date('2026-04-29T00:00:00Z');
+    const variant = await methods.insertDivergent({
+      parentType: 'sequence_location',
+      parentId: loc.id,
+      model: 'flux-pro',
+      url: 'https://example.com/seq.png',
+      storagePath: '/r2/seq.png',
+      status: 'completed',
+      inputHash: 'h',
+      divergedAt,
+    });
+
+    await methods.promoteAtomically(
+      'sequence_location',
+      loc.id,
+      {
+        referenceImageUrl: variant.url,
+        referenceImagePath: variant.storagePath,
+        referenceInputHash: variant.inputHash,
+      },
+      variant.id
+    );
+
+    const [updated] = await db
+      .select()
+      .from(sequenceLocations)
+      .where(eq(sequenceLocations.id, loc.id));
+    expect(updated.referenceImageUrl).toBe('https://example.com/seq.png');
+    expect(updated.referenceInputHash).toBe('h');
+
+    const after = await methods.getById(variant.id);
+    expect(after?.discardedAt).not.toBeNull();
+  });
+
+  it('rejects when parentType/parentId disagree with the variant', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    const loc = await seedSequenceLocation();
+    const variant = await methods.insertDivergent({
+      parentType: 'sequence_location',
+      parentId: loc.id,
+      model: 'flux-pro',
+      url: 'https://example.com/x.png',
+      status: 'completed',
+      inputHash: 'h',
+      divergedAt: new Date('2026-04-29T00:00:00Z'),
+    });
+
+    expect(
+      methods.promoteAtomically(
+        'library_location',
+        loc.id,
+        {
+          referenceImageUrl: variant.url,
+          referenceImagePath: null,
+          referenceInputHash: variant.inputHash,
+        },
+        variant.id
+      )
+    ).rejects.toThrow(/does not match promote target/);
+
+    const after = await methods.getById(variant.id);
+    expect(after?.discardedAt).toBeNull();
+  });
+
+  it('throws when sequence_location parent does not exist', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    const ghostId = generateId();
+    const variant = await methods.insertDivergent({
+      parentType: 'sequence_location',
+      parentId: ghostId,
+      model: 'flux-pro',
+      url: 'https://example.com/x.png',
+      status: 'completed',
+      inputHash: 'h',
+      divergedAt: new Date('2026-04-29T00:00:00Z'),
+    });
+
+    expect(
+      methods.promoteAtomically(
+        'sequence_location',
+        ghostId,
+        {
+          referenceImageUrl: variant.url,
+          referenceImagePath: null,
+          referenceInputHash: variant.inputHash,
+        },
+        variant.id
+      )
+    ).rejects.toThrow(/not found/);
+
+    const after = await methods.getById(variant.id);
+    expect(after?.discardedAt).toBeNull();
+  });
+
+  it('throws when the variant does not exist; library parent is not updated', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    const loc = await seedLibraryLocation();
+    expect(
+      methods.promoteAtomically(
+        'library_location',
+        loc.id,
+        {
+          referenceImageUrl: 'https://example.com/x.png',
+          referenceImagePath: null,
+          referenceInputHash: 'h',
+        },
+        generateId()
+      )
+    ).rejects.toThrow(/not found/);
+
+    const [refreshed] = await db
+      .select()
+      .from(locationLibrary)
+      .where(eq(locationLibrary.id, loc.id));
+    expect(refreshed.referenceImageUrl).toBeNull();
+    expect(refreshed.referenceInputHash).toBeNull();
+  });
+});
+
+describe('sheet-variants list filters and empty-input short-circuits', () => {
+  it('character listDivergentActiveByCharacters returns [] for empty input (no SQL roundtrip)', async () => {
+    const methods = createCharacterSheetVariantsMethods(db);
+    expect(await methods.listDivergentActiveByCharacters([])).toEqual([]);
+  });
+
+  it('talent listDivergentActiveByTalents returns [] for empty input', async () => {
+    const methods = createTalentSheetVariantsMethods(db);
+    expect(await methods.listDivergentActiveByTalents([])).toEqual([]);
+  });
+
+  it('talent listDivergentActiveByTalentSheets returns [] for empty input', async () => {
+    const methods = createTalentSheetVariantsMethods(db);
+    expect(await methods.listDivergentActiveByTalentSheets([])).toEqual([]);
+  });
+
+  it('location listDivergentActiveByParents filters by parentType (sequence vs library)', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    const divergedAt = new Date('2026-04-29T00:00:00Z');
+    const sharedId = generateId();
+
+    const seqVariant = await methods.insertDivergent({
+      parentType: 'sequence_location',
+      parentId: sharedId,
+      model: 'flux-pro',
+      url: 'https://example.com/seq.png',
+      status: 'completed',
+      inputHash: 'hs',
+      divergedAt,
+    });
+    const libVariant = await methods.insertDivergent({
+      parentType: 'library_location',
+      parentId: sharedId,
+      model: 'flux-pro',
+      url: 'https://example.com/lib.png',
+      status: 'completed',
+      inputHash: 'hl',
+      divergedAt,
+    });
+
+    const seqOnly = await methods.listDivergentActiveByParents(
+      'sequence_location',
+      [sharedId]
+    );
+    expect(seqOnly.map((v) => v.id)).toEqual([seqVariant.id]);
+    expect(seqOnly.map((v) => v.id)).not.toContain(libVariant.id);
+
+    const libOnly = await methods.listDivergentActiveByParents(
+      'library_location',
+      [sharedId]
+    );
+    expect(libOnly.map((v) => v.id)).toEqual([libVariant.id]);
+    expect(libOnly.map((v) => v.id)).not.toContain(seqVariant.id);
+  });
+
+  it('location listDivergentActiveByParents returns [] for empty input', async () => {
+    const methods = createLocationSheetVariantsMethods(db);
+    expect(
+      await methods.listDivergentActiveByParents('sequence_location', [])
+    ).toEqual([]);
+    expect(
+      await methods.listDivergentActiveByParents('library_location', [])
+    ).toEqual([]);
+  });
+
+  it('character listDivergentActiveByCharacter excludes discarded rows but keeps all-divergent on listDivergentByCharacter', async () => {
+    const methods = createCharacterSheetVariantsMethods(db);
+    const divergedAt = new Date('2026-04-29T00:00:00Z');
+    const v1 = await methods.insertDivergent({
+      characterId,
+      model: 'flux-pro',
+      url: 'https://example.com/a.png',
+      status: 'completed',
+      inputHash: 'h-a',
+      divergedAt,
+    });
+    await methods.insertDivergent({
+      characterId,
+      model: 'flux-pro',
+      url: 'https://example.com/b.png',
+      status: 'completed',
+      inputHash: 'h-b',
+      divergedAt,
+    });
+    await methods.discard(v1.id);
+
+    const active = await methods.listDivergentActiveByCharacter(characterId);
+    expect(active).toHaveLength(1);
+
+    const allDivergent = await methods.listDivergentByCharacter(characterId);
+    expect(allDivergent).toHaveLength(2);
+  });
+});
+
+describe('talent-sheet-variants promoteAtomically negative cases', () => {
+  it('throws when the talent sheet does not exist; variant is not soft-deleted', async () => {
+    const methods = createTalentSheetVariantsMethods(db);
+    const variant = await methods.insertDivergent({
+      talentSheetId,
+      model: 'flux-pro',
+      url: 'https://example.com/x.png',
+      status: 'completed',
+      inputHash: 'h',
+      divergedAt: new Date('2026-04-29T00:00:00Z'),
+    });
+
+    expect(
+      methods.promoteAtomically(
+        generateId(),
+        {
+          imageUrl: variant.url,
+          imagePath: null,
+          inputHash: variant.inputHash,
+        },
+        variant.id
+      )
+    ).rejects.toThrow(/not found/);
+
+    const after = await methods.getById(variant.id);
+    expect(after?.discardedAt).toBeNull();
+  });
+
+  it('throws when the variant does not exist; talent_sheets is not updated', async () => {
+    const methods = createTalentSheetVariantsMethods(db);
+    expect(
+      methods.promoteAtomically(
+        talentSheetId,
+        {
+          imageUrl: 'https://example.com/new.png',
+          imagePath: null,
+          inputHash: 'h',
+        },
+        generateId()
+      )
+    ).rejects.toThrow(/not found/);
+
+    const [sheet] = await db
+      .select()
+      .from(talentSheets)
+      .where(eq(talentSheets.id, talentSheetId));
+    expect(sheet.imageUrl).toBe('https://example.com/sheet.png');
+    expect(sheet.inputHash).toBeNull();
   });
 });

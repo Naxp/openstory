@@ -1,12 +1,3 @@
-/**
- * Location Sheet Variant Server Functions (sequence-scoped)
- *
- * Stage 2 of the staleness/divergence UX (issue #626). Drives divergent
- * sequence-location alternates. Library-location variants live in
- * `library-location-sheet-variants.ts` because they require team-scoped
- * (rather than sequence-scoped) access middleware.
- */
-
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';

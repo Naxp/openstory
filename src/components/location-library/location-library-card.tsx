@@ -8,7 +8,6 @@ type LocationLibraryCardProps = {
   location: LibraryLocation;
   isGenerating?: boolean;
   onClick?: () => void;
-  /** Stage 2 issue #626 — passed from the parent list when divergent. */
   divergentVariantId?: string;
 };
 

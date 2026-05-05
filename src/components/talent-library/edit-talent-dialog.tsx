@@ -53,17 +53,17 @@ export const EditTalentDialog: React.FC<EditTalentDialogProps> = ({
   const updateTalent = useUpdateTalent();
   const deleteMedia = useDeleteTalentMedia();
 
-  // Stage 2 staleness/divergence wiring (issue #626).
   const { data: divergentVariants } = useTalentDivergentVariants(
     open ? talent.id : undefined
+  );
+  const invalidateDivergentKeys = useCallback(
+    () => [talentSheetVariantKeys.divergentByTalent(talent.id)],
+    [talent.id]
   );
   useSheetStaleDetected({
     channelId: open ? `talent:${talent.id}` : undefined,
     entityTypes: ['talent'],
-    invalidateKeys: useCallback(
-      () => [talentSheetVariantKeys.divergentByTalent(talent.id)],
-      [talent.id]
-    ),
+    invalidateKeys: invalidateDivergentKeys,
   });
   const promoteVariant = usePromoteTalentSheetVariant();
   const discardVariant = useDiscardTalentSheetVariant();
@@ -95,6 +95,7 @@ export const EditTalentDialog: React.FC<EditTalentDialogProps> = ({
         undiscardVariant.mutate(
           { variantId: variant.id, talentId: talent.id },
           {
+            onSuccess: () => toast.success('Alternate restored'),
             onError: (error) => {
               toast.error('Failed to restore alternate', {
                 description:

@@ -42,15 +42,15 @@ export const EditLocationDialog: React.FC<EditLocationDialogProps> = ({
   const [open, setOpen] = useState(false);
   const updateLocation = useUpdateLibraryLocation();
 
-  // Stage 2 staleness/divergence wiring (issue #626).
   const { data: divergentVariants } = useLibraryLocationDivergentVariants();
+  const invalidateDivergentKeys = useCallback(
+    () => [libraryLocationSheetVariantKeys.divergent()],
+    []
+  );
   useSheetStaleDetected({
     channelId: open ? `location:${location.id}` : undefined,
     entityTypes: ['library-location'],
-    invalidateKeys: useCallback(
-      () => [libraryLocationSheetVariantKeys.divergent()],
-      []
-    ),
+    invalidateKeys: invalidateDivergentKeys,
   });
   const promoteVariant = usePromoteLibraryLocationSheetVariant();
   const discardVariant = useDiscardLibraryLocationSheetVariant();
@@ -69,6 +69,7 @@ export const EditLocationDialog: React.FC<EditLocationDialogProps> = ({
         undiscardVariant.mutate(
           { variantId: variant.id },
           {
+            onSuccess: () => toast.success('Alternate restored'),
             onError: (error) => {
               toast.error('Failed to restore alternate', {
                 description:

@@ -9,7 +9,7 @@ import type {
   NewCharacterSheetVariant,
 } from '@/lib/db/schema';
 import { characterSheetVariants, characters } from '@/lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { insertDivergentRaceTolerant } from './divergent-insert';
 
 type PromoteCharacterUpdate = {
@@ -73,10 +73,7 @@ export function createCharacterSheetVariantsMethods(db: Database) {
         .from(characterSheetVariants)
         .where(
           and(
-            sql`${characterSheetVariants.characterId} IN (${sql.join(
-              characterIds.map((id) => sql`${id}`),
-              sql`,`
-            )})`,
+            inArray(characterSheetVariants.characterId, characterIds),
             sql`${characterSheetVariants.divergedAt} IS NOT NULL`,
             sql`${characterSheetVariants.discardedAt} IS NULL`
           )
@@ -152,10 +149,7 @@ export function createCharacterSheetVariantsMethods(db: Database) {
       });
     },
 
-    /**
-     * Soft-delete a divergent alternate. Mirrors `frame_variants.discard`:
-     * preserves the artifact for the toast Undo action.
-     */
+    /** Soft-delete a divergent alternate; preserves the row for the toast Undo. */
     discard: async (variantId: string): Promise<Date> => {
       const discardedAt = new Date();
       const result = await db
@@ -181,9 +175,7 @@ export function createCharacterSheetVariantsMethods(db: Database) {
     },
 
     /**
-     * Atomically copy the variant's fields onto the live `characters` row and
-     * soft-delete the variant. Mirrors `frameVariants.promoteAtomically` —
-     * single batch so partial failure cannot leave the live primary updated
+     * Single batch so a partial failure cannot leave the live primary updated
      * with the variant still appearing as divergent.
      */
     promoteAtomically: async (
@@ -195,6 +187,7 @@ export function createCharacterSheetVariantsMethods(db: Database) {
         .select({ id: characters.id })
         .from(characters)
         .where(eq(characters.id, characterId));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       if (!existingCharacter) {
         throw new Error(`Character ${characterId} not found`);
       }
@@ -202,6 +195,7 @@ export function createCharacterSheetVariantsMethods(db: Database) {
         .select({ id: characterSheetVariants.id })
         .from(characterSheetVariants)
         .where(eq(characterSheetVariants.id, variantId));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       if (!existingVariant) {
         throw new Error(`CharacterSheetVariant ${variantId} not found`);
       }

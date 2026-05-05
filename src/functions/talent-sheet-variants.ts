@@ -1,10 +1,3 @@
-/**
- * Talent Sheet Variant Server Functions
- *
- * Stage 2 of the staleness/divergence UX (issue #626). Drives divergent
- * talent-sheet alternates on the team's talent library.
- */
-
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';

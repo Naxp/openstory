@@ -5,7 +5,6 @@ import { MapPin, Sparkles } from 'lucide-react';
 
 type LocationCardProps = {
   location: SequenceLocation;
-  /** Stage 2 issue #626 — passed from the parent list when divergent. */
   divergentVariantId?: string;
 };
 

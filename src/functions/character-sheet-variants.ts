@@ -1,11 +1,3 @@
-/**
- * Character Sheet Variant Server Functions
- *
- * Stage 2 of the staleness/divergence UX (issue #626). Mirrors the frame
- * variant server functions in `src/functions/frames.ts` for divergent
- * character-sheet alternates.
- */
-
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';

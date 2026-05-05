@@ -63,8 +63,7 @@ export const locationSheetVariants = sqliteTable(
 
     inputHash: text('input_hash'),
     divergedAt: integer('diverged_at', { mode: 'timestamp' }),
-    // Soft-delete marker for divergent alternates the user has dismissed.
-    // Mirrors `frame_variants.discardedAt`.
+    // Soft-delete marker; preserves the artifact for the toast Undo.
     discardedAt: integer('discarded_at', { mode: 'timestamp' }),
 
     createdAt: integer('created_at', { mode: 'timestamp' })

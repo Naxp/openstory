@@ -5,10 +5,6 @@ import { toast } from 'sonner';
 
 const TOAST_DEBOUNCE_MS = 5_000;
 
-/**
- * Format the debounced "alternates available" toast message. Mirrors the
- * frame-level `formatStaleToastMessage` so terminology stays consistent.
- */
 export function formatSheetStaleToastMessage(count: number): string {
   return count === 1
     ? 'An alternate version is available.'
@@ -49,12 +45,6 @@ type StaleDetectedEvent = {
   };
 };
 
-/**
- * Generic sibling of `use-stale-detected.ts` for sheet entities. Subscribes
- * to a realtime channel, invalidates caller-provided query keys, and shows
- * a debounced toast. Mirrors the frame-level UX so terminology stays
- * consistent.
- */
 export function useSheetStaleDetected({
   channelId,
   entityTypes,
@@ -85,6 +75,8 @@ export function useSheetStaleDetected({
   useEffect(() => {
     invalidateKeysRef.current = invalidateKeys;
   }, [invalidateKeys]);
+
+  const errorToastShownForRef = useRef<string | null>(null);
 
   const handleEvent = useCallback(
     (event: StaleDetectedEvent) => {
@@ -127,6 +119,14 @@ export function useSheetStaleDetected({
       console.error('[useSheetStaleDetected] realtime channel error', {
         channelId,
       });
+      if (errorToastShownForRef.current !== channelId) {
+        errorToastShownForRef.current = channelId;
+        toast.warning(
+          'Live updates disconnected — refresh to see latest alternates.'
+        );
+      }
+    } else if (status === 'connected' && errorToastShownForRef.current) {
+      errorToastShownForRef.current = null;
     }
   }, [status, channelId]);
 

@@ -269,8 +269,6 @@ export function updateQueryCacheFromEvent(
             sequenceCharacterKeys.list(sequenceId),
             `sequence-characters:${sequenceId}`
           );
-          // Stage 2 issue #626 — surface the new alternate via the corner-dot
-          // and detail-view banner.
           debouncedInvalidate(
             queryClient,
             characterSheetVariantKeys.divergentBySequence(sequenceId),

@@ -11,7 +11,6 @@ type TalentLibraryCardProps = {
   talent: TalentWithSheets;
   isGenerating?: boolean;
   onClick?: () => void;
-  /** Stage 2 issue #626 — passed from the parent list when divergent. */
   divergentVariantId?: string;
 };
 

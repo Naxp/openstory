@@ -131,15 +131,15 @@ export const CharacterDetailView: React.FC<CharacterDetailViewProps> = ({
     enabled: !!sequenceId,
   });
 
-  // Stage 2 staleness/divergence wiring (issue #626).
   const { data: divergentVariants } = useCharacterDivergentVariants(sequenceId);
+  const invalidateDivergentKeys = useCallback(
+    () => [characterSheetVariantKeys.divergentBySequence(sequenceId)],
+    [sequenceId]
+  );
   useSheetStaleDetected({
     channelId: sequenceId,
     entityTypes: ['character'],
-    invalidateKeys: useCallback(
-      () => [characterSheetVariantKeys.divergentBySequence(sequenceId)],
-      [sequenceId]
-    ),
+    invalidateKeys: invalidateDivergentKeys,
   });
   const promoteVariant = usePromoteCharacterSheetVariant();
   const discardVariant = useDiscardCharacterSheetVariant();
@@ -158,6 +158,7 @@ export const CharacterDetailView: React.FC<CharacterDetailViewProps> = ({
         undiscardVariant.mutate(
           { sequenceId, variantId: variant.id },
           {
+            onSuccess: () => toast.success('Alternate restored'),
             onError: (error) => {
               toast.error('Failed to restore alternate', {
                 description:

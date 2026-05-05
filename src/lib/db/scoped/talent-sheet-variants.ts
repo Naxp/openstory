@@ -103,10 +103,7 @@ export function createTalentSheetVariantsMethods(db: Database) {
         .from(talentSheetVariants)
         .where(
           and(
-            sql`${talentSheetVariants.talentSheetId} IN (${sql.join(
-              talentSheetIds.map((id) => sql`${id}`),
-              sql`,`
-            )})`,
+            inArray(talentSheetVariants.talentSheetId, talentSheetIds),
             sql`${talentSheetVariants.divergedAt} IS NOT NULL`,
             sql`${talentSheetVariants.discardedAt} IS NULL`
           )
@@ -166,9 +163,7 @@ export function createTalentSheetVariantsMethods(db: Database) {
       });
     },
 
-    /**
-     * Soft-delete a divergent alternate. Mirrors `frame_variants.discard`.
-     */
+    /** Soft-delete a divergent alternate; preserves the row for the toast Undo. */
     discard: async (variantId: string): Promise<Date> => {
       const discardedAt = new Date();
       const result = await db
@@ -207,6 +202,7 @@ export function createTalentSheetVariantsMethods(db: Database) {
         .select({ id: talentSheets.id })
         .from(talentSheets)
         .where(eq(talentSheets.id, talentSheetId));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       if (!existingSheet) {
         throw new Error(`TalentSheet ${talentSheetId} not found`);
       }
@@ -214,6 +210,7 @@ export function createTalentSheetVariantsMethods(db: Database) {
         .select({ id: talentSheetVariants.id })
         .from(talentSheetVariants)
         .where(eq(talentSheetVariants.id, variantId));
+      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
       if (!existingVariant) {
         throw new Error(`TalentSheetVariant ${variantId} not found`);
       }
