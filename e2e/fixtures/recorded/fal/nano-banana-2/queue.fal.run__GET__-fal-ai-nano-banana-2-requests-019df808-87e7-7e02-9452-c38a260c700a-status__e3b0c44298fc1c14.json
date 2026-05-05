@@ -1,0 +1,56 @@
+{
+  "request": {
+    "targetHost": "queue.fal.run",
+    "method": "GET",
+    "pathname": "/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a/status",
+    "bodyHash": "e3b0c44298fc1c14"
+  },
+  "responses": [
+    {
+      "status": 202,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "429",
+        "content-type": "application/json",
+        "date": "Tue, 05 May 2026 12:06:42 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "IN_PROGRESS",
+        "request_id": "019df808-87e7-7e02-9452-c38a260c700a",
+        "response_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a",
+        "status_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a/cancel",
+        "logs": null,
+        "metrics": {}
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "461",
+        "content-type": "application/json",
+        "date": "Tue, 05 May 2026 12:07:34 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "COMPLETED",
+        "request_id": "019df808-87e7-7e02-9452-c38a260c700a",
+        "response_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a",
+        "status_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87e7-7e02-9452-c38a260c700a/cancel",
+        "logs": null,
+        "metrics": {
+          "inference_time": 51.71199107170105
+        }
+      }
+    }
+  ]
+}

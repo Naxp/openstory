@@ -1,0 +1,39 @@
+{
+  "request": {
+    "targetHost": "queue.fal.run",
+    "method": "GET",
+    "pathname": "/fal-ai/nano-banana-2/requests/019df808-8790-76d2-b131-1b74a337a7be",
+    "bodyHash": "e3b0c44298fc1c14"
+  },
+  "responses": [
+    {
+      "status": 200,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "233",
+        "content-type": "application/json",
+        "date": "Tue, 05 May 2026 12:07:43 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-fal-billable-units": "1.5",
+        "x-fal-request-id": "019df808-8790-76d2-b131-1b74a337a7be",
+        "x-fal-served-from": "89725f77-ade5-4015-9d7e-7bcc13580a27",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "images": [
+          {
+            "url": "https://v3b.fal.media/files/b/0a98fc88/aGMJODrWPH4DIy8KbPRsp_XpxpABb7.png",
+            "content_type": "image/png",
+            "file_name": "aGMJODrWPH4DIy8KbPRsp_XpxpABb7.png",
+            "file_size": null,
+            "width": null,
+            "height": null
+          }
+        ],
+        "description": ""
+      }
+    }
+  ]
+}
