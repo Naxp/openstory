@@ -48,6 +48,7 @@ const env = {
   ...process.env,
   PLAYWRIGHT_FULL_PIPELINE: 'true',
   FAL_RECORD: 'true',
+  R2_MOCK_MODE: 'record',
   // aimock records OpenRouter automatically when CI is unset
   CI: '',
   // Don't open the HTML report — it spins up a server and blocks on Ctrl-C.
