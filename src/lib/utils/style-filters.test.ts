@@ -45,10 +45,9 @@ describe('filterStyles', () => {
 
     test('filters by name match (case insensitive)', () => {
       const result = filterStyles(mockStyles, 'all', 'cinematic');
-      expect(result.length).toBe(3);
+      expect(result.length).toBe(2);
       expect(result.map((s) => s.name)).toContain('Award Season');
       expect(result.map((s) => s.name)).toContain('Animated');
-      expect(result.map((s) => s.name)).toContain('YouTube');
     });
 
     test('filters by description match', () => {
@@ -77,8 +76,9 @@ describe('filterStyles', () => {
 
     test('handles partial matches', () => {
       const result = filterStyles(mockStyles, 'all', 'anim');
-      expect(result.length).toBe(1);
-      expect(result[0].name).toBe('Animated');
+      expect(result.length).toBe(2);
+      expect(result.map((s) => s.name)).toContain('Animated');
+      expect(result.map((s) => s.name)).toContain('Animatic');
     });
 
     test('returns empty array for non-matching search', () => {
@@ -106,8 +106,9 @@ describe('filterStyles', () => {
 
     test('filters new items with search query', () => {
       const result = filterStyles(mockStyles, 'new', 'animation');
-      expect(result.length).toBe(1);
-      expect(result[0].name).toBe('Animated');
+      expect(result.length).toBe(2);
+      expect(result.map((s) => s.name)).toContain('Animated');
+      expect(result.map((s) => s.name)).toContain('Animatic');
     });
   });
 

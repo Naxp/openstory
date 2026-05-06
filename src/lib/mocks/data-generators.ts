@@ -223,7 +223,7 @@ const generateMockStyle = (overrides?: Partial<Style>): Style => {
       'animation',
       'ecommerce',
       'realestate',
-      'youtube',
+      'animatic',
       'corporate',
     ]),
     tags: faker.helpers.arrayElements(
