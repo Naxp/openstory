@@ -43,6 +43,7 @@ const RENAMES: Record<string, string> = {
   'Animation Studio': 'Animated',
   'Wes Anderson Style': 'Pastel',
   'Lo-Fi iPhone 7 Aesthetic (Clean)': 'Lo-Fi Retro',
+  YouTube: 'Animatic',
 };
 
 function parseArgs() {
