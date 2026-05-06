@@ -13,21 +13,21 @@
         "connection": "keep-alive",
         "content-length": "445",
         "content-type": "application/json",
-        "date": "Tue, 05 May 2026 12:06:41 GMT",
+        "date": "Wed, 06 May 2026 04:38:13 GMT",
         "strict-transport-security": "max-age=31536000; includeSubDomains",
         "vary": "origin, access-control-request-method, access-control-request-headers",
-        "x-fal-request-id": "019df808-87ff-7e12-a97d-3acf557317af",
+        "x-fal-request-id": "019dfb94-4e27-7333-9863-f267cdb7a5b8",
         "x-robots-tag": "noindex"
       },
       "body": {
         "status": "IN_QUEUE",
-        "request_id": "019df808-87ff-7e12-a97d-3acf557317af",
-        "response_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87ff-7e12-a97d-3acf557317af",
-        "status_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87ff-7e12-a97d-3acf557317af/status",
-        "cancel_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019df808-87ff-7e12-a97d-3acf557317af/cancel",
+        "request_id": "019dfb94-4e27-7333-9863-f267cdb7a5b8",
+        "response_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019dfb94-4e27-7333-9863-f267cdb7a5b8",
+        "status_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019dfb94-4e27-7333-9863-f267cdb7a5b8/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/nano-banana-2/requests/019dfb94-4e27-7333-9863-f267cdb7a5b8/cancel",
         "logs": null,
         "metrics": {},
-        "queue_position": 2
+        "queue_position": 0
       }
     }
   ]
