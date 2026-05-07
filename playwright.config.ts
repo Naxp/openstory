@@ -86,7 +86,11 @@ export default defineConfig({
       command: useBuiltServer
         ? `${envPrefix} bun start`
         : `${envPrefix} bun dev:e2e`,
-      url: 'http://localhost:3001',
+      // Wait for the TCP port, not an HTTP 2xx. The Nitro build returns 500
+      // for SSR errors (vite dev wraps them in 2xx error-overlay HTML), and
+      // we only need the server reachable — individual specs handle their
+      // own page readiness via `page.goto()`.
+      port: 3001,
       reuseExistingServer: !useBuiltServer,
       timeout: 300_000,
       stdout: 'pipe',
