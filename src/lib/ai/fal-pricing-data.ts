@@ -181,10 +181,6 @@ type VideoPricingPerToken = VideoPricingBase & {
 export type VideoPricing = VideoPricingPerSecond | VideoPricingPerToken;
 
 export const VIDEO_PRICING: Record<string, VideoPricing> = {
-  'fal-ai/bytedance/seedance/v1.5/pro/image-to-video': {
-    mode: 'per_second',
-    basePrice: micros(1_200_000),
-  },
   'fal-ai/kling-video/v3/pro/image-to-video': {
     mode: 'per_second',
     basePrice: micros(140_000),

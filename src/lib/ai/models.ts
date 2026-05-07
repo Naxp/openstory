@@ -74,15 +74,6 @@ export const IMAGE_TO_VIDEO_MODELS = {
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 15, quality: 'best' as const },
   },
-  seedance_v1_5_pro: {
-    id: 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
-    name: 'Seedance 1.5 Pro',
-    provider: 'ByteDance',
-    license: 'proprietary' as const,
-    qualityRank: 6,
-    maxPromptLength: 4096,
-    performance: { estimatedGenerationTime: 12, quality: 'best' as const },
-  },
   seedance_v2: {
     id: 'bytedance/seedance-2.0/image-to-video',
     name: 'Seedance 2',
@@ -92,6 +83,15 @@ export const IMAGE_TO_VIDEO_MODELS = {
     maxPromptLength: 4096,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
     requiredStyleCategory: 'animation',
+  },
+  seedance_v2_enterprise: {
+    id: 'bytedance/seedance-2.0/enterprise/image-to-video',
+    name: 'Seedance 2 Enterprise',
+    provider: 'ByteDance',
+    license: 'proprietary' as const,
+    qualityRank: 2,
+    maxPromptLength: 4096,
+    performance: { estimatedGenerationTime: 20, quality: 'best' as const },
   },
 } as const;
 
@@ -255,8 +255,8 @@ export const IMAGE_TO_VIDEO_MODEL_KEYS = [
   'kling_v3_pro',
   'ltx_2_3_pro',
   'minimax_hailuo_02',
-  'seedance_v1_5_pro',
   'seedance_v2',
+  'seedance_v2_enterprise',
   'veo3_1',
 ] as const satisfies readonly ImageToVideoModel[];
 

@@ -6,38 +6,38 @@ import { z } from 'zod';
 import { motionTransform } from './motion-transform';
 
 import {
-  zBytedanceSeedanceV15ProImageToVideoInput,
   zGrokImagineVideoImageToVideoInput,
   zKlingVideoV3ProImageToVideoInput,
   zLtx23ImageToVideoInput,
   zMinimaxHailuo02ProImageToVideoInput,
+  zSeedance20EnterpriseImageToVideoInput,
   zSeedance20ImageToVideoInput,
   zVeo31ImageToVideoInput,
 } from './generated/zod.gen';
 
 import {
-  BytedanceSeedanceV15ProImageToVideoInputSchema,
   GrokImagineVideoImageToVideoInputSchema,
   KlingVideoV3ProImageToVideoInputSchema,
   Ltx23ImageToVideoInputSchema,
   MinimaxHailuo02ProImageToVideoInputSchema,
+  Seedance20EnterpriseImageToVideoInputSchema,
   Seedance20ImageToVideoInputSchema,
   Veo31ImageToVideoInputSchema,
 } from './generated/schemas.gen';
 
 export type MotionJSONSchema =
-  | typeof BytedanceSeedanceV15ProImageToVideoInputSchema
   | typeof GrokImagineVideoImageToVideoInputSchema
   | typeof KlingVideoV3ProImageToVideoInputSchema
   | typeof Ltx23ImageToVideoInputSchema
   | typeof MinimaxHailuo02ProImageToVideoInputSchema
+  | typeof Seedance20EnterpriseImageToVideoInputSchema
   | typeof Seedance20ImageToVideoInputSchema
   | typeof Veo31ImageToVideoInputSchema;
 
 export const MOTION_INPUT_SCHEMAS = {
+  'bytedance/seedance-2.0/enterprise/image-to-video':
+    zSeedance20EnterpriseImageToVideoInput,
   'bytedance/seedance-2.0/image-to-video': zSeedance20ImageToVideoInput,
-  'fal-ai/bytedance/seedance/v1.5/pro/image-to-video':
-    zBytedanceSeedanceV15ProImageToVideoInput,
   'fal-ai/kling-video/v3/pro/image-to-video': zKlingVideoV3ProImageToVideoInput,
   'fal-ai/ltx-2.3/image-to-video': zLtx23ImageToVideoInput,
   'fal-ai/minimax/hailuo-02/pro/image-to-video':
@@ -53,9 +53,9 @@ export type MotionInputFor<T extends MotionEndpointId> = z.infer<
 >;
 
 export const MOTION_JSON_SCHEMAS = {
+  'bytedance/seedance-2.0/enterprise/image-to-video':
+    Seedance20EnterpriseImageToVideoInputSchema,
   'bytedance/seedance-2.0/image-to-video': Seedance20ImageToVideoInputSchema,
-  'fal-ai/bytedance/seedance/v1.5/pro/image-to-video':
-    BytedanceSeedanceV15ProImageToVideoInputSchema,
   'fal-ai/kling-video/v3/pro/image-to-video':
     KlingVideoV3ProImageToVideoInputSchema,
   'fal-ai/ltx-2.3/image-to-video': Ltx23ImageToVideoInputSchema,
@@ -67,13 +67,13 @@ export const MOTION_JSON_SCHEMAS = {
 } satisfies Record<MotionEndpointId, MotionJSONSchema>;
 
 export const MOTION_TRANSFORMS = {
+  'bytedance/seedance-2.0/enterprise/image-to-video': motionTransform(
+    zSeedance20EnterpriseImageToVideoInput,
+    Seedance20EnterpriseImageToVideoInputSchema
+  ),
   'bytedance/seedance-2.0/image-to-video': motionTransform(
     zSeedance20ImageToVideoInput,
     Seedance20ImageToVideoInputSchema
-  ),
-  'fal-ai/bytedance/seedance/v1.5/pro/image-to-video': motionTransform(
-    zBytedanceSeedanceV15ProImageToVideoInput,
-    BytedanceSeedanceV15ProImageToVideoInputSchema
   ),
   'fal-ai/kling-video/v3/pro/image-to-video': motionTransform(
     zKlingVideoV3ProImageToVideoInput,

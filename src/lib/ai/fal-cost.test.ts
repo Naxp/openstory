@@ -216,24 +216,6 @@ describe('calculateVideoCost', () => {
     expect(cost).toBe(micros(422_000));
   });
 
-  test('Seedance v1.5 Pro 5s ($1.2/s)', () => {
-    const cost = calculateVideoCost({
-      endpointId: 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
-      durationSeconds: 5,
-    });
-    // 1_200_000 * 5 = 6_000_000
-    expect(cost).toBe(micros(6_000_000));
-  });
-
-  test('Seedance v1.5 Pro 10s ($1.2/s)', () => {
-    const cost = calculateVideoCost({
-      endpointId: 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
-      durationSeconds: 10,
-    });
-    // 1_200_000 * 10 = 12_000_000
-    expect(cost).toBe(micros(12_000_000));
-  });
-
   test('unknown endpoint returns 0', () => {
     const cost = calculateVideoCost({
       endpointId: 'unknown/model',
