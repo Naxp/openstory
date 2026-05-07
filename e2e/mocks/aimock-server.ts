@@ -8,7 +8,7 @@
  */
 
 import { LLMock, loadFixtureFile, type Fixture } from '@copilotkit/aimock';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createFalHandler } from './fal-handler';
 
@@ -21,6 +21,14 @@ const FIXTURE_DIR = resolve(
 // subfolders by `userMessage` after the run. aimock's loader doesn't recurse,
 // so we walk the tree ourselves and skip this staging dir until it's sorted.
 const RECORD_STAGING_DIR = resolve(FIXTURE_DIR, '_unsorted');
+
+// Diagnostic dump for unmatched requests — written on shutdown so we can diff
+// the failing userMessage against the closest fixture and find what drifted.
+// CI's upload-e2e-report.ts ships this to R2 alongside the trace bundle.
+const UNMATCHED_DUMP_PATH = resolve(
+  import.meta.dirname,
+  '../results/aimock-unmatched.json'
+);
 
 // OpenRouter SDK validates `system_fingerprint` as `z.nullable(z.string())`,
 // rejecting `undefined`. aimock omits the field unless the fixture supplies
@@ -164,6 +172,7 @@ export async function startAimockServer(): Promise<string> {
 
 export async function stopAimockServer(): Promise<void> {
   if (!mockServer) return;
+  dumpUnmatchedRequests(mockServer);
   try {
     await mockServer.stop();
     console.log('[e2e] aimock server stopped');
@@ -171,4 +180,131 @@ export async function stopAimockServer(): Promise<void> {
     // Server may not have started successfully — ignore stop errors
   }
   mockServer = null;
+}
+
+// For each unmatched request, also pick the fixture whose userMessage shares
+// the longest common prefix with the request — that's almost always the
+// "intended" fixture, and the diff between them is exactly the drift we
+// want to find.
+function dumpUnmatchedRequests(server: LLMock): void {
+  const unmatched = server.journal.getAll().filter((entry) => {
+    return entry.body !== null && entry.response.fixture === null;
+  });
+  if (unmatched.length === 0) return;
+
+  const fixtures = server.getFixtures();
+  const report = unmatched.map((entry) => {
+    const userMessage = extractUserMessage(entry.body);
+    const closest = userMessage
+      ? findClosestFixture(fixtures, userMessage)
+      : null;
+    return {
+      timestamp: new Date(entry.timestamp).toISOString(),
+      method: entry.method,
+      path: entry.path,
+      status: entry.response.status,
+      requestModel: entry.body?.model ?? null,
+      requestUserMessage: userMessage,
+      closestFixturePrefix: closest?.fixturePrefix ?? null,
+      commonPrefixLength: closest?.commonLength ?? 0,
+      firstDivergenceContext: closest?.divergenceContext ?? null,
+    };
+  });
+
+  mkdirSync(resolve(UNMATCHED_DUMP_PATH, '..'), { recursive: true });
+  writeFileSync(UNMATCHED_DUMP_PATH, JSON.stringify(report, null, 2));
+  console.log(
+    `[e2e] aimock: ${unmatched.length} unmatched request(s) dumped to ${UNMATCHED_DUMP_PATH}`
+  );
+}
+
+function isTextPart(part: unknown): part is { type: 'text'; text: string } {
+  return (
+    typeof part === 'object' &&
+    part !== null &&
+    'type' in part &&
+    part.type === 'text' &&
+    'text' in part &&
+    typeof part.text === 'string'
+  );
+}
+
+// aimock's ChatCompletionRequest.messages is the OpenAI-shaped array; the
+// last user message's text is what the matcher checks against. Mirror its
+// extraction logic loosely so the dump shows what the matcher saw.
+function extractUserMessage(
+  body: { messages?: Array<{ role: string; content: unknown }> } | null
+): string | null {
+  if (!body?.messages) return null;
+  for (let i = body.messages.length - 1; i >= 0; i--) {
+    const msg = body.messages[i];
+    if (msg.role !== 'user') continue;
+    if (typeof msg.content === 'string') return msg.content;
+    if (Array.isArray(msg.content)) {
+      const text = msg.content
+        .filter(isTextPart)
+        .map((p) => p.text)
+        .join('');
+      return text || null;
+    }
+    return null;
+  }
+  return null;
+}
+
+function findClosestFixture(
+  fixtures: readonly Fixture[],
+  request: string
+): {
+  fixturePrefix: string;
+  commonLength: number;
+  divergenceContext: string;
+} | null {
+  let best: {
+    fixtureSource: string;
+    commonLength: number;
+  } | null = null;
+
+  for (const fixture of fixtures) {
+    const matcher = fixture.match.userMessage;
+    // We rewrap recorded strings as RegExps in tolerateRuntimeIds(). Recover
+    // the original literal by stripping the regex wildcards we inserted —
+    // close enough for prefix comparison.
+    const fixtureSource =
+      typeof matcher === 'string'
+        ? matcher
+        : matcher
+          ? matcher.source
+              .replace(/\\([.*+?^${}()|[\]\\])/g, '$1')
+              .replace(/\[0-9A-HJKMNP-TV-Z\]\{26\}/g, '<ULID>')
+              .replace(
+                /\[0-9a-fA-F\]\{8\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{4\}-\[0-9a-fA-F\]\{12\}/g,
+                '<UUID>'
+              )
+          : '';
+    if (!fixtureSource) continue;
+
+    const commonLength = commonPrefixLength(request, fixtureSource);
+    if (best === null || commonLength > best.commonLength) {
+      best = { fixtureSource, commonLength };
+    }
+  }
+
+  if (!best) return null;
+
+  const ctxStart = Math.max(0, best.commonLength - 80);
+  const reqCtx = request.slice(ctxStart, best.commonLength + 200);
+  const fixCtx = best.fixtureSource.slice(ctxStart, best.commonLength + 200);
+  return {
+    fixturePrefix: best.fixtureSource.slice(0, 80),
+    commonLength: best.commonLength,
+    divergenceContext: `REQUEST   : …${JSON.stringify(reqCtx)}\nFIXTURE   : …${JSON.stringify(fixCtx)}`,
+  };
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a.charCodeAt(i) === b.charCodeAt(i)) i++;
+  return i;
 }

@@ -233,9 +233,31 @@ async function main() {
     console.log('No trace files found');
   }
 
+  // Upload aimock unmatched-request dump (only present when fixture matching
+  // failed — diagnostic for fixture drift).
+  const unmatchedPath = path.join(RESULTS_DIR, 'aimock-unmatched.json');
+  let unmatchedUrl = '';
+  try {
+    await stat(unmatchedPath);
+    const r2Key = `${baseKey}/aimock-unmatched.json`;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: r2Key,
+        Body: await readFile(unmatchedPath),
+        ContentType: 'application/json',
+        CacheControl: 'public, max-age=2592000',
+      })
+    );
+    unmatchedUrl = `https://${publicDomain}/${r2Key}`;
+    console.log(`\naimock unmatched dump: ${unmatchedUrl}`);
+  } catch {
+    // Common case — no unmatched requests means file doesn't exist.
+  }
+
   // Write to GitHub Actions step summary
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryPath && (reportUrl || traceLinks.length > 0)) {
+  if (summaryPath && (reportUrl || traceLinks.length > 0 || unmatchedUrl)) {
     const summaryLines: string[] = ['## E2E Test Report', ''];
 
     if (reportUrl) {
@@ -248,6 +270,14 @@ async function main() {
         summaryLines.push(`- [${trace.name}](${trace.url})`);
       }
       summaryLines.push('');
+    }
+
+    if (unmatchedUrl) {
+      summaryLines.push(
+        '### aimock fixture drift',
+        `- [Unmatched request bodies](${unmatchedUrl})`,
+        ''
+      );
     }
 
     await appendFile(summaryPath, summaryLines.join('\n'));

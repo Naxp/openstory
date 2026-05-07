@@ -55,12 +55,6 @@ const env = {
   PW_TEST_HTML_REPORT_OPEN: 'never',
 };
 
-const result = spawnSync('bun', ['test:e2e:full'], { stdio: 'inherit', env });
-
-sortOpenRouterFixtures();
-
-process.exit(result.status ?? 1);
-
 // Maps a fixture's `userMessage` prefix to the stage subfolder it belongs in.
 // First-match-wins; order doesn't matter as long as prefixes are disjoint
 // (they are — each comes from a distinct workflow step's prompt template).
@@ -124,3 +118,9 @@ function sortOpenRouterFixtures(): void {
   const remaining = readdirSync(stagingDir);
   if (remaining.length === 0) rmdirSync(stagingDir);
 }
+
+const result = spawnSync('bun', ['test:e2e:full'], { stdio: 'inherit', env });
+
+sortOpenRouterFixtures();
+
+process.exit(result.status ?? 1);
