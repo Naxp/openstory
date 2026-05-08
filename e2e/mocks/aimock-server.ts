@@ -8,8 +8,17 @@
  */
 
 import { LLMock, loadFixtureFile, type Fixture } from '@copilotkit/aimock';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
+import { E2E_RECORDING } from '../recording-mode';
 import { createFalHandler } from './fal-handler';
 
 const AIMOCK_PORT = 4010;
@@ -17,10 +26,24 @@ const FIXTURE_DIR = resolve(
   import.meta.dirname,
   '../fixtures/recorded/openrouter'
 );
-// New recordings land here; `record-e2e-fixtures.ts` sorts them into stage
-// subfolders by `userMessage` after the run. aimock's loader doesn't recurse,
-// so we walk the tree ourselves and skip this staging dir until it's sorted.
+// aimock's recorder writes flat into a single directory; we point it here and
+// `sortStagingFixtures()` (run on shutdown) classifies each new file by its
+// `userMessage` prefix and moves it into the right stage subfolder.
 const RECORD_STAGING_DIR = resolve(FIXTURE_DIR, '_unsorted');
+
+// Maps a fixture's `userMessage` prefix to the stage subfolder it belongs in.
+// First-match-wins; prefixes are disjoint (each comes from a distinct workflow
+// step's prompt template). Add a new entry when introducing a new prompt
+// family — otherwise its recordings get stuck in `_unsorted/` with a warning.
+const STAGE_PREFIXES: ReadonlyArray<readonly [string, string]> = [
+  ['Please enhance this script for a short film', 'script-enhance'],
+  ['Analyze the script within the USER_SCRIPT', 'script-analyze'],
+  ['Match the following library locations', 'location-match'],
+  ['Cast the following talent', 'talent-cast'],
+  ['Generate the visual prompt for the starting frame', 'visual-prompts'],
+  ['Generate the motion prompt for this scene', 'motion-prompts'],
+  ['Classify music design for each scene', 'music-design'],
+];
 
 // Diagnostic dump for unmatched requests — written on shutdown so we can diff
 // the failing userMessage against the closest fixture and find what drifted.
@@ -133,10 +156,12 @@ export async function startAimockServer(): Promise<string> {
     port: AIMOCK_PORT,
     strict: true,
     logLevel: 'info',
-    // Record locally (real key from .env.local), replay-only on CI (dummy key).
+    // Record only when E2E_RECORD=1 (real key from .env.local). Default is
+    // strict replay against the recorded fixtures — CI runs without the flag
+    // so a missing fixture fails fast instead of proxying to live OpenRouter.
     // Recordings land in `_unsorted/`; the record script sorts them into
     // stage subfolders post-run so they don't pollute the curated layout.
-    ...(!process.env.CI && {
+    ...(E2E_RECORDING && {
       record: {
         providers: { openai: 'https://openrouter.ai/api/v1' },
         fixturePath: RECORD_STAGING_DIR,
@@ -173,6 +198,7 @@ export async function startAimockServer(): Promise<string> {
 export async function stopAimockServer(): Promise<void> {
   if (!mockServer) return;
   dumpUnmatchedRequests(mockServer);
+  if (E2E_RECORDING) sortStagingFixtures();
   try {
     await mockServer.stop();
     console.log('[e2e] aimock server stopped');
@@ -180,6 +206,57 @@ export async function stopAimockServer(): Promise<void> {
     // Server may not have started successfully — ignore stop errors
   }
   mockServer = null;
+}
+
+type FixtureFile = {
+  fixtures: Array<{ match: { userMessage?: string } }>;
+};
+
+function classifyStage(filePath: string): string | null {
+  const data: FixtureFile = JSON.parse(readFileSync(filePath, 'utf8'));
+  const userMessage = data.fixtures[0]?.match.userMessage ?? '';
+  return (
+    STAGE_PREFIXES.find(([prefix]) => userMessage.startsWith(prefix))?.[1] ??
+    null
+  );
+}
+
+// Walk `_unsorted/` and move each freshly-recorded fixture into its stage
+// subfolder by `userMessage` prefix. Runs on shutdown of any E2E_RECORD=1
+// run, so recordings end up in the curated layout regardless of whether the
+// caller used `bun test:e2e:record:full` or the wrapper script.
+function sortStagingFixtures(): void {
+  if (!existsSync(RECORD_STAGING_DIR)) return;
+
+  const files = readdirSync(RECORD_STAGING_DIR).filter((name) =>
+    name.endsWith('.json')
+  );
+  if (files.length === 0) {
+    rmdirSync(RECORD_STAGING_DIR);
+    return;
+  }
+
+  console.log(`[e2e] aimock: sorting ${files.length} new fixture(s)…`);
+  let sorted = 0;
+  for (const name of files) {
+    const src = resolve(RECORD_STAGING_DIR, name);
+    const stage = classifyStage(src);
+    if (stage === null) {
+      console.warn(
+        `[e2e] aimock: ${name} has no matching stage prefix — leaving in _unsorted/. Add it to STAGE_PREFIXES if it's a new prompt family.`
+      );
+      continue;
+    }
+    const stageDir = resolve(FIXTURE_DIR, stage);
+    mkdirSync(stageDir, { recursive: true });
+    renameSync(src, resolve(stageDir, name));
+    sorted++;
+  }
+  console.log(`[e2e] aimock: sorted ${sorted}/${files.length} fixtures`);
+
+  if (readdirSync(RECORD_STAGING_DIR).length === 0) {
+    rmdirSync(RECORD_STAGING_DIR);
+  }
 }
 
 // For each unmatched request, also pick the fixture whose userMessage shares

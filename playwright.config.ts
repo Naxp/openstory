@@ -1,4 +1,5 @@
 import { defineConfig, devices } from 'playwright/test';
+import { E2E_RECORDING } from './e2e/recording-mode';
 
 /**
  * Playwright E2E Test Configuration
@@ -22,8 +23,13 @@ export default defineConfig({
   // Local: html only
   reporter: process.env.CI ? [['github'], ['html']] : 'html',
 
-  // Global test timeout (longer on CI due to slower 2-vCPU runners)
-  timeout: process.env.CI ? 60_000 : 30_000,
+  // Global test timeout. Recording mode hits live OpenRouter / fal so it needs
+  // headroom; CI is slower than local; replay-only local is the fast path.
+  timeout: E2E_RECORDING ? 600_000 : process.env.CI ? 60_000 : 30_000,
+
+  // Default expect() timeout. Recording lets streaming/vision calls take their
+  // time; replay keeps the snappy 5s default so flakes surface fast.
+  expect: { timeout: E2E_RECORDING ? 60_000 : 5_000 },
 
   // Shared settings for all projects
   use: {

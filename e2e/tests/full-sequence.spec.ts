@@ -12,8 +12,9 @@
  * Prerequisites:
  * - QStash docker container running on localhost:8080 (`bun qstash:dev`)
  * - Recorded fixtures in `e2e/fixtures/recorded/` (run
- *   `bun scripts/record-e2e-fixtures.ts` once with real FAL_KEY +
- *   OPENROUTER_KEY to populate)
+ *   `bun test:e2e:record:full` once with real FAL_KEY + OPENROUTER_API_KEY in
+ *   .env.local to populate; new openrouter recordings sort into stage
+ *   subfolders automatically on aimock teardown).
  */
 
 import { expect } from 'playwright/test';
@@ -33,6 +34,7 @@ import {
   type TestLibraryLocation,
 } from '../fixtures/location.fixture';
 import { resolve } from 'node:path';
+import { t } from '../recording-mode';
 
 const fullPipeline = process.env.PLAYWRIGHT_FULL_PIPELINE === 'true';
 
@@ -158,10 +160,10 @@ Story just broke. We need this on air now.
       await expect(page.getByText('Target video duration')).toBeVisible();
       await page.getByRole('button', { name: 'Enhance' }).last().click();
       await expect(page.getByRole('button', { name: /Stop/i })).toBeVisible({
-        timeout: 15_000,
+        timeout: t(15_000),
       });
       await expect(page.getByRole('button', { name: /Stop/i })).not.toBeVisible(
-        { timeout: 60_000 }
+        { timeout: t(60_000) }
       );
 
       // 5. Pick talent.
@@ -198,8 +200,9 @@ Story just broke. We need this on air now.
         page.getByRole('button', { name: /^Generate$/i })
       ).toBeEnabled({ timeout: 15_000 });
       await page.getByRole('button', { name: /^Generate$/i }).click();
+      // Generate kicks off the scene-split workflow before the redirect lands.
       await page.waitForURL(/\/sequences\/[^/]+\/scenes/, {
-        timeout: 30_000,
+        timeout: t(30_000),
       });
       const match = page.url().match(/\/sequences\/([^/]+)\/scenes/);
       const sequenceId = match?.[1];
@@ -228,8 +231,8 @@ Story just broke. We need this on air now.
       const motionButton = page
         .getByRole('button', { name: /Generate \d+ ?\/ ?\d+ frames?/i })
         .first();
-      await expect(motionButton).toBeVisible({ timeout: 120_000 });
-      await expect(motionButton).toBeEnabled({ timeout: 120_000 });
+      await expect(motionButton).toBeVisible({ timeout: t(120_000) });
+      await expect(motionButton).toBeEnabled({ timeout: t(120_000) });
       await motionButton.click();
       await expect
         .poll(

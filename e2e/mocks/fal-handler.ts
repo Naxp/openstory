@@ -9,7 +9,7 @@
  *   and a per-process cursor advances one entry per call (clamped at the
  *   last entry), so polling endpoints walk through IN_QUEUE → IN_PROGRESS →
  *   COMPLETED across successive identical requests.
- * - Record: when FAL_RECORD=true, forwards to real fal.ai using FAL_KEY.
+ * - Record: when E2E_RECORD=1, forwards to real fal.ai using FAL_KEY.
  *   The first hit on a fixture path in this process overwrites the file
  *   (fresh slate); subsequent hits append to `responses`, capturing the
  *   real polling progression in one fixture.
@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type * as http from 'node:http';
 import { dirname, resolve } from 'node:path';
+import { E2E_RECORDING } from '../recording-mode';
 
 type ResponseEntry = {
   status: number;
@@ -207,7 +208,7 @@ async function forwardToFal(
   const falKey = process.env.FAL_KEY;
   if (!falKey || falKey === 'test-mock-key') {
     throw new Error(
-      'FAL_RECORD=true requires a real FAL_KEY (not "test-mock-key")'
+      'E2E_RECORD=1 requires a real FAL_KEY (not "test-mock-key")'
     );
   }
 
@@ -276,9 +277,8 @@ export function createFalHandler() {
       };
 
       const filePath = fixturePath(requestKey);
-      const recording = process.env.FAL_RECORD === 'true';
 
-      if (recording) {
+      if (E2E_RECORDING) {
         const headers = Object.fromEntries(
           Object.entries(req.headers).map(([k, v]) => [
             k,
@@ -341,7 +341,7 @@ export function createFalHandler() {
       }
 
       if (!existsSync(filePath)) {
-        const message = `[fal-mock] No fixture for ${targetHost} ${method} ${falPath} (hash ${bodyHash}). Re-record with FAL_RECORD=true.`;
+        const message = `[fal-mock] No fixture for ${targetHost} ${method} ${falPath} (hash ${bodyHash}). Re-record with E2E_RECORD=1.`;
         console.warn(message);
         res.statusCode = 404;
         res.setHeader('content-type', 'application/json');

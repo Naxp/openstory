@@ -9,6 +9,7 @@
 import { expect } from 'playwright/test';
 import { test as testWithUser } from '../fixtures/auth.fixture';
 import { setupMockRoutes } from '../mocks/handlers';
+import { t } from '../recording-mode';
 
 testWithUser.describe('Enhance Script Flow', () => {
   testWithUser.beforeEach(async ({ page }) => {
@@ -55,12 +56,12 @@ testWithUser.describe('Enhance Script Flow', () => {
 
     // Verify streaming indicator appears (Stop button)
     await expect(page.getByRole('button', { name: /Stop/i })).toBeVisible({
-      timeout: 10000,
+      timeout: t(10_000),
     });
 
     // Wait for streaming to complete — Stop button disappears
     await expect(page.getByRole('button', { name: /Stop/i })).not.toBeVisible({
-      timeout: 30000,
+      timeout: t(30_000),
     });
 
     // Verify enhanced content appeared in textarea — should be longer and different
@@ -79,9 +80,9 @@ testWithUser.describe('Enhance Script Flow', () => {
     // Click "Generate"
     await generateButton.click();
 
-    // Verify navigation to sequence scenes page
+    // Verify navigation to sequence scenes page (waits on scene-split workflow)
     await page.waitForURL(/\/sequences\/[^/]+\/scenes/, {
-      timeout: 30000,
+      timeout: t(30_000),
     });
   });
 
@@ -113,10 +114,10 @@ testWithUser.describe('Enhance Script Flow', () => {
 
     // Wait for streaming to complete
     await expect(page.getByRole('button', { name: /Stop/i })).toBeVisible({
-      timeout: 10000,
+      timeout: t(10_000),
     });
     await expect(page.getByRole('button', { name: /Stop/i })).not.toBeVisible({
-      timeout: 30000,
+      timeout: t(30_000),
     });
 
     // Verify content changed

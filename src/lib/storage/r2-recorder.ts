@@ -5,7 +5,7 @@
  * re-upload the same generated images/videos/audio to real R2 on every run.
  * Mirrors the philosophy of e2e/mocks/fal-handler.ts:
  *
- * - **Record** (`R2_MOCK_MODE=record`): real upload happens, then the resulting
+ * - **Record** (`E2E_RECORD=1`): real upload happens, then the resulting
  *   `UploadResult` (key + publicUrl) is saved as a fixture keyed by a stable
  *   fingerprint of the request.
  * - **Replay** (default in E2E): the wrapper short-circuits the upload and

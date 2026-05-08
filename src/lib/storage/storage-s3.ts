@@ -70,32 +70,25 @@ export async function uploadFile(
   const key = buildR2Key(bucket, path);
 
   try {
-    // E2E: try fixture first, lazy-record on miss. We have to buffer the
-    // body upfront for fingerprinting, so skip the Bun streaming branch and
-    // use the SDK uniformly.
-    //
-    // Modes:
-    //   unset (default) → strict: replay only, throw on miss
-    //   record          → always upload + overwrite fixture (force re-record)
-    //   strict          → same as default (kept for explicit opt-in)
+    // E2E: replay from fixture, or upload + overwrite when E2E_RECORD=1.
+    // We have to buffer the body upfront for fingerprinting, so skip the Bun
+    // streaming branch and use the SDK uniformly.
     if (getEnv().E2E_TEST === 'true') {
       const fp = { bucket, key, contentType: options?.contentType };
-      const mode = process.env.R2_MOCK_MODE ?? 'strict';
+      const recording = process.env.E2E_RECORD === '1';
 
-      if (mode !== 'record') {
+      if (!recording) {
         const cached = tryReplayR2Upload(fp);
         // Cache hit: return without ever consuming the body. For uploads
         // sourced from a fetch ReadableStream (most workflow uploads), this
         // skips pulling MBs from fal CDN.
         if (cached) return cached;
-        if (mode === 'strict') {
-          throw new Error(
-            `[r2-mock] No fixture for ${bucket}/${path} and R2_MOCK_MODE=strict. Re-record locally without the strict flag to populate.`
-          );
-        }
+        throw new Error(
+          `[r2-mock] No fixture for ${bucket}/${path}. Re-record with E2E_RECORD=1.`
+        );
       }
 
-      // Cache miss (or force-record): now we need the bytes.
+      // Recording: upload + overwrite the fixture.
       const body = await toUint8Array(file);
       const result = await sdkPutObject(
         bucketName,
