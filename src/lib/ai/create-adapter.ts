@@ -7,6 +7,8 @@ import { getEnv } from '#env';
 import type { TextModel } from '@/lib/ai/models';
 import { createOpenRouterText, openRouterText } from '@tanstack/ai-openrouter';
 
+let loggedRetryMode = false;
+
 export function createAdapter(model: TextModel, apiKey?: string) {
   const env = getEnv();
   const key = apiKey ?? env.OPENROUTER_KEY;
@@ -24,6 +26,15 @@ export function createAdapter(model: TextModel, apiKey?: string) {
   // remove all retry coverage — only the SDK-internal retry that fights
   // with aimock's buffering during record.
   const isRecording = env.E2E_RECORD === '1';
+
+  if (!loggedRetryMode) {
+    loggedRetryMode = true;
+    console.log(
+      `[adapter] retry=${isRecording ? 'disabled' : 'sdk-default'} timeout=${
+        isRecording ? '600000ms' : 'sdk-default'
+      } E2E_RECORD=${env.E2E_RECORD ?? '<unset>'}`
+    );
+  }
 
   const config = {
     httpReferer: env.VITE_APP_URL || 'http://localhost:3000',
