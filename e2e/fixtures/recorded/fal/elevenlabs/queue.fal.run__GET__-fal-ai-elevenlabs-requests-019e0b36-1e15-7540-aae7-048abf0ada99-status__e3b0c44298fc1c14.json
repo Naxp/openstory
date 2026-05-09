@@ -1,0 +1,79 @@
+{
+  "request": {
+    "targetHost": "queue.fal.run",
+    "method": "GET",
+    "pathname": "/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/status",
+    "bodyHash": "e3b0c44298fc1c14"
+  },
+  "responses": [
+    {
+      "status": 202,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "436",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:29:16 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "IN_QUEUE",
+        "request_id": "019e0b36-1e15-7540-aae7-048abf0ada99",
+        "response_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99",
+        "status_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/cancel",
+        "logs": null,
+        "metrics": {},
+        "queue_position": 0
+      }
+    },
+    {
+      "status": 202,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "420",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:29:17 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "IN_PROGRESS",
+        "request_id": "019e0b36-1e15-7540-aae7-048abf0ada99",
+        "response_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99",
+        "status_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/cancel",
+        "logs": null,
+        "metrics": {}
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "451",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:29:26 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "COMPLETED",
+        "request_id": "019e0b36-1e15-7540-aae7-048abf0ada99",
+        "response_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99",
+        "status_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/elevenlabs/requests/019e0b36-1e15-7540-aae7-048abf0ada99/cancel",
+        "logs": null,
+        "metrics": {
+          "inference_time": 9.32918119430542
+        }
+      }
+    }
+  ]
+}

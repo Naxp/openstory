@@ -1,0 +1,15 @@
+{
+  "request": {
+    "bucket": "videos",
+    "key": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9CJ4JF6S50NBT6JY55YQ/untitled_macro-keyboard-close-up_ankynp_openstory.mp4",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/untitled_macro-keyboard-close-up_<HASH>_openstory.mp4",
+    "contentType": "video/mp4",
+    "bodyHash": "2905f2b811a73bf9dbcd2699a9cf2b527b9494d0f775ebc0a168991123ab1b9b",
+    "bodySize": 2762450
+  },
+  "response": {
+    "path": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9CJ4JF6S50NBT6JY55YQ/untitled_macro-keyboard-close-up_ankynp_openstory.mp4",
+    "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9CJ4JF6S50NBT6JY55YQ/untitled_macro-keyboard-close-up_ankynp_openstory.mp4",
+    "fullPath": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9CJ4JF6S50NBT6JY55YQ/untitled_macro-keyboard-close-up_ankynp_openstory.mp4"
+  }
+}

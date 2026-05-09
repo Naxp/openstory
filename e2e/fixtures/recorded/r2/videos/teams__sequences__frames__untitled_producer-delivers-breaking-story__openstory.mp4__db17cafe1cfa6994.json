@@ -1,0 +1,15 @@
+{
+  "request": {
+    "bucket": "videos",
+    "key": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9D1RJQ0CFA6GATDQPJC5/untitled_producer-delivers-breaking-story_j2kxwt_openstory.mp4",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/untitled_producer-delivers-breaking-story_<HASH>_openstory.mp4",
+    "contentType": "video/mp4",
+    "bodyHash": "9957dc09786fa1a74d3391f449e2e2a9aad81195a620051a21f60a6d99d9618c",
+    "bodySize": 22188699
+  },
+  "response": {
+    "path": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9D1RJQ0CFA6GATDQPJC5/untitled_producer-delivers-breaking-story_j2kxwt_openstory.mp4",
+    "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9D1RJQ0CFA6GATDQPJC5/untitled_producer-delivers-breaking-story_j2kxwt_openstory.mp4",
+    "fullPath": "videos/teams/01KR5K74647FV4TJV7KYNEBP3H/sequences/01KR5K7PMY6EGQR0ER6GSF13PN/frames/01KR5K9D1RJQ0CFA6GATDQPJC5/untitled_producer-delivers-breaking-story_j2kxwt_openstory.mp4"
+  }
+}

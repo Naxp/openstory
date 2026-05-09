@@ -1,0 +1,79 @@
+{
+  "request": {
+    "targetHost": "queue.fal.run",
+    "method": "GET",
+    "pathname": "/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/status",
+    "bodyHash": "e3b0c44298fc1c14"
+  },
+  "responses": [
+    {
+      "status": 202,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "424",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:26:49 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "IN_QUEUE",
+        "request_id": "019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "response_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "status_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/cancel",
+        "logs": null,
+        "metrics": {},
+        "queue_position": 0
+      }
+    },
+    {
+      "status": 202,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "408",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:26:55 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "IN_PROGRESS",
+        "request_id": "019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "response_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "status_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/cancel",
+        "logs": null,
+        "metrics": {}
+      }
+    },
+    {
+      "status": 200,
+      "headers": {
+        "access-control-allow-credentials": "true",
+        "connection": "keep-alive",
+        "content-length": "439",
+        "content-type": "application/json",
+        "date": "Sat, 09 May 2026 05:26:58 GMT",
+        "strict-transport-security": "max-age=31536000; includeSubDomains",
+        "vary": "origin, access-control-request-method, access-control-request-headers",
+        "x-robots-tag": "noindex"
+      },
+      "body": {
+        "status": "COMPLETED",
+        "request_id": "019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "response_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f",
+        "status_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/status",
+        "cancel_url": "https://queue.fal.run/fal-ai/flux-2/requests/019e0b33-decf-7a62-ac19-8a4a5a34201f/cancel",
+        "logs": null,
+        "metrics": {
+          "inference_time": 2.86796498298645
+        }
+      }
+    }
+  ]
+}
