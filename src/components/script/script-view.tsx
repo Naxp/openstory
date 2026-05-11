@@ -414,6 +414,8 @@ export const ScriptView: FC<{
                 tempPath: el.tempPath,
                 tempPublicUrl: el.tempPublicUrl,
                 filename: el.filename,
+                description: el.description,
+                consistencyTag: el.consistencyTag,
               }))
             : undefined,
         sourceSequenceId: isEditing ? sequence.id : undefined,

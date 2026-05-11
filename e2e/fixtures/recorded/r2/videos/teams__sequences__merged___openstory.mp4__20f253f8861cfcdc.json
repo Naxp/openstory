@@ -1,15 +1,15 @@
 {
   "request": {
     "bucket": "videos",
-    "key": "videos/teams/01KRAWXGMJC4M4T42XC9AHZ4S1/sequences/01KRAWYGXHSFJKBNXERTRYVEFX/merged/R843V3WX_openstory.mp4",
+    "key": "videos/teams/01KRAZGG0B61MDGKZHY1SCT1WW/sequences/01KRAZHHHHPHFAX6B7E3YC4CYR/merged/AVS6Y6Y1_openstory.mp4",
     "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/merged/<HASH>_openstory.mp4",
     "contentType": "video/mp4",
-    "bodyHash": "933105ba033d85b0632cbece8db6a3383644349b74585916c758946bc18ed5c1",
-    "bodySize": 9255080
+    "bodyHash": "67fbf7f09a62234c5a6a731ea12553164b48e6a832b811588a3425ec2e4c7fd9",
+    "bodySize": 8190238
   },
   "response": {
-    "path": "videos/teams/01KRAWXGMJC4M4T42XC9AHZ4S1/sequences/01KRAWYGXHSFJKBNXERTRYVEFX/merged/R843V3WX_openstory.mp4",
-    "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRAWXGMJC4M4T42XC9AHZ4S1/sequences/01KRAWYGXHSFJKBNXERTRYVEFX/merged/R843V3WX_openstory.mp4",
-    "fullPath": "videos/teams/01KRAWXGMJC4M4T42XC9AHZ4S1/sequences/01KRAWYGXHSFJKBNXERTRYVEFX/merged/R843V3WX_openstory.mp4"
+    "path": "videos/teams/01KRAZGG0B61MDGKZHY1SCT1WW/sequences/01KRAZHHHHPHFAX6B7E3YC4CYR/merged/AVS6Y6Y1_openstory.mp4",
+    "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRAZGG0B61MDGKZHY1SCT1WW/sequences/01KRAZHHHHPHFAX6B7E3YC4CYR/merged/AVS6Y6Y1_openstory.mp4",
+    "fullPath": "videos/teams/01KRAZGG0B61MDGKZHY1SCT1WW/sequences/01KRAZHHHHPHFAX6B7E3YC4CYR/merged/AVS6Y6Y1_openstory.mp4"
   }
 }
