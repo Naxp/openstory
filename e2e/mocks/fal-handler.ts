@@ -9,10 +9,12 @@
  *   and a per-process cursor advances one entry per call (clamped at the
  *   last entry), so polling endpoints walk through IN_QUEUE → IN_PROGRESS →
  *   COMPLETED across successive identical requests.
- * - Record: when E2E_RECORD=1, forwards to real fal.ai using FAL_KEY.
- *   The first hit on a fixture path in this process overwrites the file
- *   (fresh slate); subsequent hits append to `responses`, capturing the
- *   real polling progression in one fixture.
+ * - Record: when E2E_RECORD=1, forwards to real fal.ai using FAL_KEY — but
+ *   only for fixture paths that don't already exist on disk (skip-if-exists).
+ *   Existing fixtures from prior sessions are replayed as-is so re-runs don't
+ *   re-hit fal. Once a path starts recording in this process, subsequent hits
+ *   append to `responses`, capturing the real polling progression in one
+ *   fixture. To force a re-record, delete the fixture file first.
  */
 
 import { createHash } from 'node:crypto';
@@ -278,7 +280,16 @@ export function createFalHandler() {
 
       const filePath = fixturePath(requestKey);
 
-      if (E2E_RECORDING) {
+      // Skip-if-exists: when recording, replay any fixture that already
+      // exists on disk instead of re-hitting fal. Paths we've already started
+      // recording in this session stay in the record branch so polling
+      // endpoints can keep appending state transitions to the in-progress
+      // fixture. Delete the file to force a re-record.
+      const shouldRecord =
+        E2E_RECORDING &&
+        (!existsSync(filePath) || recordedThisSession.has(filePath));
+
+      if (shouldRecord) {
         const headers = Object.fromEntries(
           Object.entries(req.headers).map(([k, v]) => [
             k,
