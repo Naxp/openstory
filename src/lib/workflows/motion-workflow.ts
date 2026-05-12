@@ -397,14 +397,15 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
         }
       });
 
-      // Step 6: Check if all frames are complete and trigger merge.
-      // N parallel motion workflows can each reach this point near-
-      // simultaneously after the last frame lands; we rely on QStash to
-      // dedup the duplicate triggers via a content-derived workflowRunId.
-      // Same merge inputs → same hash → same id → QStash collapses the
-      // duplicates. Regenerating any frame's video changes the hash and
+      // Step 6: Opt-in merge auto-trigger for callers that fan out motion
+      // without their own subsequent merge invocation (e.g. smart-retry's
+      // motion-retry path). N parallel motion workflows can each reach this
+      // step near-simultaneously after the last frame lands; the content-
+      // derived dedup ID makes QStash collapse the duplicates into a single
+      // workflowRunId. Regenerating any frame's video changes the hash and
       // re-arms a fresh merge. See issue #690.
       await context.run('check-merge-trigger', async () => {
+        if (!input.triggerMergeOnComplete) return;
         if (!input.sequenceId || !input.teamId || !input.userId) return;
 
         const allFrames = await scopedDb.frames.listBySequence(

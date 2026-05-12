@@ -65,6 +65,8 @@ export const motionBatchWorkflow =
             motionBucket: frame.motionBucket,
             aspectRatio: frame.aspectRatio,
             userEditedPrompt: frame.userEditedPrompt,
+            // motion-batch invokes merge itself at step 3
+            triggerMergeOnComplete: false,
           } satisfies MotionWorkflowInput,
           retries: 3,
           retryDelay: 'pow(2, retried) * 1000',
