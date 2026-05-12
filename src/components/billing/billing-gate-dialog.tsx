@@ -3,7 +3,6 @@
  * Prompts users to add credits or configure BYOK API keys
  */
 
-import { XIcon } from '@/components/icons/x-icon';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +15,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, CreditCard, Gift, KeyRound, Sparkles } from 'lucide-react';
+import { ArrowRight, CreditCard, Gift, KeyRound } from 'lucide-react';
 
 const RETURN_KEY = 'openstory:billing-return';
 
@@ -181,27 +180,13 @@ export const BillingGateDialog: React.FC<BillingGateDialogProps> = ({
         </DialogHeader>
 
         <div className="flex flex-col gap-2 pt-1">
-          <OptionCard
-            href="https://x.com/openstory_so"
-            icon={<XIcon className="size-4" />}
-            title="Follow us on X"
-            description="Follow @openstory_so and DM us for a $10 gift code"
-            variant="primary"
-            badge={
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                <Sparkles className="size-2.5" />
-                Free credits
-              </span>
-            }
-          />
-
           {stripeEnabled && (
             <OptionCard
               to="/credits"
               icon={<CreditCard className="size-4" />}
               title="Add Credits"
               description="Pay as you go. Auto top-up keeps you generating."
-              variant="warm"
+              variant="primary"
               onClick={handleNav}
             />
           )}
