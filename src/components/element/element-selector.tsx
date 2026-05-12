@@ -52,6 +52,16 @@ export type ElementSelectorHandle = {
 type BaseProps = {
   ref?: React.Ref<ElementSelectorHandle>;
   disabled?: boolean;
+  /**
+   * Fires `true` while at least one element is uploading *or* still being
+   * vision-analyzed (draft mode: the inline analyzeDraftElementFn call;
+   * persisted mode: the async element-vision workflow's pending/analyzing
+   * states). Parent forms gate their submit button on this so we never hand
+   * the script-analyze workflow a token whose visual description hasn't
+   * landed yet — that path produces the `(vision description pending)`
+   * placeholder downstream.
+   */
+  onElementBusyChange?: (busy: boolean) => void;
 };
 
 type DraftModeProps = BaseProps & {
@@ -73,7 +83,7 @@ const MAX_ELEMENTS = 10;
 type LocalEntry = {
   file: File;
   previewUrl: string;
-  status: 'uploading' | 'done' | 'error';
+  status: 'uploading' | 'analyzing' | 'done' | 'error';
   uploaded?: DraftElementUpload;
   errorMessage?: string;
 };
@@ -87,7 +97,13 @@ type DisplayItem = {
 };
 
 export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
-  const { ref, disabled = false, sequenceId, onDraftElementsChange } = props;
+  const {
+    ref,
+    disabled = false,
+    sequenceId,
+    onDraftElementsChange,
+    onElementBusyChange,
+  } = props;
   const isPersisted = !!sequenceId;
 
   const [open, setOpen] = useState(false);
@@ -109,6 +125,29 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
         .filter((u): u is DraftElementUpload => !!u),
     [entries]
   );
+
+  const hasInflightLocalEntry = useMemo(
+    () =>
+      Array.from(entries.values()).some(
+        (e) => e.status === 'uploading' || e.status === 'analyzing'
+      ),
+    [entries]
+  );
+
+  const hasPendingPersistedVision = useMemo(
+    () =>
+      isPersisted &&
+      persistedElements.some(
+        (el) => el.visionStatus === 'pending' || el.visionStatus === 'analyzing'
+      ),
+    [isPersisted, persistedElements]
+  );
+
+  const isBusy = hasInflightLocalEntry || hasPendingPersistedVision;
+
+  useEffect(() => {
+    onElementBusyChange?.(isBusy);
+  }, [isBusy, onElementBusyChange]);
 
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -193,7 +232,29 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
                 return next;
               });
             } else {
-              const result = await draftUpload.mutateAsync({ file });
+              const result = await draftUpload.mutateAsync({
+                file,
+                onAnalyzingChange: (analyzing) => {
+                  setEntries((prev) => {
+                    const current = prev.get(key);
+                    if (!current) return prev;
+                    // Don't downgrade out of error/done if a slow analyze
+                    // callback fires after the mutation already settled.
+                    if (
+                      current.status !== 'uploading' &&
+                      current.status !== 'analyzing'
+                    ) {
+                      return prev;
+                    }
+                    const next = new Map(prev);
+                    next.set(key, {
+                      ...current,
+                      status: analyzing ? 'analyzing' : current.status,
+                    });
+                    return next;
+                  });
+                },
+              });
               setEntries((prev) => {
                 const current = prev.get(key);
                 if (!current) return prev;

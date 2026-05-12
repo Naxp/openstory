@@ -173,6 +173,7 @@ export const ScriptView: FC<{
   const { talentIds: selectedTalentIds, locationIds: selectedLocationIds } =
     selections;
   const [draftElements, setDraftElements] = useState<DraftElementUpload[]>([]);
+  const [isElementBusy, setIsElementBusy] = useState(false);
   const elementSelectorRef = useRef<ElementSelectorHandle>(null);
   const dragCounterRef = useRef(0);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
@@ -413,6 +414,8 @@ export const ScriptView: FC<{
                 tempPath: el.tempPath,
                 tempPublicUrl: el.tempPublicUrl,
                 filename: el.filename,
+                description: el.description,
+                consistencyTag: el.consistencyTag,
               }))
             : undefined,
         sourceSequenceId: isEditing ? sequence.id : undefined,
@@ -444,7 +447,7 @@ export const ScriptView: FC<{
     }
 
     const scriptText = script ?? sequence?.script ?? '';
-    if (scriptText.length < SCRIPT_SHORT_THRESHOLD) {
+    if (!canUndoEnhance && scriptText.length < SCRIPT_SHORT_THRESHOLD) {
       setEnhance('showEnhanceNudge', true);
       return;
     }
@@ -538,7 +541,8 @@ export const ScriptView: FC<{
     analysisModels.length > 0;
 
   const isSubmitting = createSequenceMutation.isPending;
-  const isDisabled = !isFormValid || isSubmitting || isEnhancing;
+  const isDisabled =
+    !isFormValid || isSubmitting || isEnhancing || isElementBusy;
 
   const scriptValue = script ?? sequence?.script ?? '';
   const { ref: textareaRef } = useAutoScroll({
@@ -614,6 +618,7 @@ export const ScriptView: FC<{
                 ref={elementSelectorRef}
                 sequenceId={sequence.id}
                 disabled={loading}
+                onElementBusyChange={setIsElementBusy}
               />
             ) : (
               <ElementSelector
@@ -621,6 +626,7 @@ export const ScriptView: FC<{
                 draftElements={draftElements}
                 onDraftElementsChange={setDraftElements}
                 disabled={loading}
+                onElementBusyChange={setIsElementBusy}
               />
             )}
           </div>
@@ -774,12 +780,16 @@ export const ScriptView: FC<{
                   className="group relative px-6 bg-linear-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 text-primary-foreground font-semibold tracking-wide shadow-lg shadow-primary/20 hover:shadow-primary/30 overflow-hidden"
                 >
                   <span className="relative z-10 flex items-center justify-center gap-2">
-                    {isSubmitting ? (
+                    {isSubmitting || isElementBusy ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : (
                       <GenerateSequenceIcon className="size-4" />
                     )}
-                    {isSubmitting ? 'Generating…' : 'Generate'}
+                    {isSubmitting
+                      ? 'Generating…'
+                      : isElementBusy
+                        ? 'Analyzing elements…'
+                        : 'Generate'}
                   </span>
                   {/* Shine effect */}
                   <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none" />

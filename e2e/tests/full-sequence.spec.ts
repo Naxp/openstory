@@ -12,11 +12,12 @@
  * Prerequisites:
  * - QStash docker container running on localhost:8080 (`bun qstash:dev`)
  * - Recorded fixtures in `e2e/fixtures/recorded/` (run
- *   `bun scripts/record-e2e-fixtures.ts` once with real FAL_KEY +
- *   OPENROUTER_KEY to populate)
+ *   `bun test:e2e:record:full` once with real FAL_KEY + OPENROUTER_API_KEY in
+ *   .env.local to populate; new openrouter recordings sort into stage
+ *   subfolders automatically on aimock teardown).
  */
 
-import { expect } from 'playwright/test';
+import { expect, type Locator } from 'playwright/test';
 import { test as testWithUser } from '../fixtures/auth.fixture';
 import {
   cleanupSequenceById,
@@ -33,8 +34,38 @@ import {
   type TestLibraryLocation,
 } from '../fixtures/location.fixture';
 import { resolve } from 'node:path';
+import { t } from '../recording-mode';
 
 const fullPipeline = process.env.PLAYWRIGHT_FULL_PIPELINE === 'true';
+
+/**
+ * Assert that a <video> / <audio> element has decoded enough metadata to be
+ * playable: the URL resolves, the container is decodable, and a duration is
+ * known. `readyState >= 1` (HAVE_METADATA) is sufficient — we deliberately
+ * don't call `.play()` because autoplay is unreliable in headless Chromium
+ * and tells us nothing extra about whether the resource itself is healthy.
+ */
+const expectPlayableMedia = async (locator: Locator, label: string) => {
+  await expect(locator, `${label}: element visible`).toBeVisible({
+    timeout: t(60_000),
+  });
+  await expect
+    .poll(
+      async () =>
+        locator.evaluate(
+          (el: HTMLMediaElement) =>
+            el.readyState >= 1 &&
+            Number.isFinite(el.duration) &&
+            el.duration > 0
+        ),
+      {
+        message: `${label}: readyState>=1 and duration>0`,
+        timeout: t(60_000),
+        intervals: [500, 1_000, 2_000],
+      }
+    )
+    .toBe(true);
+};
 
 testWithUser.describe('Full Sequence Pipeline', () => {
   testWithUser.skip(
@@ -158,10 +189,10 @@ Story just broke. We need this on air now.
       await expect(page.getByText('Target video duration')).toBeVisible();
       await page.getByRole('button', { name: 'Enhance' }).last().click();
       await expect(page.getByRole('button', { name: /Stop/i })).toBeVisible({
-        timeout: 15_000,
+        timeout: t(15_000),
       });
       await expect(page.getByRole('button', { name: /Stop/i })).not.toBeVisible(
-        { timeout: 60_000 }
+        { timeout: t(60_000) }
       );
 
       // 5. Pick talent.
@@ -188,9 +219,10 @@ Story just broke. We need this on air now.
       await expect(locationDialog).not.toBeVisible();
 
       // 7. Upload an element image directly to the file input on the page.
+      // Photo by Vidak on Unsplash: https://unsplash.com/photos/KiqrvOpdv0I
       const fileInput = page.locator('input[type="file"][accept*="image"]');
       await fileInput.setInputFiles(
-        resolve(import.meta.dirname, '../fixtures/test-image.jpg')
+        resolve(import.meta.dirname, '../fixtures/broadcast-mic.jpg')
       );
 
       // 8. Generate — should kick off the workflow chain and navigate.
@@ -198,8 +230,9 @@ Story just broke. We need this on air now.
         page.getByRole('button', { name: /^Generate$/i })
       ).toBeEnabled({ timeout: 15_000 });
       await page.getByRole('button', { name: /^Generate$/i }).click();
+      // Generate kicks off the scene-split workflow before the redirect lands.
       await page.waitForURL(/\/sequences\/[^/]+\/scenes/, {
-        timeout: 30_000,
+        timeout: t(30_000),
       });
       const match = page.url().match(/\/sequences\/([^/]+)\/scenes/);
       const sequenceId = match?.[1];
@@ -220,66 +253,72 @@ Story just broke. We need this on air now.
         )
         .toBe(true);
 
-      // 10. Trigger motion generation. The scene-list footer renders a single
-      //     batch-generate button whose label is dynamic — `Writing motion
-      //     prompts…` / `Composing music…` / `Generating…` while preparing,
-      //     and `Generate {N} / {M} frame(s)` once ready. Match either the
-      //     ready label or the in-progress one and wait for it to be enabled.
+      // 10. Trigger motion generation, then wait for the scene-list footer
+      //     button to leave the DOM. The footer renders a single dynamic-
+      //     label button (`Writing motion prompts…` / `Composing music…` /
+      //     `Generating…` / `Generate {N} / {M} frame(s)`), gated by
+      //     `showButton = notStartedFrames > 0 || isMotionInProgress`
+      //     (src/components/scenes/scene-list.tsx). Once motion + music are
+      //     fully done it unmounts — that's the most truthful "pipeline
+      //     finished" UX signal.
       const motionButton = page
         .getByRole('button', { name: /Generate \d+ ?\/ ?\d+ frames?/i })
         .first();
-      await expect(motionButton).toBeVisible({ timeout: 120_000 });
-      await expect(motionButton).toBeEnabled({ timeout: 120_000 });
+      await expect(motionButton).toBeVisible({ timeout: t(120_000) });
+      await expect(motionButton).toBeEnabled({ timeout: t(120_000) });
       await motionButton.click();
-      await expect
-        .poll(
-          async () => {
-            const frames = await getTestSequenceFrames(sequenceId);
-            if (frames.length === 0) return false;
-            return frames.every((f) => Boolean(f.videoUrl));
-          },
-          { timeout: 600_000, intervals: [2_000, 5_000, 10_000] }
-        )
-        .toBe(true);
 
-      // 11. Wait for sequence-level music + merge to land. Music is generated
-      //     once per sequence (`sequences.music_url` / `music_status`), not
-      //     per frame — the per-frame `audio_url` columns exist in schema for
-      //     a future per-scene feature (see src/lib/workflows/music-workflow.ts
-      //     TODO). The full pipeline is "done" when the muxed merged video is
-      //     completed, which implies music + merge both succeeded.
-      await expect
-        .poll(
-          async () => {
-            const status = await getTestSequenceStatus(sequenceId);
-            if (!status) return false;
-            return (
-              status.musicStatus === 'completed' &&
-              status.mergedVideoStatus === 'completed' &&
-              Boolean(status.mergedVideoUrl)
-            );
-          },
-          { timeout: 600_000, intervals: [2_000, 5_000, 10_000] }
-        )
-        .toBe(true);
+      await expect(
+        page.getByRole('button', {
+          name: /Writing motion prompts|Composing music|Generating|Generate \d+ ?\/ ?\d+ frames?/i,
+        })
+      ).toHaveCount(0, { timeout: t(600_000) });
 
-      // 12. Final assertion: every frame has thumbnail + video, and the
-      //     sequence has music + a merged video url.
-      const frames = await getTestSequenceFrames(sequenceId);
-      expect(frames.length).toBeGreaterThan(0);
-      for (const frame of frames) {
-        expect(
-          frame.thumbnailUrl,
-          `frame ${frame.id} missing thumbnail`
-        ).toBeTruthy();
-        expect(frame.videoUrl, `frame ${frame.id} missing video`).toBeTruthy();
+      // 11. Per-scene playback: click through every scene-list-item and
+      //     assert the active <video> in the ScenePlayer is decodable.
+      //     The list item carries `data-testid="scene-list-item"` so we can
+      //     enumerate without relying on title text. The player only renders
+      //     one <video> at a time (the selected frame), so each iteration
+      //     forces a fresh load.
+      const sceneItems = page.locator('[data-testid="scene-list-item"]');
+      const sceneCount = await sceneItems.count();
+      expect(sceneCount, 'sequence has at least one scene').toBeGreaterThan(0);
+      const playerVideo = page.locator('video').first();
+      for (let i = 0; i < sceneCount; i++) {
+        await sceneItems.nth(i).click();
+        await expectPlayableMedia(playerVideo, `scene ${i + 1} video`);
       }
+
+      // 12. Music playback at /sequences/:id/music — the view renders a
+      //     native <audio controls src={musicUrl} preload="metadata"> once
+      //     `musicStatus === 'completed'` (src/components/music/music-view.tsx).
+      await page.goto(`/sequences/${sequenceId}/music`);
+      await expectPlayableMedia(
+        page.locator('audio').first(),
+        'sequence music'
+      );
+
+      // 13. Merged video playback at /sequences/:id/theatre — TheatreView
+      //     renders <VideoPlayer src={mergedVideoUrl}> once
+      //     `mergedVideoStatus === 'completed' && mergedVideoUrl`
+      //     (src/components/theatre/theatre-view.tsx).
+      await page.goto(`/sequences/${sequenceId}/theatre`);
+      await expectPlayableMedia(page.locator('video').first(), 'merged video');
+
+      // 14. Thin DB sanity tail: a UI bug that silently hides a player
+      //     mustn't make the test pass green. We've already proved every
+      //     resource decodes above, so the URL-presence asserts are
+      //     belt-and-braces only.
       const finalStatus = await getTestSequenceStatus(sequenceId);
       expect(finalStatus?.musicUrl, 'sequence missing music url').toBeTruthy();
       expect(
         finalStatus?.mergedVideoUrl,
         'sequence missing merged video url'
       ).toBeTruthy();
+      const finalFrames = await getTestSequenceFrames(sequenceId);
+      for (const frame of finalFrames) {
+        expect(frame.videoUrl, `frame ${frame.id} missing video`).toBeTruthy();
+      }
 
       // Log any captured browser issues so they're visible in stdout / the
       // HTML report, but don't fail the test on them. Driving this list to

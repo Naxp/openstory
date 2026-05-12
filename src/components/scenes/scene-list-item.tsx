@@ -66,6 +66,8 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
   const isSkeleton = !frame;
   return (
     <Card
+      data-testid="scene-list-item"
+      data-frame-id={frame?.id}
       className={cn(
         '@container/scene relative transition-all',
         isSkeleton ? 'pointer-events-none' : 'cursor-pointer',

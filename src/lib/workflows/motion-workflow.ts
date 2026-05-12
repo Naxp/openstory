@@ -29,6 +29,10 @@ import type {
 } from '@/lib/workflow/types';
 import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { WorkflowNonRetryableError } from '@upstash/workflow';
+import {
+  buildMergeVideoSourcesFromFrames,
+  computeSequenceVideoHashFromDto,
+} from './sequence-snapshots';
 import { shouldRecordUserEdit } from './user-edit-predicate';
 
 /** Each batch polls in a tight loop for ~30s, then checkpoints for durability */
@@ -393,10 +397,13 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
         }
       });
 
-      // Step 6: Check if all frames are complete and trigger merge
-      // TODO: Tom Dec 2025 - I don't love this. It's a bit of a hack.
-      // I looked at multiple options and the only way to reliably do this is to have versioning.
-      // This should be replaced once that is in place
+      // Step 6: Check if all frames are complete and trigger merge.
+      // N parallel motion workflows can each reach this point near-
+      // simultaneously after the last frame lands; we rely on QStash to
+      // dedup the duplicate triggers via a content-derived workflowRunId.
+      // Same merge inputs → same hash → same id → QStash collapses the
+      // duplicates. Regenerating any frame's video changes the hash and
+      // re-arms a fresh merge. See issue #690.
       await context.run('check-merge-trigger', async () => {
         if (!input.sequenceId || !input.teamId || !input.userId) return;
 
@@ -406,10 +413,11 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
         if (allFrames.length === 0) return;
         if (!allFrames.every((f) => f.videoStatus === 'completed')) return;
 
-        const videoUrls = allFrames
-          .sort((a, b) => a.orderIndex - b.orderIndex)
-          .map((f) => f.videoUrl)
-          .filter((url): url is string => Boolean(url));
+        const sorted = [...allFrames].sort(
+          (a, b) => a.orderIndex - b.orderIndex
+        );
+        const { videoUrls, sourceFrameVideoHashes } =
+          buildMergeVideoSourcesFromFrames(sorted);
 
         if (videoUrls.length !== allFrames.length) return;
 
@@ -422,10 +430,13 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
           teamId: input.teamId,
           sequenceId: input.sequenceId,
           videoUrls,
+          sourceFrameVideoHashes,
         };
 
+        const inputHash = await computeSequenceVideoHashFromDto(mergeInput);
+
         await triggerWorkflow('/merge-video', mergeInput, {
-          deduplicationId: `merge-${input.sequenceId}-${Date.now()}`,
+          deduplicationId: `merge-${input.sequenceId}-${inputHash.slice(0, 16)}`,
           label: buildWorkflowLabel(input.sequenceId),
         });
       });

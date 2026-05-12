@@ -1,4 +1,5 @@
 import { defineConfig, devices } from 'playwright/test';
+import { E2E_RECORDING } from './e2e/recording-mode';
 
 /**
  * Playwright E2E Test Configuration
@@ -22,8 +23,13 @@ export default defineConfig({
   // Local: html only
   reporter: process.env.CI ? [['github'], ['html']] : 'html',
 
-  // Global test timeout (longer on CI due to slower 2-vCPU runners)
-  timeout: process.env.CI ? 60_000 : 30_000,
+  // Global test timeout. Recording mode hits live OpenRouter / fal so it needs
+  // headroom; CI is slower than local; replay-only local is the fast path.
+  timeout: E2E_RECORDING ? 600_000 : process.env.CI ? 60_000 : 30_000,
+
+  // Default expect() timeout. Recording lets streaming/vision calls take their
+  // time; replay keeps the snappy 5s default so flakes surface fast.
+  expect: { timeout: E2E_RECORDING ? 60_000 : 5_000 },
 
   // Shared settings for all projects
   use: {
@@ -66,6 +72,12 @@ export default defineConfig({
       ...(fullPipeline
         ? ['E2E_FULL_PIPELINE=true', 'FAL_PROXY_URL=http://localhost:4010/fal']
         : []),
+      // Propagate the record flag so the dev server's adapter factory can
+      // disable the OpenRouter SDK's retry loop — see create-adapter.ts. We
+      // do this only when recording because aimock buffers SSE responses
+      // upstream, which can trip the SDK's retry path and produce duplicate
+      // fixture writes for the same prompt.
+      ...(process.env.E2E_RECORD === '1' ? ['E2E_RECORD=1'] : []),
       'PORT=3001',
       'DATABASE_URL=file:test.db',
       'VITE_APP_URL=http://localhost:3001',
