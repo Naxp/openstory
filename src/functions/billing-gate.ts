@@ -23,14 +23,12 @@ export const getBillingGateStatusFn = createServerFn({ method: 'GET' })
       hasOpenRouterKey,
       openRouterKeyInvalid,
       billingSettings,
-      hasRedeemedGift,
     ] = await Promise.all([
       scopedDb.billing.getBalance(),
       scopedDb.apiKeys.hasKey('fal'),
       scopedDb.apiKeys.hasKey('openrouter'),
       scopedDb.apiKeys.hasInvalidKey('openrouter'),
       scopedDb.billing.getBillingSettings(),
-      scopedDb.billing.hasRedeemedGiftCode(),
     ]);
 
     return {
@@ -42,6 +40,5 @@ export const getBillingGateStatusFn = createServerFn({ method: 'GET' })
       hasAutoTopUp:
         billingSettings.autoTopUpEnabled && !!billingSettings.stripeCustomerId,
       stripeEnabled: isStripeEnabled(),
-      hasRedeemedGift,
     };
   });
