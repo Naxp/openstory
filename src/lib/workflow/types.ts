@@ -196,6 +196,15 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    * the workflow appends a `user-edit` variant row.
    */
   userEditedPrompt?: boolean;
+  /**
+   * When `true`, the workflow's final step checks whether *all* sequence
+   * frames now have completed videos and, if so, triggers `/merge-video`.
+   * Only callers that fan out motion without their own subsequent merge
+   * invocation (e.g. `smart-retry`'s motion-retry path) should set this.
+   * The batch orchestrator (`motionBatchWorkflow`) invokes merge itself and
+   * leaves this unset to avoid redundant triggers.
+   */
+  triggerMergeOnComplete?: boolean;
 }
 
 /**
