@@ -394,25 +394,57 @@ export const updateFrameFn = createServerFn({ method: 'POST' })
         }
       }
 
-      // Splice the new extract into the parent script. Best-effort: if the
-      // old extract isn't a verbatim substring (e.g. the parent was edited
-      // separately), leave the parent untouched — the frame still saves.
-      // Read-then-write on `sequences.script` is racy under concurrent
-      // scene edits; accept that as the worst-case loss of one parent-script
-      // update — both frames still persist correctly.
-      // Reuse `preEditSequence` if the bootstrap above already fetched it.
+      // Splice the new extract into the parent script. The naive
+      // `script.replace(oldExtract, …)` would corrupt the wrong scene
+      // whenever an extract appears more than once (recurring slug lines,
+      // "CUT TO BLACK.", duplicated cues). Instead, walk every frame in
+      // orderIndex order and locate each one's extract sequentially in
+      // `seq.script`; the target frame's match is the one we splice.
+      // Best-effort: if the walk falls out of sync (e.g. the parent was
+      // edited separately), leave the parent untouched — the frame still
+      // saves, the scene tab still reflects the new extract, and we avoid
+      // injecting into the wrong position. Read-then-write on
+      // `sequences.script` is racy under concurrent scene edits; accept
+      // that as the worst-case loss of one parent-script update.
+      // Reuse the sequence fetched above if the bootstrap path already
+      // loaded it.
       const seq =
         preEditSequenceForSplice ??
         (await context.scopedDb.sequences.getById(sequenceId));
-      if (seq?.script && oldExtract && seq.script.includes(oldExtract)) {
-        await context.scopedDb.sequences.update({
-          id: sequenceId,
-          script: seq.script.replace(oldExtract, incomingExtract),
-        });
-      } else if (oldExtract) {
-        console.warn(
-          `[updateFrameFn] Old script extract not found verbatim in sequence ${sequenceId}; skipping parent script sync for frame ${frameId}`
-        );
+      if (seq?.script && oldExtract) {
+        const siblings =
+          await context.scopedDb.frames.listBySequence(sequenceId);
+        let cursor = 0;
+        let targetStart = -1;
+        let targetLength = 0;
+        let walkDiverged = false;
+        for (const sibling of siblings) {
+          const siblingExtract = sibling.metadata?.originalScript.extract;
+          if (!siblingExtract) continue;
+          const pos = seq.script.indexOf(siblingExtract, cursor);
+          if (pos === -1) {
+            walkDiverged = true;
+            break;
+          }
+          if (sibling.id === frameId) {
+            targetStart = pos;
+            targetLength = siblingExtract.length;
+          }
+          cursor = pos + siblingExtract.length;
+        }
+        if (!walkDiverged && targetStart !== -1) {
+          await context.scopedDb.sequences.update({
+            id: sequenceId,
+            script:
+              seq.script.slice(0, targetStart) +
+              incomingExtract +
+              seq.script.slice(targetStart + targetLength),
+          });
+        } else {
+          console.warn(
+            `[updateFrameFn] Parent script walk could not locate frame ${frameId} for sequence ${sequenceId}; skipping parent script sync`
+          );
+        }
       }
     }
 
