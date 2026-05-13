@@ -106,10 +106,44 @@ beforeEach(async () => {
 });
 
 describe('frame_prompt_variants helper', () => {
-  it('user-edit appends a row, updates cached column, and clears the input hash', async () => {
+  it('user-edit with null inputHash appends a row and clears the cached hash', async () => {
     const methods = createFramePromptVariantsMethods(asDatabase(db));
 
     // Seed the cached column to mimic an existing AI-generated prompt.
+    await db
+      .update(frames)
+      .set({
+        imagePrompt: 'AI-generated prompt v1',
+        visualPromptInputHash: 'hash-v1',
+      })
+      .where(eq(frames.id, frameId));
+
+    // A user-edit recorded without an upstream hash (e.g., context was
+    // uncomputable at write time) writes null to both the row and the cache.
+    const variant = await methods.write({
+      frameId,
+      promptType: 'visual',
+      text: 'User edited prompt',
+      source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
+    });
+
+    expect(variant.source).toBe('user-edit');
+    expect(variant.text).toBe('User edited prompt');
+    expect(variant.inputHash).toBeNull();
+
+    const [refreshed] = await db
+      .select()
+      .from(frames)
+      .where(eq(frames.id, frameId));
+    expect(refreshed.imagePrompt).toBe('User edited prompt');
+    expect(refreshed.visualPromptInputHash).toBeNull();
+  });
+
+  it('user-edit with a real inputHash stamps both the row and the cached column', async () => {
+    const methods = createFramePromptVariantsMethods(asDatabase(db));
+
     await db
       .update(frames)
       .set({
@@ -123,20 +157,19 @@ describe('frame_prompt_variants helper', () => {
       promptType: 'visual',
       text: 'User edited prompt',
       source: 'user-edit',
+      inputHash: 'hash-at-edit-time',
+      analysisModel: 'anthropic/claude-haiku-4.5',
     });
 
     expect(variant.source).toBe('user-edit');
-    expect(variant.text).toBe('User edited prompt');
-    expect(variant.inputHash).toBeNull();
+    expect(variant.inputHash).toBe('hash-at-edit-time');
 
     const [refreshed] = await db
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
     expect(refreshed.imagePrompt).toBe('User edited prompt');
-    // user-edit clears the input hash since the cached value is no longer
-    // derived from upstream context.
-    expect(refreshed.visualPromptInputHash).toBeNull();
+    expect(refreshed.visualPromptInputHash).toBe('hash-at-edit-time');
   });
 
   it('regenerated prompt populates input_hash on both the row and the cached column', async () => {
@@ -178,6 +211,8 @@ describe('frame_prompt_variants helper', () => {
       promptType: 'visual',
       text: 'User edited prompt',
       source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
     });
 
     const history = await methods.listByFrame(frameId, 'visual');
@@ -227,6 +262,8 @@ describe('frame_prompt_variants helper', () => {
       promptType: 'visual',
       text: 'User polished it',
       source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
     });
 
     const history = await methods.listByFrame(frameId, 'visual');
@@ -373,13 +410,17 @@ describe('frame_prompt_variants helper', () => {
       analysisModel: 'anthropic/claude-haiku-4.5',
     });
 
-    // User then edits the prompt — clears the cached hash (existing
-    // semantics: a freeform edit no longer derives from upstream).
+    // User then edits the prompt, but the upstream context wasn't
+    // computable at edit time — both the row and the cached column go
+    // null. The restore-from-AI flow below must still re-populate the
+    // cached hash from the source row.
     await methods.write({
       frameId,
       promptType: 'visual',
       text: 'User edited prompt',
       source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
     });
 
     // Restoring the original AI prompt must re-populate the cached hash so
@@ -460,6 +501,8 @@ describe('frame_prompt_variants helper', () => {
       promptType: 'visual',
       text: 'Hand-written prompt',
       source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
     });
 
     // Restoring a user-edit must not synthesize a hash out of nothing —
@@ -476,6 +519,57 @@ describe('frame_prompt_variants helper', () => {
     });
     expect(restored.inputHash).toBeNull();
     expect(restored.analysisModel).toBeNull();
+  });
+
+  it('getLatestWithInputHash skips null-hash user-edits and returns the most recent hashed row', async () => {
+    const methods = createFramePromptVariantsMethods(asDatabase(db));
+
+    // 1) An AI prompt with a real hash.
+    const ai = await methods.write({
+      frameId,
+      promptType: 'visual',
+      text: 'AI prompt',
+      source: 'ai-generated',
+      inputHash: 'ai-hash-1',
+      analysisModel: 'anthropic/claude-haiku-4.5',
+    });
+    // 2) A later user-edit with no upstream context (null hash).
+    await methods.write({
+      frameId,
+      promptType: 'visual',
+      text: 'Hand-typed prompt',
+      source: 'user-edit',
+      inputHash: null,
+      analysisModel: null,
+    });
+
+    // getLatest returns the most recent row regardless of hash.
+    const latest = await methods.getLatest(frameId, 'visual');
+    expect(latest?.inputHash).toBeNull();
+
+    // getLatestWithInputHash skips the user-edit and returns the AI row.
+    const latestHashed = await methods.getLatestWithInputHash(
+      frameId,
+      'visual'
+    );
+    expect(latestHashed?.id).toBe(ai.id);
+    expect(latestHashed?.inputHash).toBe('ai-hash-1');
+  });
+
+  it('getLatestWithInputHash isolates by promptType (visual vs motion)', async () => {
+    const methods = createFramePromptVariantsMethods(asDatabase(db));
+
+    await methods.write({
+      frameId,
+      promptType: 'visual',
+      text: 'Visual prompt',
+      source: 'ai-generated',
+      inputHash: 'visual-hash',
+      analysisModel: 'anthropic/claude-haiku-4.5',
+    });
+
+    const motionMatch = await methods.getLatestWithInputHash(frameId, 'motion');
+    expect(motionMatch).toBeNull();
   });
 });
 

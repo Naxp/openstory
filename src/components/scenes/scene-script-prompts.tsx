@@ -13,10 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { shortenPromptFn } from '@/functions/ai';
+import { updateFrameFn } from '@/functions/frames';
 import { generateFrameImageFn } from '@/functions/frame-image';
 import { generateFrameMotionFn } from '@/functions/motion-functions';
 import { regenerateFramePromptFn } from '@/functions/prompt-variants';
@@ -32,6 +32,7 @@ import {
   frameStalenessKey,
   useFrameStaleness,
 } from '@/hooks/use-frame-staleness';
+import { sequenceKeys } from '@/hooks/use-sequences';
 import type { FrameVariant } from '@/lib/db/schema';
 import {
   DEFAULT_IMAGE_MODEL,
@@ -109,66 +110,6 @@ type SceneScriptPromptsProps = {
   onCompareDivergent?: (variant: FrameVariant) => void;
 };
 
-type PromptTabContentProps = {
-  text: string | undefined;
-  isCopied: boolean;
-  onCopy: () => void;
-  showDuration?: boolean;
-  durationMs?: number | null;
-};
-
-const PromptTabContent: React.FC<PromptTabContentProps> = ({
-  text,
-  isCopied,
-  onCopy,
-  showDuration,
-  durationMs,
-}) => {
-  return (
-    <div className="space-y-3">
-      <div className="relative">
-        <div className="absolute right-0 top-0">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onCopy}
-            disabled={!text}
-            className="h-8 w-8 p-0"
-          >
-            {isCopied ? (
-              <span className="text-xs">✓</span>
-            ) : (
-              <CopyIcon className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-        <div className="prose prose-sm max-w-none pr-10">
-          {text ? (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-              {text}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-11/12" />
-              <Skeleton className="h-4 w-10/12" />
-              <Skeleton className="h-4 w-9/12" />
-            </div>
-          )}
-        </div>
-      </div>
-      {showDuration &&
-        durationMs !== undefined &&
-        durationMs !== null &&
-        durationMs > 0 && (
-          <div className="text-xs text-muted-foreground">
-            Duration: {(durationMs / 1000).toFixed(1)}s
-          </div>
-        )}
-    </div>
-  );
-};
-
 export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   frame,
   sequenceId,
@@ -233,6 +174,14 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     [onImageModelChange]
   );
 
+  // Script tab edit state — `undefined` means "no draft" (textarea mirrors the
+  // saved value); a string means "user has typed". We reset to `undefined` when
+  // the frame changes so switching scenes never shows the previous scene's draft.
+  const [editedScript, setEditedScript] = useState<string | undefined>(
+    undefined
+  );
+  const prevScriptFrameIdRef = useRef<string | undefined>(undefined);
+
   // Previous value tracking for prop-to-state sync (refs avoid extra re-renders)
   const prevImagePromptRef = useRef<string | undefined>(undefined);
   const prevImageModelRef = useRef<string | undefined>(undefined);
@@ -273,6 +222,56 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     },
     onError: (error) => {
       toast.error('Prompt regenerate failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    },
+  });
+
+  // Persist a scene-script edit. Sends the patched scene via `metadata`;
+  // `updateFrameFn` (server) clears stale dialogue and mirrors the change into
+  // `sequences.script`. Existing prompt-input-hash staleness lights up the
+  // Image/Motion banners automatically once the new extract lands.
+  const saveScriptMutation = useMutation({
+    mutationFn: async (nextExtract: string) => {
+      if (!frame?.id || !frame.metadata) {
+        throw new Error('frame metadata required');
+      }
+      const updated = await updateFrameFn({
+        data: {
+          sequenceId,
+          frameId: frame.id,
+          metadata: {
+            ...frame.metadata,
+            originalScript: {
+              ...frame.metadata.originalScript,
+              extract: nextExtract,
+            },
+          },
+        },
+      });
+      if (!updated) {
+        throw new Error('Frame update returned no data');
+      }
+      return updated;
+    },
+    onSuccess: async (updated) => {
+      setEditedScript(undefined);
+      queryClient.setQueryData(frameKeys.detail(updated.id), updated);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: frameKeys.list(sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: frameStalenessKey(updated.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: sequenceKeys.detail(sequenceId),
+        }),
+      ]);
+      toast.success('Scene script saved');
+    },
+    onError: (error) => {
+      toast.error('Failed to save scene script', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     },
@@ -586,6 +585,11 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const isOverLimit = assembledPrompt.length > maxPromptLength;
 
   // Sync local state when props change (prev-value refs avoid extra re-renders)
+  if (frame?.id !== prevScriptFrameIdRef.current) {
+    prevScriptFrameIdRef.current = frame?.id;
+    setEditedScript(undefined);
+  }
+
   if (imagePrompt !== prevImagePromptRef.current) {
     prevImagePromptRef.current = imagePrompt;
     setEditedImagePrompt(imagePrompt || '');
@@ -716,13 +720,90 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       </TabsList>
 
       <TabsContent value="script">
-        <PromptTabContent
-          text={scriptText}
-          isCopied={copiedTab === 'script'}
-          onCopy={() => void handleCopy(scriptText, 'script')}
-          showDuration={true}
-          durationMs={frame?.durationMs}
-        />
+        {(() => {
+          const savedScript = scriptText ?? '';
+          const currentScript = editedScript ?? savedScript;
+          const isDirty =
+            editedScript !== undefined && editedScript !== savedScript;
+          const canSave =
+            isDirty && !!frame?.metadata && !saveScriptMutation.isPending;
+          return (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="script-extract-input"
+                    className="text-sm font-medium"
+                  >
+                    Scene script
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {currentScript.length} characters
+                  </span>
+                </div>
+                <div className="relative">
+                  <Textarea
+                    id="script-extract-input"
+                    value={currentScript}
+                    onChange={(e) => setEditedScript(e.target.value)}
+                    placeholder="Enter the script text for this scene…"
+                    className="min-h-[180px] resize-y pr-10"
+                    disabled={!frame || saveScriptMutation.isPending}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => void handleCopy(currentScript, 'script')}
+                    disabled={!currentScript}
+                    aria-label="Copy scene script"
+                    className="absolute right-1 top-1 h-8 w-8"
+                  >
+                    {copiedTab === 'script' ? (
+                      <span className="text-xs">✓</span>
+                    ) : (
+                      <CopyIcon className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditedScript(undefined)}
+                  disabled={!isDirty || saveScriptMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => saveScriptMutation.mutate(currentScript)}
+                  disabled={!canSave}
+                >
+                  {saveScriptMutation.isPending && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  {saveScriptMutation.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+
+              {isDirty && (
+                <p className="text-xs text-muted-foreground">
+                  Saving will mark the image and motion prompts as stale.
+                </p>
+              )}
+
+              {frame?.durationMs !== undefined &&
+                frame.durationMs !== null &&
+                frame.durationMs > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    Duration: {(frame.durationMs / 1000).toFixed(1)}s
+                  </div>
+                )}
+            </div>
+          );
+        })()}
       </TabsContent>
 
       <TabsContent value="image-prompt">

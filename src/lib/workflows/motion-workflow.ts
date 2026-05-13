@@ -8,7 +8,9 @@
  */
 
 import { extractFalErrorMessage } from '@/lib/ai/fal-error';
+import { computeMotionPromptInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_VIDEO_MODEL, IMAGE_TO_VIDEO_MODELS } from '@/lib/ai/models';
+import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
 import { microsToUsd, type Microdollars } from '@/lib/billing/money';
 import { ensureImageUnderLimit } from '@/lib/image/image-compress';
 import {
@@ -140,11 +142,45 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
             currentPrompt: frame.motionPrompt,
           })
         ) {
+          // Stamp the user-edit with the upstream-context hash captured at
+          // edit time so staleness detection survives a hand-typed prompt.
+          // If anything blocks the compute, fall back to null.
+          let userEditInputHash: string | null = null;
+          let userEditAnalysisModel: string | null = null;
+          try {
+            if (frame.metadata && input.sequenceId) {
+              const sequence = await scopedDb.sequences.getById(
+                input.sequenceId
+              );
+              if (sequence) {
+                const ctx = await loadNarrowFramePromptContext({
+                  scopedDb,
+                  sequence: {
+                    id: sequence.id,
+                    styleId: sequence.styleId,
+                    aspectRatio: sequence.aspectRatio,
+                    analysisModel: sequence.analysisModel,
+                  },
+                  scene: frame.metadata,
+                });
+                userEditInputHash = await computeMotionPromptInputHash(ctx);
+                userEditAnalysisModel = ctx.analysisModel;
+              }
+            }
+          } catch (err) {
+            console.warn(
+              `[MotionWorkflow] Could not compute upstream hash for user-edit on frame ${input.frameId}; recording with null hash`,
+              err
+            );
+          }
+
           await scopedDb.framePromptVariants.write({
             frameId: input.frameId,
             promptType: 'motion',
             text: input.prompt,
             source: 'user-edit',
+            inputHash: userEditInputHash,
+            analysisModel: userEditAnalysisModel,
             createdBy: input.userId,
           });
         }
