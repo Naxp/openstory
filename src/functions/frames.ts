@@ -3,7 +3,7 @@ import {
   computeMotionPromptInputHash,
   computeVisualPromptInputHash,
 } from '@/lib/ai/input-hash';
-import { loadFramePromptContext } from '@/lib/ai/prompt-context';
+import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
 import type { FrameVariant, NewFrame } from '@/lib/db/schema';
 import { getGenerationChannel } from '@/lib/realtime';
 import { getVideoDownloadUrl } from '@/lib/motion/video-storage';
@@ -14,6 +14,7 @@ import {
 } from '@/lib/schemas/frame.schemas';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { reconcileStaleFrameStatuses } from '@/lib/workflow/reconcile';
+import { rescanContinuityFromPrompt } from '@/lib/scenes/rescan-continuity-from-prompt';
 import { buildRegenerateFrameSnapshot } from '@/lib/workflows/regenerate-frames-snapshot';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
@@ -303,7 +304,46 @@ export const updateFrameFn = createServerFn({ method: 'POST' })
     )
   )
   .handler(async ({ data, context }) => {
-    const { sequenceId: _, frameId, ...updateData } = data;
+    const { sequenceId, frameId, ...updateData } = data;
+
+    // When a user edits a prompt, auto-link any element/cast/location tags
+    // they mentioned by additively merging them into frame.metadata.continuity
+    // so the next generation pulls those references in (#683). Skip when the
+    // prompt value hasn't actually changed, so plain saves stay a single
+    // UPDATE with no extra reads.
+    const imagePromptChanged =
+      updateData.imagePrompt !== undefined &&
+      updateData.imagePrompt !== context.frame.imagePrompt;
+    const motionPromptChanged =
+      updateData.motionPrompt !== undefined &&
+      updateData.motionPrompt !== context.frame.motionPrompt;
+    const frameMetadata = context.frame.metadata;
+    if (
+      (imagePromptChanged || motionPromptChanged) &&
+      frameMetadata?.continuity
+    ) {
+      const promptText = [
+        imagePromptChanged ? updateData.imagePrompt : null,
+        motionPromptChanged ? updateData.motionPrompt : null,
+      ]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join('\n');
+
+      const rescan = await rescanContinuityFromPrompt({
+        scopedDb: context.scopedDb,
+        sequenceId,
+        existing: frameMetadata.continuity,
+        promptText,
+      });
+
+      if (rescan.changed) {
+        updateData.metadata = {
+          ...frameMetadata,
+          continuity: rescan.continuity,
+        };
+      }
+    }
+
     return context.scopedDb.frames.update(frameId, updateData);
   });
 
@@ -399,7 +439,7 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
           frame.id,
           'visual'
         );
-        const ctx = await loadFramePromptContext({
+        const ctx = await loadNarrowFramePromptContext({
           scopedDb,
           sequence,
           scene: frame.metadata,
@@ -424,7 +464,7 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
           frame.id,
           'motion'
         );
-        const ctx = await loadFramePromptContext({
+        const ctx = await loadNarrowFramePromptContext({
           scopedDb,
           sequence,
           scene: frame.metadata,

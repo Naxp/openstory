@@ -9,6 +9,7 @@ import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { VisualPromptSceneWorkflowInput } from '@/lib/workflow/types';
 import { computeVisualPromptInputHash } from '../ai/input-hash';
+import { narrowFramePromptContext } from '../ai/prompt-context';
 import {
   type VisualPromptWithContinuity,
   visualPromptWithContinuitySchema,
@@ -82,16 +83,6 @@ export const visualPromptSceneWorkflow = createScopedWorkflow<
         );
       }
 
-      const inputHash = await computeVisualPromptInputHash({
-        scene,
-        styleConfig,
-        characterBible,
-        locationBible,
-        elementBible,
-        aspectRatio,
-        analysisModel: analysisModelId,
-      });
-
       const enrichedScene = {
         ...scene,
         prompts: {
@@ -100,6 +91,20 @@ export const visualPromptSceneWorkflow = createScopedWorkflow<
         },
         continuity: result.continuity,
       };
+
+      // Hash inputs are narrowed by the LLM's continuity output so unreferenced
+      // characters / elements / locations elsewhere in the sequence don't flip
+      // this frame's hash later.
+      const narrowed = narrowFramePromptContext({
+        scene: enrichedScene,
+        styleConfig,
+        characterBible,
+        locationBible,
+        elementBible,
+        aspectRatio,
+        analysisModel: analysisModelId,
+      });
+      const inputHash = await computeVisualPromptInputHash(narrowed);
 
       await context.run('save-visual-prompt-to-db', async () => {
         const previous = await scopedDb.framePromptVariants.getLatest(
