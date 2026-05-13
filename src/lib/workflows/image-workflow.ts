@@ -1,4 +1,6 @@
+import { computeVisualPromptInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS } from '@/lib/ai/models';
+import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
 import { ZERO_MICROS, microsToUsd } from '@/lib/billing/money';
 import { DEFAULT_IMAGE_SIZE } from '@/lib/constants/aspect-ratios';
 import {
@@ -93,11 +95,47 @@ export const generateImageWorkflow = createScopedWorkflow<
               currentPrompt: frame.imagePrompt,
             })
           ) {
+            // Stamp the user-edit with the upstream-context hash captured at
+            // edit time so staleness detection survives a hand-typed prompt.
+            // If anything blocks the compute (no sequenceId, style deleted,
+            // missing scene metadata), fall back to null — the staleness
+            // function reaches back to an earlier non-null row.
+            let userEditInputHash: string | null = null;
+            let userEditAnalysisModel: string | null = null;
+            try {
+              if (frame.metadata && input.sequenceId) {
+                const sequence = await scopedDb.sequences.getById(
+                  input.sequenceId
+                );
+                if (sequence) {
+                  const ctx = await loadNarrowFramePromptContext({
+                    scopedDb,
+                    sequence: {
+                      id: sequence.id,
+                      styleId: sequence.styleId,
+                      aspectRatio: sequence.aspectRatio,
+                      analysisModel: sequence.analysisModel,
+                    },
+                    scene: frame.metadata,
+                  });
+                  userEditInputHash = await computeVisualPromptInputHash(ctx);
+                  userEditAnalysisModel = ctx.analysisModel;
+                }
+              }
+            } catch (err) {
+              console.warn(
+                `[ImageWorkflow] Could not compute upstream hash for user-edit on frame ${input.frameId}; recording with null hash`,
+                err
+              );
+            }
+
             await scopedDb.framePromptVariants.write({
               frameId: input.frameId,
               promptType: 'visual',
               text: input.prompt,
               source: 'user-edit',
+              inputHash: userEditInputHash,
+              analysisModel: userEditAnalysisModel,
               createdBy: input.userId,
             });
           }

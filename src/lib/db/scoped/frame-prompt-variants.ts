@@ -23,7 +23,7 @@ import type {
   FramePromptVariant,
   FramePromptVariantComponents,
 } from '@/lib/db/schema';
-import { and, desc, eq, lte } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, lte } from 'drizzle-orm';
 
 type WriteFramePromptVariantBase = {
   frameId: string;
@@ -35,17 +35,21 @@ type WriteFramePromptVariantBase = {
 };
 
 /**
- * AI-generated and regenerated rows must carry the upstream-context hash and
- * the analysis model that produced the prompt — without these, the cached
- * `*_prompt_input_hash` column on `frames` is meaningless and staleness
- * detection silently breaks. User-edits have no upstream input surface and
- * forbid both fields so they cannot be set by mistake.
+ * `inputHash` represents the upstream context (scene + style + narrowed
+ * bibles + aspectRatio + analysisModel) that this prompt is aligned with,
+ * regardless of who authored the text. AI-generated and regenerated rows
+ * always carry a real hash — they can't be written without one. User-edits
+ * also carry the live hash captured at edit time so staleness detection
+ * keeps working after a hand-typed prompt; null is permitted only when the
+ * upstream context was uncomputable at write time (e.g. style deleted), in
+ * which case the staleness function falls back to an earlier non-null row.
  *
  * Restored rows carry the source variant's hash + analysisModel verbatim so
  * the cached `*_prompt_input_hash` column keeps tracking the upstream context
  * that originally produced the prompt — restoring an old AI prompt must NOT
- * silently disable staleness detection. Both fields can be null when the
- * source is itself a user-edit (which never had a hash to begin with).
+ * silently disable staleness detection. Both fields stay nullable for restored
+ * rows to accommodate legacy user-edit variants written before this contract
+ * landed (they have null hashes that we can't retroactively recompute).
  */
 export type WriteFramePromptVariantInput = WriteFramePromptVariantBase &
   (
@@ -56,8 +60,8 @@ export type WriteFramePromptVariantInput = WriteFramePromptVariantBase &
       }
     | {
         source: 'user-edit';
-        inputHash?: never;
-        analysisModel?: never;
+        inputHash: string | null;
+        analysisModel: string | null;
       }
     | {
         source: 'restored';
@@ -100,9 +104,8 @@ export function createFramePromptVariantsMethods(db: Database) {
     ): Promise<FramePromptVariant> => {
       const cached = cachedColumnsForType(input.promptType);
 
-      const nextHash = input.source === 'user-edit' ? null : input.inputHash;
-      const analysisModel =
-        input.source === 'user-edit' ? null : input.analysisModel;
+      const nextHash = input.inputHash;
+      const analysisModel = input.analysisModel;
 
       // Append first so a crash can't leave a stale pointer with no row
       // behind it. The reverse order would be unrecoverable.
@@ -252,6 +255,32 @@ export function createFramePromptVariantsMethods(db: Database) {
           and(
             eq(framePromptVariants.frameId, frameId),
             eq(framePromptVariants.promptType, promptType)
+          )
+        )
+        .orderBy(desc(framePromptVariants.createdAt))
+        .limit(1);
+      return row ?? null;
+    },
+
+    /**
+     * Most recent variant of a given type whose `inputHash` is non-null.
+     * Used by the staleness path to find a reference hash for legacy frames
+     * whose cached `*_prompt_input_hash` column was nulled out by a
+     * pre-fix user-edit. Skips user-edit rows that fell back to null when
+     * context was uncomputable.
+     */
+    getLatestWithInputHash: async (
+      frameId: string,
+      promptType: FramePromptType
+    ): Promise<FramePromptVariant | null> => {
+      const [row] = await db
+        .select()
+        .from(framePromptVariants)
+        .where(
+          and(
+            eq(framePromptVariants.frameId, frameId),
+            eq(framePromptVariants.promptType, promptType),
+            isNotNull(framePromptVariants.inputHash)
           )
         )
         .orderBy(desc(framePromptVariants.createdAt))

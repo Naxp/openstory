@@ -306,6 +306,148 @@ export const updateFrameFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const { sequenceId, frameId, ...updateData } = data;
 
+    // Scene-script edits (#684): when `originalScript.extract` changes,
+    // clear the parsed dialogue (now stale wrt the new text) and mirror the
+    // change into the parent `sequences.script` so script view stays in sync.
+    // Prompt-input-hash staleness handles the Image/Motion banners on its
+    // own — `originalScript.extract` is part of the hashed scene context, so
+    // the next `getFrameStalenessFn` call will report `'stale'` without us
+    // touching the stored prompt hashes here.
+    const oldExtract = context.frame.metadata?.originalScript.extract ?? '';
+    const incomingExtract = updateData.metadata?.originalScript.extract;
+    const scriptChanged =
+      typeof incomingExtract === 'string' && incomingExtract !== oldExtract;
+    if (scriptChanged && updateData.metadata) {
+      updateData.metadata = {
+        ...updateData.metadata,
+        originalScript: {
+          extract: incomingExtract,
+          dialogue: [],
+        },
+      };
+
+      // Bootstrap missing prompt-input hashes. Frames that were generated
+      // before hash tracking landed have `imagePrompt` / `motionPrompt` set
+      // but null hashes and no `frame_prompt_variants` rows — so the
+      // `getLatestWithInputHash` fallback in `getFrameStalenessFn` can't
+      // find a reference either, and staleness stays `'untracked'` forever.
+      // Compute the hash from the PRE-edit scene and stamp it on the frame
+      // now: the post-edit live hash will then differ → banner flips
+      // `'stale'`. One-shot per frame; subsequent edits hit the normal hash
+      // chain.
+      let preEditSequenceForSplice: Awaited<
+        ReturnType<typeof context.scopedDb.sequences.getById>
+      > | null = null;
+      if (context.frame.metadata) {
+        if (context.frame.imagePrompt && !context.frame.visualPromptInputHash) {
+          try {
+            preEditSequenceForSplice ??=
+              await context.scopedDb.sequences.getById(sequenceId);
+            if (preEditSequenceForSplice) {
+              const ctx = await loadNarrowFramePromptContext({
+                scopedDb: context.scopedDb,
+                sequence: {
+                  id: preEditSequenceForSplice.id,
+                  styleId: preEditSequenceForSplice.styleId,
+                  aspectRatio: preEditSequenceForSplice.aspectRatio,
+                  analysisModel: preEditSequenceForSplice.analysisModel,
+                },
+                scene: context.frame.metadata,
+              });
+              updateData.visualPromptInputHash =
+                await computeVisualPromptInputHash(ctx);
+            }
+          } catch (err) {
+            console.warn(
+              `[updateFrameFn] Could not bootstrap visual hash for frame ${frameId}; staleness will remain untracked for this prompt`,
+              err
+            );
+          }
+        }
+        if (
+          context.frame.motionPrompt &&
+          !context.frame.motionPromptInputHash
+        ) {
+          try {
+            preEditSequenceForSplice ??=
+              await context.scopedDb.sequences.getById(sequenceId);
+            if (preEditSequenceForSplice) {
+              const ctx = await loadNarrowFramePromptContext({
+                scopedDb: context.scopedDb,
+                sequence: {
+                  id: preEditSequenceForSplice.id,
+                  styleId: preEditSequenceForSplice.styleId,
+                  aspectRatio: preEditSequenceForSplice.aspectRatio,
+                  analysisModel: preEditSequenceForSplice.analysisModel,
+                },
+                scene: context.frame.metadata,
+              });
+              updateData.motionPromptInputHash =
+                await computeMotionPromptInputHash(ctx);
+            }
+          } catch (err) {
+            console.warn(
+              `[updateFrameFn] Could not bootstrap motion hash for frame ${frameId}; staleness will remain untracked for this prompt`,
+              err
+            );
+          }
+        }
+      }
+
+      // Splice the new extract into the parent script. The naive
+      // `script.replace(oldExtract, …)` would corrupt the wrong scene
+      // whenever an extract appears more than once (recurring slug lines,
+      // "CUT TO BLACK.", duplicated cues). Instead, walk every frame in
+      // orderIndex order and locate each one's extract sequentially in
+      // `seq.script`; the target frame's match is the one we splice.
+      // Best-effort: if the walk falls out of sync (e.g. the parent was
+      // edited separately), leave the parent untouched — the frame still
+      // saves, the scene tab still reflects the new extract, and we avoid
+      // injecting into the wrong position. Read-then-write on
+      // `sequences.script` is racy under concurrent scene edits; accept
+      // that as the worst-case loss of one parent-script update.
+      // Reuse the sequence fetched above if the bootstrap path already
+      // loaded it.
+      const seq =
+        preEditSequenceForSplice ??
+        (await context.scopedDb.sequences.getById(sequenceId));
+      if (seq?.script && oldExtract) {
+        const siblings =
+          await context.scopedDb.frames.listBySequence(sequenceId);
+        let cursor = 0;
+        let targetStart = -1;
+        let targetLength = 0;
+        let walkDiverged = false;
+        for (const sibling of siblings) {
+          const siblingExtract = sibling.metadata?.originalScript.extract;
+          if (!siblingExtract) continue;
+          const pos = seq.script.indexOf(siblingExtract, cursor);
+          if (pos === -1) {
+            walkDiverged = true;
+            break;
+          }
+          if (sibling.id === frameId) {
+            targetStart = pos;
+            targetLength = siblingExtract.length;
+          }
+          cursor = pos + siblingExtract.length;
+        }
+        if (!walkDiverged && targetStart !== -1) {
+          await context.scopedDb.sequences.update({
+            id: sequenceId,
+            script:
+              seq.script.slice(0, targetStart) +
+              incomingExtract +
+              seq.script.slice(targetStart + targetLength),
+          });
+        } else {
+          console.warn(
+            `[updateFrameFn] Parent script walk could not locate frame ${frameId} for sequence ${sequenceId}; skipping parent script sync`
+          );
+        }
+      }
+    }
+
     // When a user edits a prompt, auto-link any element/cast/location tags
     // they mentioned by additively merging them into frame.metadata.continuity
     // so the next generation pulls those references in (#683). Skip when the
@@ -433,51 +575,75 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
     let visualPrompt: 'stale' | 'fresh' | 'untracked' = 'untracked';
     let motionPrompt: 'stale' | 'fresh' | 'untracked' = 'untracked';
 
-    if (frame.metadata && frame.visualPromptInputHash) {
-      try {
-        const latest = await scopedDb.framePromptVariants.getLatest(
-          frame.id,
-          'visual'
-        );
-        const ctx = await loadNarrowFramePromptContext({
-          scopedDb,
-          sequence,
-          scene: frame.metadata,
-          analysisModelOverride: latest?.analysisModel ?? null,
-        });
-        const liveHash = await computeVisualPromptInputHash(ctx);
-        visualPrompt =
-          liveHash !== frame.visualPromptInputHash ? 'stale' : 'fresh';
-      } catch (error) {
-        // Context unavailable (e.g., style deleted mid-flight). Stay
-        // 'untracked' — fail-open as 'fresh' would silently lie to the user.
-        console.warn(
-          `[getFrameStalenessFn] visual staleness uncomputable for frame ${frame.id}:`,
-          error
-        );
+    // Reference hash resolution: prefer the cached column on `frames`, but
+    // fall back to the most recent variant with a non-null `inputHash` for
+    // frames whose cached column was nulled by a pre-fix user-edit. Without
+    // the fallback, those frames are stuck at `'untracked'` permanently.
+    if (frame.metadata) {
+      let referenceHash = frame.visualPromptInputHash;
+      if (!referenceHash) {
+        const fallback =
+          await scopedDb.framePromptVariants.getLatestWithInputHash(
+            frame.id,
+            'visual'
+          );
+        referenceHash = fallback?.inputHash ?? null;
+      }
+      if (referenceHash) {
+        try {
+          const latest = await scopedDb.framePromptVariants.getLatest(
+            frame.id,
+            'visual'
+          );
+          const ctx = await loadNarrowFramePromptContext({
+            scopedDb,
+            sequence,
+            scene: frame.metadata,
+            analysisModelOverride: latest?.analysisModel ?? null,
+          });
+          const liveHash = await computeVisualPromptInputHash(ctx);
+          visualPrompt = liveHash !== referenceHash ? 'stale' : 'fresh';
+        } catch (error) {
+          // Context unavailable (e.g., style deleted mid-flight). Stay
+          // 'untracked' — fail-open as 'fresh' would silently lie to the user.
+          console.warn(
+            `[getFrameStalenessFn] visual staleness uncomputable for frame ${frame.id}:`,
+            error
+          );
+        }
       }
     }
 
-    if (frame.metadata && frame.motionPromptInputHash) {
-      try {
-        const latest = await scopedDb.framePromptVariants.getLatest(
-          frame.id,
-          'motion'
-        );
-        const ctx = await loadNarrowFramePromptContext({
-          scopedDb,
-          sequence,
-          scene: frame.metadata,
-          analysisModelOverride: latest?.analysisModel ?? null,
-        });
-        const liveHash = await computeMotionPromptInputHash(ctx);
-        motionPrompt =
-          liveHash !== frame.motionPromptInputHash ? 'stale' : 'fresh';
-      } catch (error) {
-        console.warn(
-          `[getFrameStalenessFn] motion staleness uncomputable for frame ${frame.id}:`,
-          error
-        );
+    if (frame.metadata) {
+      let referenceHash = frame.motionPromptInputHash;
+      if (!referenceHash) {
+        const fallback =
+          await scopedDb.framePromptVariants.getLatestWithInputHash(
+            frame.id,
+            'motion'
+          );
+        referenceHash = fallback?.inputHash ?? null;
+      }
+      if (referenceHash) {
+        try {
+          const latest = await scopedDb.framePromptVariants.getLatest(
+            frame.id,
+            'motion'
+          );
+          const ctx = await loadNarrowFramePromptContext({
+            scopedDb,
+            sequence,
+            scene: frame.metadata,
+            analysisModelOverride: latest?.analysisModel ?? null,
+          });
+          const liveHash = await computeMotionPromptInputHash(ctx);
+          motionPrompt = liveHash !== referenceHash ? 'stale' : 'fresh';
+        } catch (error) {
+          console.warn(
+            `[getFrameStalenessFn] motion staleness uncomputable for frame ${frame.id}:`,
+            error
+          );
+        }
       }
     }
 
