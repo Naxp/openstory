@@ -7,7 +7,10 @@ import {
   DEFAULT_ANALYSIS_MODEL,
   getAnalysisModelById,
 } from '@/lib/ai/models.config';
-import { loadFramePromptContext } from '@/lib/ai/prompt-context';
+import {
+  loadFramePromptContext,
+  narrowFramePromptContext,
+} from '@/lib/ai/prompt-context';
 import {
   FRAME_PROMPT_TYPES,
   type FramePromptVariant,
@@ -193,11 +196,14 @@ export const regenerateFramePromptFn = createServerFn({ method: 'POST' })
 
     // Bail if the cached input hash already matches the live recompute —
     // otherwise every double-click enqueues a duplicate workflow run and
-    // appends a no-op `'regenerated'` history row.
+    // appends a no-op `'regenerated'` history row. Hash inputs are narrowed
+    // to what this frame's continuity actually references; the workflow
+    // downstream still gets the full bibles for LLM context.
+    const narrowed = narrowFramePromptContext(ctx);
     const liveHash =
       data.promptType === 'visual'
-        ? await computeVisualPromptInputHash(ctx)
-        : await computeMotionPromptInputHash(ctx);
+        ? await computeVisualPromptInputHash(narrowed)
+        : await computeMotionPromptInputHash(narrowed);
     const storedHash =
       data.promptType === 'visual'
         ? frame.visualPromptInputHash

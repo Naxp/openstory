@@ -81,10 +81,10 @@ export type DraftElementUpload = {
   filename: string;
   token: string;
   /**
-   * Vision-LLM description, populated during draft upload so the Generate
-   * button can gate on vision-readiness. Null when the analyze call failed
-   * or was skipped (e.g. E2E replay) — promoteTempElements falls back to
-   * triggering the persisted vision workflow in that case.
+   * Vision-LLM description, populated during draft upload. `useUploadDraftElement`
+   * rejects if vision fails, so successful uploads always carry both fields —
+   * but `promoteTempElements` still accepts nullable values for backwards-compat
+   * with E2E fixture paths and falls back to the async vision workflow there.
    */
   description: string | null;
   consistencyTag: string | null;
@@ -96,10 +96,11 @@ export type DraftElementUpload = {
  * and pass it to the createSequence mutation for promotion.
  *
  * Runs vision analysis inline after the upload resolves so promoteTempElements
- * can skip the async element-vision workflow on the happy path. If the vision
- * call fails we still resolve with `description: null` — the upload itself
- * succeeded and the persisted-mode fallback in promoteTempElements will kick
- * the workflow on promotion.
+ * can write the row in `completed` state with description + consistencyTag
+ * already populated. The mutation rejects on vision failure — the element
+ * selector surfaces this as an error entry and the user must retry or remove
+ * the upload before Generate can proceed. (This is what stops a `pending`
+ * element from reaching the analyze workflow and poisoning prompt hashes.)
  */
 export function useUploadDraftElement() {
   return useMutation({
@@ -125,23 +126,15 @@ export function useUploadDraftElement() {
       const finalToken = token.length > 0 ? token : 'ELEMENT';
 
       data.onAnalyzingChange?.(true);
-      let description: string | null = null;
-      let consistencyTag: string | null = null;
+      let result: { description: string; consistencyTag: string };
       try {
-        const result = await analyzeDraftElementFn({
+        result = await analyzeDraftElementFn({
           data: {
             publicUrl: presign.publicUrl,
             filename: data.file.name,
             token: finalToken,
           },
         });
-        description = result.description;
-        consistencyTag = result.consistencyTag;
-      } catch (err) {
-        console.warn(
-          '[useUploadDraftElement] Vision analysis failed; falling back to async workflow on promotion',
-          err
-        );
       } finally {
         data.onAnalyzingChange?.(false);
       }
@@ -151,8 +144,8 @@ export function useUploadDraftElement() {
         tempPublicUrl: presign.publicUrl,
         filename: data.file.name,
         token: finalToken,
-        description,
-        consistencyTag,
+        description: result.description,
+        consistencyTag: result.consistencyTag,
       };
     },
   });

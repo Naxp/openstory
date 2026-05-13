@@ -3,7 +3,7 @@ import {
   computeMotionPromptInputHash,
   computeVisualPromptInputHash,
 } from '@/lib/ai/input-hash';
-import { loadFramePromptContext } from '@/lib/ai/prompt-context';
+import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
 import type { FrameVariant, NewFrame } from '@/lib/db/schema';
 import { getGenerationChannel } from '@/lib/realtime';
 import { getVideoDownloadUrl } from '@/lib/motion/video-storage';
@@ -454,7 +454,7 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
           frame.id,
           'visual'
         );
-        const ctx = await loadFramePromptContext({
+        const ctx = await loadNarrowFramePromptContext({
           scopedDb,
           sequence,
           scene: frame.metadata,
@@ -479,7 +479,7 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
           frame.id,
           'motion'
         );
-        const ctx = await loadFramePromptContext({
+        const ctx = await loadNarrowFramePromptContext({
           scopedDb,
           sequence,
           scene: frame.metadata,

@@ -93,15 +93,23 @@ export function matchCharactersToScene<T extends CharacterMatchInput>(
   );
 }
 
+type LocationMatchInput = Pick<
+  SequenceLocationMinimal,
+  'locationId' | 'name' | 'consistencyTag'
+>;
+
 /**
  * Match locations to a scene by environment tag or location name.
  * Pure function that works in-memory without DB queries.
+ *
+ * Generic so we can reuse it on `LocationBibleEntry` (same id/name/tag shape)
+ * when narrowing the bible for prompt-input hashing.
  */
-export function matchLocationsToScene(
-  allLocations: SequenceLocationMinimal[],
+export function matchLocationsToScene<T extends LocationMatchInput>(
+  allLocations: T[],
   environmentTag: string,
   sceneLocation: string
-): SequenceLocationMinimal[] {
+): T[] {
   if (!environmentTag && !sceneLocation) return [];
 
   const envTagLower = environmentTag.toLowerCase();
@@ -115,19 +123,24 @@ export function matchLocationsToScene(
       locName,
       locId,
       ...(consistencyTag ? [consistencyTag] : []),
-    ];
+    ].filter((t) => t.length > 0);
 
-    // Check if any location identifier appears in the environment tag or scene location
+    // Forward match: a location identifier appears in the env/scene-location
+    // tag. Reverse match: the env/scene-location tag appears in a location
+    // identifier. Both directions guard against empty haystacks — without the
+    // length check, `'forest'.includes('')` returns true for every location
+    // when only one of envTagLower / sceneLocLower is populated.
     return searchTerms.some(
       (term) =>
-        envTagLower.includes(term) ||
-        sceneLocLower.includes(term) ||
-        // Reverse match: location name contains the search terms
-        term.includes(envTagLower) ||
-        term.includes(sceneLocLower)
+        (envTagLower.length > 0 && envTagLower.includes(term)) ||
+        (sceneLocLower.length > 0 && sceneLocLower.includes(term)) ||
+        (envTagLower.length > 0 && term.includes(envTagLower)) ||
+        (sceneLocLower.length > 0 && term.includes(sceneLocLower))
     );
   });
 }
+
+type ElementMatchInput = Pick<SequenceElementMinimal, 'token'>;
 
 /**
  * Match user-uploaded elements to a scene by UPPERCASE token.
@@ -135,12 +148,15 @@ export function matchLocationsToScene(
  * Primary match: `elementTags[]` (emitted by the LLM during scene-split).
  * Fallback match: token appears in the raw scene script text — catches
  * cases where the model forgets to populate `elementTags`.
+ *
+ * Generic so we can reuse it on `ElementBibleEntry` (same token shape) when
+ * narrowing the bible for prompt-input hashing.
  */
-export function matchElementsToScene(
-  allElements: SequenceElementMinimal[],
+export function matchElementsToScene<T extends ElementMatchInput>(
+  allElements: T[],
   elementTags: string[],
   sceneScript?: string
-): SequenceElementMinimal[] {
+): T[] {
   if (allElements.length === 0) return [];
 
   const tagsUpper = new Set(elementTags.map((t) => t.toUpperCase()));

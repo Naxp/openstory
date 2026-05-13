@@ -85,58 +85,32 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
       });
     });
 
-    // Load sequence elements, polling briefly for vision descriptions to finish.
+    // Load sequence elements. Element vision MUST be terminal (`completed` or
+    // `failed`) before scene-split runs — otherwise the LLM would see a
+    // placeholder description and the prompt-input hashes stamped on each frame
+    // would diverge from the live hash once vision completes, surfacing as
+    // false-positive "out of sync" indicators on every scene's Image/Motion tab.
     //
-    // Why this exists: reference elements (logos, product shots, etc.) are uploaded
-    // via `finalizeElementUploadFn`, which fires `elementVisionWorkflow` async so
-    // the upload response isn't blocked. That vision workflow generates the
-    // `description` + `consistencyTag` used below in `elementsMinimal`, which is
-    // passed to `sceneSplitWorkflow` so the LLM knows what each token (e.g. LOGO,
-    // BOTTLE) depicts and can weave them into scene prompts correctly.
-    //
-    // If the user hits "Analyze" immediately after uploading, vision analysis may
-    // still be pending/analyzing. Proceeding right away would hand the LLM bare
-    // tokens with no visual context, producing weaker scene prompts and missing
-    // reference-image matches downstream.
-    //
-    // The wait is bounded (30s) because vision calls hit external providers (Fal/
-    // OpenRouter) and can stall — we'd rather degrade gracefully than block the
-    // whole generation pipeline. Elements without a description still appear in
-    // the prompt as known tokens; they're just excluded from reference-image lists.
-    const elements = await context.run(
-      'load-and-wait-for-elements',
-      async () => {
-        if (!sequenceId) return [];
-
-        // With the inline draft-mode analyze call, vision usually finishes
-        // before Generate fires and this loop returns immediately. The cap
-        // is a safety. In E2E record runs we widen it so real fal/OpenRouter
-        // latency during fixture capture doesn't trip the placeholder path
-        // and pollute the recorded scene-split prompt with `(vision
-        // description pending)`.
-        const isRecording = process.env.E2E_RECORD === '1';
-        const MAX_WAIT_MS = isRecording ? 600_000 : 30_000;
-        const POLL_INTERVAL_MS = 1500;
-        const startedAt = Date.now();
-
-        // oxlint-disable-next-line no-unnecessary-condition -- loop has a break condition
-        while (true) {
-          const list = await scopedDb.sequenceElements.list(sequenceId);
-          const stillAnalyzing = list.filter(
-            (el) =>
-              el.visionStatus === 'pending' || el.visionStatus === 'analyzing'
-          );
-          if (stillAnalyzing.length === 0) return list;
-          if (Date.now() - startedAt > MAX_WAIT_MS) {
-            console.warn(
-              `[AnalyzeScriptWorkflow] Proceeding with ${stillAnalyzing.length} elements still analyzing`
-            );
-            return list;
-          }
-          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-        }
+    // The UI gates Generate on `isBusy` (`element-selector.tsx`) which tracks
+    // pending/analyzing vision status, so a draft upload with in-flight vision
+    // can never reach here through the happy path. This check is defence in
+    // depth — if a `pending` row does sneak in (e.g. a stale tab triggering
+    // the mutation, or a developer wiring), we fail loudly rather than
+    // degrading.
+    const elements = await context.run('load-elements', async () => {
+      if (!sequenceId) return [];
+      const list = await scopedDb.sequenceElements.list(sequenceId);
+      const stillRunning = list.filter(
+        (el) => el.visionStatus === 'pending' || el.visionStatus === 'analyzing'
+      );
+      if (stillRunning.length > 0) {
+        throw new WorkflowValidationError(
+          `Element vision is still running for ${stillRunning.length} element(s). ` +
+            `Wait for vision analysis to finish before regenerating.`
+        );
       }
-    );
+      return list;
+    });
 
     const elementsMinimal = elements.map((el) => ({
       id: el.id,

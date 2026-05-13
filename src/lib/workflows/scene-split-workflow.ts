@@ -67,9 +67,12 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           elements.length > 0
             ? elements
                 .map((el) => {
+                  // analyzeScriptWorkflow refuses to start while any element is
+                  // pending/analyzing, so a null description here means vision
+                  // genuinely failed for this row.
                   const desc = el.description
                     ? `: ${el.description}`
-                    : ' (vision description pending)';
+                    : ' (no visual reference available)';
                   return `- ${el.token}${desc}`;
                 })
                 .join('\n')

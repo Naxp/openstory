@@ -9,6 +9,7 @@ import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
 import { computeMotionPromptInputHash } from '../ai/input-hash';
+import { narrowFramePromptContext } from '../ai/prompt-context';
 import { getGenerationChannel } from '../realtime';
 import {
   type MotionPrompt,
@@ -95,7 +96,10 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
         );
       }
 
-      const inputHash = await computeMotionPromptInputHash({
+      // Hash inputs are narrowed by the scene's continuity (populated upstream
+      // by the visual-prompt workflow) so unreferenced entities don't poison
+      // the stored hash.
+      const narrowed = narrowFramePromptContext({
         scene,
         styleConfig,
         characterBible,
@@ -104,6 +108,7 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
         aspectRatio,
         analysisModel: analysisModelId,
       });
+      const inputHash = await computeMotionPromptInputHash(narrowed);
 
       const enrichedScene = {
         ...scene,
