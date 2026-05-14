@@ -283,7 +283,7 @@ export async function stopAimockServer(): Promise<void> {
 }
 
 type FixtureFile = {
-  fixtures: Array<{ match: { userMessage?: string } }>;
+  fixtures: Array<{ match: { userMessage?: string; model?: string } }>;
 };
 
 function classifyStage(filePath: string): string | null {
@@ -295,11 +295,27 @@ function classifyStage(filePath: string): string | null {
   );
 }
 
+// Slugify the fal model path into a folder name. Strips the `fal-ai/` vendor
+// prefix and replaces remaining `/` separators with `-`, so e.g.
+// `fal-ai/kling-video/v3/pro/image-to-video` → `kling-video-v3-pro-image-to-video`.
+// Returns `null` if the fixture lacks a usable model field — caller falls back
+// to dropping it into `FAL_FIXTURE_DIR` directly.
+function classifyFalModel(filePath: string): string | null {
+  const data: FixtureFile = JSON.parse(readFileSync(filePath, 'utf8'));
+  const model = data.fixtures[0]?.match.model;
+  if (!model) return null;
+  const tail = model.startsWith('fal-ai/')
+    ? model.slice('fal-ai/'.length)
+    : model;
+  return tail.replace(/\//g, '-') || null;
+}
+
 // Walk `fixtures/recorded/_unsorted/` (sibling of `openrouter/` and `fal/`)
 // and move each freshly-recorded fixture into the right curated subfolder.
-// aimock's recorder names files `<providerKey>-…json` (recorder.js:196),
-// so we route by prefix: `fal-…` into `fixtures/recorded/fal/`, and
-// `openai-…` (used for OpenRouter) into a stage subfolder of
+// aimock's recorder names files `<providerKey>-…json` (recorder.js:196), so
+// we route by prefix: `fal-…` into a model-keyed subfolder of
+// `fixtures/recorded/fal/` (e.g. `fal/nano-banana-2/`, `fal/flux-2-turbo/`),
+// and `openai-…` (used for OpenRouter) into a stage subfolder of
 // `fixtures/recorded/openrouter/` keyed by the fixture's userMessage prefix.
 // Runs on shutdown of any E2E_RECORD=1 run.
 function sortStagingFixtures(): void {
@@ -318,8 +334,12 @@ function sortStagingFixtures(): void {
   for (const name of files) {
     const src = resolve(RECORD_STAGING_DIR, name);
     if (name.startsWith('fal-')) {
-      mkdirSync(FAL_FIXTURE_DIR, { recursive: true });
-      renameSync(src, resolve(FAL_FIXTURE_DIR, name));
+      const modelSlug = classifyFalModel(src);
+      const destDir = modelSlug
+        ? resolve(FAL_FIXTURE_DIR, modelSlug)
+        : FAL_FIXTURE_DIR;
+      mkdirSync(destDir, { recursive: true });
+      renameSync(src, resolve(destDir, name));
       sorted++;
       continue;
     }
