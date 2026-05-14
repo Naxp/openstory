@@ -75,7 +75,17 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
       }
     }
 
-    const duration = data.duration ?? snapDuration(undefined, model);
+    // Honor the frame's stored duration (set on scene-split + editable via the
+    // script tab) so user edits to scene duration actually take effect on the
+    // next motion regenerate. `durationMs` is the canonical source — populated
+    // both on scene-split and after motion completes — falling back to
+    // `metadata.durationSeconds` for legacy frames and finally the model
+    // default if nothing is stored.
+    const frameDurationSeconds = frame.durationMs
+      ? frame.durationMs / 1000
+      : (frame.metadata?.metadata?.durationSeconds ?? null);
+    const duration =
+      data.duration ?? frameDurationSeconds ?? snapDuration(undefined, model);
 
     await requireCredits(context.scopedDb, estimateVideoCost(model, duration), {
       errorMessage: 'Insufficient credits for motion generation',

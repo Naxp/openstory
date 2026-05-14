@@ -7,6 +7,7 @@ import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -184,6 +185,9 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const [editedScript, setEditedScript] = useState<string | undefined>(
     undefined
   );
+  const [editedDurationSeconds, setEditedDurationSeconds] = useState<
+    string | undefined
+  >(undefined);
   const prevScriptFrameIdRef = useRef<string | undefined>(undefined);
 
   // Previous value tracking for prop-to-state sync (refs avoid extra re-renders)
@@ -245,25 +249,46 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     },
   });
 
-  // Persist a scene-script edit. Sends the patched scene via `metadata`;
-  // `updateFrameFn` (server) clears stale dialogue and mirrors the change into
-  // `sequences.script`. Existing prompt-input-hash staleness lights up the
-  // Image/Motion banners automatically once the new extract lands.
+  // Persist a scene-script and/or duration edit. Sends the patched scene via
+  // `metadata`; `updateFrameFn` (server) clears stale dialogue (when extract
+  // changes) and mirrors the new extract into `sequences.script`. Existing
+  // prompt-input-hash staleness lights up the Image/Motion banners
+  // automatically once the new scene metadata lands.
   const saveScriptMutation = useMutation({
-    mutationFn: async (nextExtract: string) => {
+    mutationFn: async (input: {
+      nextExtract: string;
+      nextDurationSeconds: number | undefined;
+    }) => {
       if (!frame?.id || !frame.metadata) {
         throw new Error('frame metadata required');
       }
+      const { nextExtract, nextDurationSeconds } = input;
       const updated = await updateFrameFn({
         data: {
           sequenceId,
           frameId: frame.id,
+          ...(nextDurationSeconds !== undefined
+            ? { durationMs: Math.round(nextDurationSeconds * 1000) }
+            : {}),
           metadata: {
             ...frame.metadata,
             originalScript: {
               ...frame.metadata.originalScript,
               extract: nextExtract,
             },
+            ...(nextDurationSeconds !== undefined
+              ? {
+                  metadata: {
+                    ...(frame.metadata.metadata ?? {
+                      title: '',
+                      location: '',
+                      timeOfDay: '',
+                      storyBeat: '',
+                    }),
+                    durationSeconds: nextDurationSeconds,
+                  },
+                }
+              : {}),
           },
         },
       });
@@ -274,6 +299,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     },
     onSuccess: async (updated) => {
       setEditedScript(undefined);
+      setEditedDurationSeconds(undefined);
       queryClient.setQueryData(frameKeys.detail(updated.id), updated);
       await Promise.all([
         queryClient.invalidateQueries({
@@ -286,10 +312,10 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           queryKey: sequenceKeys.detail(sequenceId),
         }),
       ]);
-      toast.success('Scene script saved');
+      toast.success('Scene saved');
     },
     onError: (error) => {
-      toast.error('Failed to save scene script', {
+      toast.error('Failed to save scene', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     },
@@ -611,6 +637,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   if (frame?.id !== prevScriptFrameIdRef.current) {
     prevScriptFrameIdRef.current = frame?.id;
     setEditedScript(undefined);
+    setEditedDurationSeconds(undefined);
   }
 
   if (imagePrompt !== prevImagePromptRef.current) {
@@ -746,10 +773,41 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         {(() => {
           const savedScript = scriptText ?? '';
           const currentScript = editedScript ?? savedScript;
-          const isDirty =
+          const isScriptDirty =
             editedScript !== undefined && editedScript !== savedScript;
+
+          const savedDurationSeconds =
+            frame?.durationMs !== undefined &&
+            frame.durationMs !== null &&
+            frame.durationMs > 0
+              ? frame.durationMs / 1000
+              : (frame?.metadata?.metadata?.durationSeconds ?? undefined);
+          const savedDurationDisplay =
+            savedDurationSeconds !== undefined
+              ? String(savedDurationSeconds)
+              : '';
+          const currentDurationDisplay =
+            editedDurationSeconds ?? savedDurationDisplay;
+          const parsedDuration =
+            editedDurationSeconds === undefined
+              ? undefined
+              : Number(editedDurationSeconds);
+          const isDurationDirty =
+            editedDurationSeconds !== undefined &&
+            editedDurationSeconds !== savedDurationDisplay;
+          const isDurationValid =
+            editedDurationSeconds === undefined ||
+            (parsedDuration !== undefined &&
+              Number.isFinite(parsedDuration) &&
+              parsedDuration >= 1 &&
+              parsedDuration <= 60);
+
+          const isDirty = isScriptDirty || isDurationDirty;
           const canSave =
-            isDirty && !!frame?.metadata && !saveScriptMutation.isPending;
+            isDirty &&
+            isDurationValid &&
+            !!frame?.metadata &&
+            !saveScriptMutation.isPending;
           return (
             <div className="space-y-3">
               <div className="space-y-2">
@@ -790,18 +848,56 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label
+                  htmlFor="scene-duration-input"
+                  className="text-sm font-medium"
+                >
+                  Duration (seconds)
+                </label>
+                <Input
+                  id="scene-duration-input"
+                  type="number"
+                  inputMode="decimal"
+                  min={1}
+                  max={60}
+                  step={0.5}
+                  value={currentDurationDisplay}
+                  onChange={(e) => setEditedDurationSeconds(e.target.value)}
+                  placeholder="3"
+                  className="w-32"
+                  disabled={!frame || saveScriptMutation.isPending}
+                  aria-invalid={!isDurationValid}
+                />
+                {!isDurationValid && (
+                  <p className="text-xs text-destructive">
+                    Duration must be between 1 and 60 seconds.
+                  </p>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setEditedScript(undefined)}
+                  onClick={() => {
+                    setEditedScript(undefined);
+                    setEditedDurationSeconds(undefined);
+                  }}
                   disabled={!isDirty || saveScriptMutation.isPending}
                 >
                   Cancel
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => saveScriptMutation.mutate(currentScript)}
+                  onClick={() =>
+                    saveScriptMutation.mutate({
+                      nextExtract: currentScript,
+                      nextDurationSeconds: isDurationDirty
+                        ? parsedDuration
+                        : undefined,
+                    })
+                  }
                   disabled={!canSave}
                 >
                   {saveScriptMutation.isPending && (
@@ -811,19 +907,11 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 </Button>
               </div>
 
-              {isDirty && (
+              {isDirty && isDurationValid && (
                 <p className="text-xs text-muted-foreground">
                   Saving will mark the image and motion prompts as stale.
                 </p>
               )}
-
-              {frame?.durationMs !== undefined &&
-                frame.durationMs !== null &&
-                frame.durationMs > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    Duration: {(frame.durationMs / 1000).toFixed(1)}s
-                  </div>
-                )}
             </div>
           );
         })()}
