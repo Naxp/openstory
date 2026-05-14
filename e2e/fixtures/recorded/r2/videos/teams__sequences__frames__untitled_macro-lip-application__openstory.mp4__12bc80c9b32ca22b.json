@@ -1,0 +1,21 @@
+{
+  "fingerprint": {
+    "bucket": "videos",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/untitled_macro-lip-application_<HASH>_openstory.mp4",
+    "contentType": "video/mp4"
+  },
+  "entries": [
+    {
+      "request": {
+        "key": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZCFTZR9FKTDQWJ48S89S/untitled_macro-lip-application_ytb38k_openstory.mp4",
+        "bodyHash": "aa58b343ab9d8225b2c599821a03be8314287f72a2cc406f29d361f0affba4b7",
+        "bodySize": 7835725
+      },
+      "response": {
+        "path": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZCFTZR9FKTDQWJ48S89S/untitled_macro-lip-application_ytb38k_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZCFTZR9FKTDQWJ48S89S/untitled_macro-lip-application_ytb38k_openstory.mp4",
+        "fullPath": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZCFTZR9FKTDQWJ48S89S/untitled_macro-lip-application_ytb38k_openstory.mp4"
+      }
+    }
+  ]
+}

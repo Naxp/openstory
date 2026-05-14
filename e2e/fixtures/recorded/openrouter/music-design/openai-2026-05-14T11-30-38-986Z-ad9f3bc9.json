@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "userMessage": "Classify music design for each scene and generate a unified music prompt for the sequence.\n\n<SCENES>\n[\n  {\n    \"sceneId\": \"scene_1\",\n    \"title\": \"Studio Lipstick Reveal\",\n    \"storyBeat\": \"Introduction of product and character in serene studio setting\",\n    \"durationSeconds\": 8,\n    \"location\": \"INT. BONDI STUDIO - MORNING\",\n    \"timeOfDay\": \"morning\",\n    \"visualSummary\": \"Fresh, serene and effortlessly cool morning mood\"\n  },\n  {\n    \"sceneId\": \"scene_2\",\n    \"title\": \"Macro Lip Application\",\n    \"storyBeat\": \"Detailed product application close-up\",\n    \"durationSeconds\": 5,\n    \"location\": \"INT. BONDI STUDIO - MORNING\",\n    \"timeOfDay\": \"morning\",\n    \"visualSummary\": \"Fresh, sensory, high-key and effortlessly cool with immediate light feel\"\n  },\n  {\n    \"sceneId\": \"scene_3\",\n    \"title\": \"Promenade Walk\",\n    \"storyBeat\": \"Character moves confidently through coastal environment showcasing lifestyle\",\n    \"durationSeconds\": 7,\n    \"location\": \"EXT. BONDI BEACH PROMENADE\",\n    \"timeOfDay\": \"golden hour\",\n    \"visualSummary\": \"Fresh, sensory, effortlessly cool coastal energy\"\n  },\n  {\n    \"sceneId\": \"scene_4\",\n    \"title\": \"Shoreline Moment and Final Wide\",\n    \"storyBeat\": \"Climactic product placement and expansive finale shot\",\n    \"durationSeconds\": 10,\n    \"location\": \"EXT. BONDI BEACH - SHORELINE\",\n    \"timeOfDay\": \"golden hour\",\n    \"visualSummary\": \"Playful summery freedom effortless cool coastal lifestyle\"\n  }\n]\n</SCENES>\n\nFor each scene, classify:\n1. presence: \"none\"|\"minimal\"|\"moderate\"|\"full\"\n2. style: Genre/instrumentation (if music present)\n3. mood: Emotional quality (if music present)\n4. atmosphere: Environmental atmosphere\n\nThen synthesize unified tags (starting with \"instrumental\") and a 1-2 sentence prompt for one cohesive music track.\n\nRespond with ONLY valid JSON matching the schema.",
+        "model": "x-ai/grok-4.3",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "content": "{\n  \"scenes\": [\n    {\n      \"sceneId\": \"scene_1\",\n      \"musicDesign\": {\n        \"presence\": \"moderate\",\n        \"style\": \"chill ambient indie\",\n        \"mood\": \"serene uplifting\",\n        \"atmosphere\": \"serene morning studio interior\"\n      }\n    },\n    {\n      \"sceneId\": \"scene_2\",\n      \"musicDesign\": {\n        \"presence\": \"moderate\",\n        \"style\": \"chill ambient indie\",\n        \"mood\": \"serene uplifting\",\n        \"atmosphere\": \"intimate high-key close-up\"\n      }\n    },\n    {\n      \"sceneId\": \"scene_3\",\n      \"musicDesign\": {\n        \"presence\": \"moderate\",\n        \"style\": \"chill ambient indie\",\n        \"mood\": \"serene uplifting\",\n        \"atmosphere\": \"vibrant golden-hour coastal promenade\"\n      }\n    },\n    {\n      \"sceneId\": \"scene_4\",\n      \"musicDesign\": {\n        \"presence\": \"moderate\",\n        \"style\": \"chill ambient indie\",\n        \"mood\": \"serene uplifting\",\n        \"atmosphere\": \"expansive sunny shoreline\"\n      }\n    }\n  ],\n  \"tags\": \"instrumental, ambient, indie, chill, uplifting, cinematic, light, flowing, serene\",\n  \"prompt\": \"Instrumental chill ambient indie track with soft synths, gentle acoustic guitar, and subtle pads, evoking a fresh serene morning that flows into playful coastal freedom.\"\n}"
+      },
+      "metadata": {
+        "systemHash": "ae656c2a"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Instrumental chill ambient indie track with soft synths, gentle acoustic guitar, and subtle pads, evoking a fresh serene morning that flows into playful coastal freedom.",
+        "model": "fal-ai/elevenlabs/music",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "audio": {
+            "url": "https://v3b.fal.media/files/b/0a9a2b76/qMhVwbRsEmK3aPkj_lcZy_music_generated.mp3",
+            "content_type": "audio/mpeg",
+            "file_name": "music_generated.mp3",
+            "file_size": 480698
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

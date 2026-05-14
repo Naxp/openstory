@@ -1,0 +1,33 @@
+{
+  "fingerprint": {
+    "bucket": "videos",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/merged/<HASH>_openstory.mp4",
+    "contentType": "video/mp4"
+  },
+  "entries": [
+    {
+      "request": {
+        "key": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/DWF4PWZ2_openstory.mp4",
+        "bodyHash": "4b6e943531f273bb7f44eaab31ba263894c50ef697fb289038801fa322019771",
+        "bodySize": 16956210
+      },
+      "response": {
+        "path": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/DWF4PWZ2_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/DWF4PWZ2_openstory.mp4",
+        "fullPath": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/DWF4PWZ2_openstory.mp4"
+      }
+    },
+    {
+      "request": {
+        "key": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/9R3EGX3T_openstory.mp4",
+        "bodyHash": "11dbac7237f28c81d078ac9efd2982e42cfa1f32cea66fcdf53f53798722ca8f",
+        "bodySize": 14847673
+      },
+      "response": {
+        "path": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/9R3EGX3T_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/9R3EGX3T_openstory.mp4",
+        "fullPath": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/merged/9R3EGX3T_openstory.mp4"
+      }
+    }
+  ]
+}

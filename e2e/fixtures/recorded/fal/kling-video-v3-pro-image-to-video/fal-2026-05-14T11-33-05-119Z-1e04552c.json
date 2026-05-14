@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Macro lens holds steady in locked close-up as Scarlett swipes the creamy coral lipstick smoothly across her lower lip. She blots gently with her fingertip then lifts into a soft natural smile. Direct on-camera flash pops sharply once, blooming vibrant coral against neutral skin with crisp punchy highlights.\nLight skin texture and product finish catch the immediate flash burst while the surrounding white vanity stays softly blurred.\n\nAmbient sounds: quiet bright studio with faint distant waves. soft lipstick swipe, gentle finger blot, single camera flash pop.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9a2b7e/KXVfCRNWnBoRFeZSJmkxj_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 7835725
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "9-panel cinematic storyboard sheet derived from Image 1. Mix Wide, Medium, and Tight shots of the same scene. No borders between panels.\n\nLayout: 3x3 grid (9 panels) in a 16:9 landscape image.\n\nScene: Macro close-up editorial beauty frame in modern social-first product photography style featuring SCARLETT in light summer attire as she begins swiping the creamy coral lipstick across her lower lip with tense precise hand motion mid-breath and potential energy building toward a gentle blot and smile, set against a crisp white vanity backdrop with soft neutral minimal surroundings and large windows allowing bright natural daylight to fill the space, direct on-camera flash popping sharply for punchy highlights and vibrant color bloom against the skin texture, high-key airy atmosphere with clean directional shadows, shallow depth of field isolating the lip action and material finish while softly blurring the surrounding studio elements, eye-level macro lens framing with precise focus on the application gesture\n\nMatch Image 1 exactly: same character(s) (face, hair, skin, clothing), lighting, color grade, and texture. If character reference sheets are provided, use them for likeness — do not render them as separate panels.\n\nNo text, dialogue bubbles, scene numbers, or watermarks.\n\n\n  <reference-images>\n    - Image 1 [PRIMARY SOURCE]: Primary source scene — generate 9 variant shots from this image\n    - Image 2 [CHARACTER REF]: SCARLETT - Match the real-world appearance of Sienna Blake exactly\n    - Image 3 [LOCATION REF]: INT. BONDI STUDIO - MORNING - Bright natural window light floods a crisp white vanity\n    \n    IMPORTANT: Character, location, and element reference images are for IDENTITY CONSISTENCY ONLY. Do NOT reproduce them as separate panels or subjects. Elements (logos, products) must render faithfully when referenced but should appear naturally within the scene. All output panels must depict the scene from the PRIMARY SOURCE image.\n  </reference-images>",
+        "model": "fal-ai/nano-banana-2/edit",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "images": [
+            {
+              "url": "https://v3b.fal.media/files/b/0a9a2b74/3088npQ17qhTLyCeqQMEG_DAJ3izKq.png",
+              "content_type": "image/png",
+              "file_name": "3088npQ17qhTLyCeqQMEG_DAJ3izKq.png",
+              "file_size": null,
+              "width": null,
+              "height": null
+            }
+          ],
+          "description": ""
+        },
+        "status": 200
+      }
+    }
+  ]
+}

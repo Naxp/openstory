@@ -1,0 +1,21 @@
+{
+  "fingerprint": {
+    "bucket": "videos",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/untitled_studio-lipstick-reveal_<HASH>_openstory.mp4",
+    "contentType": "video/mp4"
+  },
+  "entries": [
+    {
+      "request": {
+        "key": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZB9NWYSYSN6C6B2WQ22D/untitled_studio-lipstick-reveal_ecm0bm_openstory.mp4",
+        "bodyHash": "bbe6c39baa9431874514cee035d26e40132c11b8c3ebe7b3f4cbbec245148163",
+        "bodySize": 9733003
+      },
+      "response": {
+        "path": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZB9NWYSYSN6C6B2WQ22D/untitled_studio-lipstick-reveal_ecm0bm_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZB9NWYSYSN6C6B2WQ22D/untitled_studio-lipstick-reveal_ecm0bm_openstory.mp4",
+        "fullPath": "videos/teams/01KRK3X10CEA03G1ZDJJQWT682/sequences/01KRK3Y4E1ZFVW2AXX8PQFSJZQ/frames/01KRK3ZB9NWYSYSN6C6B2WQ22D/untitled_studio-lipstick-reveal_ecm0bm_openstory.mp4"
+      }
+    }
+  ]
+}
