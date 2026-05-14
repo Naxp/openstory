@@ -41,7 +41,13 @@ export async function durableLLMCallDirect(
     params;
 
   const resolvedId = modelId ?? DEFAULT_ANALYSIS_MODEL;
-  const model = getAnalysisModelById(resolvedId)?.id ?? DEFAULT_ANALYSIS_MODEL;
+  const matchedModel = getAnalysisModelById(resolvedId);
+  if (!matchedModel) {
+    throw new Error(
+      `Unknown analysis model "${resolvedId}". Specify a registered model id or omit modelId to use "${DEFAULT_ANALYSIS_MODEL}".`
+    );
+  }
+  const model = matchedModel.id;
 
   // Resolve API key
   const openRouterApiKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');

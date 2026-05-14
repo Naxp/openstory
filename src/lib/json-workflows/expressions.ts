@@ -79,9 +79,21 @@ export function resolveValue(value: unknown, ctx: ExpressionContext): unknown {
   // Mixed template: interpolate expressions within string
   return value.replace(EXPRESSION_PATTERN, (_match, path: string) => {
     const resolved = resolvePath(path, ctx);
-    if (resolved === undefined || resolved === null) return '';
-    if (typeof resolved === 'object') return JSON.stringify(resolved);
-    return String(resolved);
+    if (resolved === undefined || resolved === null) {
+      console.warn(
+        `[json-workflow] Expression "{{${path.trim()}}}" resolved to ${resolved} in template "${value}" — interpolating empty string. Check for typos in the path.`
+      );
+      return '';
+    }
+    if (typeof resolved === 'string') return resolved;
+    if (
+      typeof resolved === 'number' ||
+      typeof resolved === 'boolean' ||
+      typeof resolved === 'bigint'
+    ) {
+      return String(resolved);
+    }
+    return JSON.stringify(resolved);
   });
 }
 

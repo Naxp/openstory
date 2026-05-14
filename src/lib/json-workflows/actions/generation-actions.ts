@@ -33,19 +33,24 @@ const generateImage: ActionDefinition = {
     const { generateImageWithProvider } =
       await import('@/lib/image/image-generation');
     const { uploadImageToStorage } = await import('@/lib/image/image-storage');
-    const { DEFAULT_IMAGE_MODEL, safeTextToImageModel } =
+    const { DEFAULT_IMAGE_MODEL, isValidTextToImageModel } =
       await import('@/lib/ai/models');
     const { DEFAULT_IMAGE_SIZE } =
       await import('@/lib/constants/aspect-ratios');
 
     const params = generateImageInputSchema.parse(input);
 
-    const model = safeTextToImageModel(params.model ?? DEFAULT_IMAGE_MODEL);
-    const imageSizeResult = z
-      .enum(['square_hd', 'portrait_16_9', 'landscape_16_9'])
-      .safeParse(params.imageSize);
-    const imageSize = imageSizeResult.success
-      ? imageSizeResult.data
+    const requestedModel = params.model ?? DEFAULT_IMAGE_MODEL;
+    if (!isValidTextToImageModel(requestedModel)) {
+      throw new Error(
+        `generate-image: unknown text-to-image model "${requestedModel}"`
+      );
+    }
+    const model = requestedModel;
+    const imageSize = params.imageSize
+      ? z
+          .enum(['square_hd', 'portrait_16_9', 'landscape_16_9'])
+          .parse(params.imageSize)
       : DEFAULT_IMAGE_SIZE;
     const imageResult = await generateImageWithProvider(
       {
@@ -76,20 +81,24 @@ const generateImage: ActionDefinition = {
         frameId: params.frameId,
       });
 
-      if (result.url) {
-        imageUrl = result.url;
-        imagePath = result.path;
-
-        await ctx.scopedDb.frames.update(params.frameId, {
-          thumbnailUrl: result.url,
-          thumbnailPath: result.path || null,
-          thumbnailStatus: 'completed',
-          thumbnailGeneratedAt: new Date(),
-          thumbnailError: null,
-          imageModel: model,
-          imagePrompt: params.prompt,
-        });
+      if (!result.url) {
+        throw new Error(
+          `generate-image: upload to storage failed for frame ${params.frameId}`
+        );
       }
+
+      imageUrl = result.url;
+      imagePath = result.path;
+
+      await ctx.scopedDb.frames.update(params.frameId, {
+        thumbnailUrl: result.url,
+        thumbnailPath: result.path || null,
+        thumbnailStatus: 'completed',
+        thumbnailGeneratedAt: new Date(),
+        thumbnailError: null,
+        imageModel: model,
+        imagePrompt: params.prompt,
+      });
     }
 
     return { imageUrl, imagePath };
@@ -108,9 +117,9 @@ const generateMotionInputSchema = z.object({
 const generateMotion: ActionDefinition = {
   name: 'generate-motion',
   description:
-    'Generate motion video from an image. Uses invoke-workflow internally.',
+    'Trigger motion video generation from an image. Async — returns a workflowRunId; the resulting videoUrl is written to the frame by the motion workflow.',
   inputSchema: generateMotionInputSchema,
-  outputSchema: z.object({ videoUrl: z.string() }),
+  outputSchema: z.object({ workflowRunId: z.string() }),
   execute: async (input, ctx) => {
     const { triggerWorkflow } = await import('@/lib/workflow/client');
     const params = generateMotionInputSchema.parse(input);
@@ -127,7 +136,7 @@ const generateMotion: ActionDefinition = {
       aspectRatio: params.aspectRatio,
     });
 
-    return { videoUrl: '', workflowRunId };
+    return { workflowRunId };
   },
 };
 

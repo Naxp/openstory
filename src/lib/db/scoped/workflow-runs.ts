@@ -47,6 +47,21 @@ export function createWorkflowRunsMethods(db: Database, teamId: string) {
       return result[0] ?? null;
     },
 
+    getByQstashRunId: async (
+      qstashRunId: string
+    ): Promise<WorkflowRun | null> => {
+      const result = await db
+        .select()
+        .from(workflowRuns)
+        .where(
+          and(
+            eq(workflowRuns.qstashWorkflowRunId, qstashRunId),
+            eq(workflowRuns.teamId, teamId)
+          )
+        );
+      return result[0] ?? null;
+    },
+
     create: async (
       data: Omit<NewWorkflowRun, 'id' | 'teamId' | 'createdAt'>
     ): Promise<WorkflowRun> => {

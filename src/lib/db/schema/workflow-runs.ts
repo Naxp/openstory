@@ -12,6 +12,14 @@ import { workflowDefinitions } from './workflow-definitions';
 const RUN_STATUSES = ['pending', 'running', 'completed', 'failed'] as const;
 export type WorkflowRunStatus = (typeof RUN_STATUSES)[number];
 
+export type WorkflowJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | WorkflowJsonValue[]
+  | { [key: string]: WorkflowJsonValue };
+
 export const workflowRuns = sqliteTable(
   'workflow_runs',
   {
@@ -27,10 +35,10 @@ export const workflowRuns = sqliteTable(
       .references(() => teams.id, { onDelete: 'cascade' }),
     status: text().$type<WorkflowRunStatus>().default('pending').notNull(),
     triggerData: text('trigger_data', { mode: 'json' }).$type<
-      Record<string, {}>
+      Record<string, WorkflowJsonValue>
     >(),
     stepResults: text('step_results', { mode: 'json' }).$type<
-      Record<string, {}>
+      Record<string, WorkflowJsonValue>
     >(),
     error: text(),
     qstashWorkflowRunId: text('qstash_workflow_run_id'),

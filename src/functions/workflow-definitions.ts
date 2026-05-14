@@ -4,7 +4,7 @@
  * CRUD operations for user-created JSON workflow definitions.
  */
 
-import type { WorkflowDefinition, WorkflowRun } from '@/lib/db/schema';
+import type { WorkflowDefinition } from '@/lib/db/schema';
 import { workflowDefinitionSchema } from '@/lib/json-workflows/schema';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { triggerWorkflow } from '@/lib/workflow/client';
@@ -153,25 +153,15 @@ const listRunsSchema = z.object({
   limit: z.number().int().positive().max(100).optional(),
 });
 
-/**
- * Serialize a workflow run for TanStack Start transport.
- * JSON round-trip strips undefined values so the result satisfies
- * the stricter Record<string, {}> column types.
- */
-function serializeRun(run: WorkflowRun): WorkflowRun {
-  return JSON.parse(JSON.stringify(run));
-}
-
 export const listWorkflowRunsFn = createServerFn({ method: 'POST' })
   .middleware([authWithTeamMiddleware])
   .inputValidator(zodValidator(listRunsSchema))
   .handler(async ({ data, context }) => {
-    const runs = await context.scopedDb.workflowRuns.list({
+    return context.scopedDb.workflowRuns.list({
       workflowDefinitionId: data.workflowDefinitionId,
       status: data.status,
       limit: data.limit ?? 50,
     });
-    return runs.map(serializeRun);
   });
 
 // ── Get Run ─────────────────────────────────────────────────────
@@ -182,5 +172,5 @@ export const getWorkflowRunFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const run = await context.scopedDb.workflowRuns.getById(data.id);
     if (!run) throw new Error(`Workflow run ${data.id} not found`);
-    return serializeRun(run);
+    return run;
   });

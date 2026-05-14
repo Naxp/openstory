@@ -8,6 +8,7 @@
  */
 
 import type { ScopedDb } from '@/lib/db/scoped';
+import type { WorkflowJsonValue } from '@/lib/db/schema/workflow-runs';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type { WorkflowContext } from '@upstash/workflow';
@@ -251,8 +252,10 @@ export const jsonWorkflowExecutor = createScopedWorkflow<JsonWorkflowInput>(
 
     // Step 5: Mark run as completed
     await context.run('mark-complete', async () => {
-      // Serialize steps to strip undefined values for Record<string, {}> DB type
-      const stepResults: Record<string, {}> = JSON.parse(
+      // Coerce step results through JSON to enforce serializability — actions
+      // may return Date / class instances; libSQL stores via JSON.stringify
+      // anyway, so we do it here to match the typed column contract.
+      const stepResults: Record<string, WorkflowJsonValue> = JSON.parse(
         JSON.stringify(state.expressionCtx.steps)
       );
       await scopedDb.workflowRuns.update(run.id, {
@@ -275,24 +278,26 @@ export const jsonWorkflowExecutor = createScopedWorkflow<JsonWorkflowInput>(
         `[JsonWorkflow] Failed for definition ${input.definitionId}: ${error}`
       );
 
-      // Try to update the run record
       try {
-        // Find the run by qstash workflow run ID
-        const runs = await scopedDb.workflowRuns.list({
-          limit: 1,
-        });
-        const run = runs.find(
-          (r) => r.qstashWorkflowRunId === context.workflowRunId
+        const run = await scopedDb.workflowRuns.getByQstashRunId(
+          context.workflowRunId
         );
-        if (run) {
+        if (!run) {
+          console.error(
+            `[JsonWorkflow] No run record found for qstashWorkflowRunId=${context.workflowRunId}`
+          );
+        } else {
           await scopedDb.workflowRuns.update(run.id, {
             status: 'failed',
             error,
             completedAt: new Date(),
           });
         }
-      } catch {
-        // Ignore errors in failure handler
+      } catch (cleanupError) {
+        console.error(
+          `[JsonWorkflow] Failed to mark run as failed for qstashWorkflowRunId=${context.workflowRunId}:`,
+          cleanupError
+        );
       }
 
       return `JSON workflow failed: ${error}`;
