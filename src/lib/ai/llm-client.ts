@@ -13,13 +13,19 @@ import type { ScopedDb } from '../db/scoped';
 import { createAdapter } from './create-adapter';
 import { getContextWindow } from './models.config';
 
-type StreamChunk<T = unknown> = {
-  delta: string;
-  accumulated: string;
-  done: boolean;
-  /** Validated structured output, set only on the terminal chunk when responseSchema is provided. */
-  parsed?: T;
-};
+export type StreamChunk<T = never> =
+  | { done: false; delta: string; accumulated: string }
+  | {
+      done: true;
+      delta: '';
+      accumulated: string;
+      /**
+       * Validated structured output. Default `T = never` makes this `undefined`
+       * when no `responseSchema` was provided; with a schema, narrows to `T | undefined`
+       * (undefined when the stream ended without a `structured-output.complete` event).
+       */
+      parsed: T | undefined;
+    };
 
 export type ProgressCallback = (progress: {
   type: 'chunk' | 'complete';
@@ -176,26 +182,67 @@ function baseChatOptions(params: LLMRequestParams) {
   };
 }
 
-export async function callLLM(params: LLMRequestParams): Promise<string> {
+/**
+ * @tanstack/ai's chat orchestrator validates `outputSchema` upstream and surfaces
+ * the parsed object through the terminal `structured-output.complete` event (stream)
+ * or as the resolved value (non-stream) — but the return is typed `unknown` because
+ * Zod's `~standard` doesn't include the JSON-Schema converter `InferSchemaType` keys
+ * off. We run `responseSchema.parse` here to recover the `T` binding without a cast
+ * (the orchestrator already validated, so this is a near-free no-op).
+ */
+export async function callLLM<T>(
+  params: LLMRequestParams<T> & { responseSchema: z.ZodType<T> }
+): Promise<T>;
+export async function callLLM(
+  params: LLMRequestParams & { responseSchema?: undefined }
+): Promise<string>;
+export async function callLLM<T>(
+  params: LLMRequestParams<T>
+): Promise<T | string> {
   if (params.responseSchema) {
     validateStructuredOutputSupport(params.model);
-    const parsed = await chat({
+    const result = await chat({
       ...baseChatOptions(params),
       stream: false,
       metadata: buildChatMetadata(params),
       outputSchema: params.responseSchema,
     });
-    return JSON.stringify(parsed);
+    return params.responseSchema.parse(result);
   }
 
   return chat({
     ...baseChatOptions(params),
     stream: false,
     metadata: buildChatMetadata(params),
+    outputSchema: undefined,
   });
 }
 
-export async function* callLLMStream<T = unknown>(
+function throwIfRunError(event: unknown): void {
+  if (
+    !event ||
+    typeof event !== 'object' ||
+    !('type' in event) ||
+    event.type !== 'RUN_ERROR'
+  ) {
+    return;
+  }
+  const message =
+    'message' in event && typeof event.message === 'string'
+      ? event.message
+      : JSON.stringify('message' in event ? event.message : undefined);
+  const suffix =
+    'code' in event && typeof event.code === 'string' ? ` [${event.code}]` : '';
+  throw new Error(`LLM stream error${suffix}: ${message}`);
+}
+
+export function callLLMStream<T>(
+  params: LLMRequestParams<T> & { responseSchema: z.ZodType<T> }
+): AsyncGenerator<StreamChunk<T>>;
+export function callLLMStream(
+  params: LLMRequestParams & { responseSchema?: undefined }
+): AsyncGenerator<StreamChunk>;
+export async function* callLLMStream<T>(
   params: LLMRequestParams<T>
 ): AsyncGenerator<StreamChunk<T>> {
   let accumulated = '';
@@ -219,36 +266,32 @@ export async function* callLLMStream<T = unknown>(
       outputSchema: responseSchema,
     })) {
       if (
-        event.type === 'CUSTOM' &&
-        event.name === 'structured-output.complete'
-      ) {
-        parsed = responseSchema.parse(event.value.object);
-        continue;
-      }
-      if (
         event.type === 'TEXT_MESSAGE_CONTENT' &&
         typeof event.delta === 'string'
       ) {
         accumulated += event.delta;
         yield { delta: event.delta, accumulated, done: false };
+        continue;
       }
-      if (event.type === 'RUN_ERROR') {
-        const message =
-          typeof event.message === 'string'
-            ? event.message
-            : JSON.stringify(event.message);
-        throw new Error(`LLM stream error: ${message}`);
+      if (
+        event.type === 'CUSTOM' &&
+        event.name === 'structured-output.complete'
+      ) {
+        // Orchestrator already validated against outputSchema before emitting,
+        // but the event payload is typed `unknown`. Re-parse to recover `T`.
+        parsed = responseSchema.parse(event.value.object);
+        continue;
       }
+      throwIfRunError(event);
     }
   } else {
     for await (const event of chat(baseOptions)) {
       if (event.type === 'TEXT_MESSAGE_CONTENT') {
         accumulated += event.delta;
         yield { delta: event.delta, accumulated, done: false };
+        continue;
       }
-      if (event.type === 'RUN_ERROR') {
-        throw new Error(`LLM stream error: ${event.message}`);
-      }
+      throwIfRunError(event);
     }
   }
 

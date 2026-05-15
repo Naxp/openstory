@@ -126,7 +126,9 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           userId: input.userId,
           sessionId: input.sequenceId,
         })) {
-          if (chunk.parsed) parsedResult = chunk.parsed;
+          if (chunk.done && chunk.parsed !== undefined) {
+            parsedResult = chunk.parsed;
+          }
           chunkCount++;
           finalText = chunk.accumulated;
           const events = parser.feed(chunk.accumulated);
@@ -321,7 +323,10 @@ export const sceneSplitWorkflow = createScopedWorkflow<
 
         if (!parsedResult) {
           throw new Error(
-            `[Stream:${logName}] Stream ended without a validated structured-output payload`
+            `[Stream:${logName}] Stream ended without a validated structured-output payload. ` +
+              `chunks=${chunkCount} chars=${finalText.length} ` +
+              `streamedScenes=${frameMapping.length} model=${modelId}. ` +
+              `Likely cause: provider did not honor responseFormat:json_schema.`
           );
         }
         const parsed = parsedResult;
