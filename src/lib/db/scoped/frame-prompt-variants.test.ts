@@ -322,7 +322,7 @@ describe('frame_prompt_variants helper', () => {
     // text in history (otherwise the user's regenerated prompt would be
     // silently lost) while keeping the cached `*_prompt_input_hash` column
     // tracking the real upstream hash so staleness detection stays correct.
-    const methods = createFramePromptVariantsMethods(asDatabase(db));
+    const methods = createFramePromptVariantsMethods(db);
 
     const first = await methods.write({
       frameId,
@@ -351,13 +351,16 @@ describe('frame_prompt_variants helper', () => {
 
     const history = await methods.listByFrame(frameId, 'visual');
     expect(history).toHaveLength(2);
-    expect(history[0].text).toBe('Fresh LLM completion against same inputs');
-    expect(history[1].text).toBe('AI prompt v1');
+    const [latest, prior] = history;
+    if (!latest || !prior) throw new Error('test setup: history missing rows');
+    expect(latest.text).toBe('Fresh LLM completion against same inputs');
+    expect(prior.text).toBe('AI prompt v1');
 
     const [refreshed] = await db
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe(
       'Fresh LLM completion against same inputs'
     );
@@ -370,7 +373,7 @@ describe('frame_prompt_variants helper', () => {
     // Regression guard for the force-regen branch: it must only fire when
     // `existing.text !== input.text`. A genuine workflow step retry submits
     // the same text + same hash and should still collapse to one row.
-    const methods = createFramePromptVariantsMethods(asDatabase(db));
+    const methods = createFramePromptVariantsMethods(db);
 
     await methods.write({
       frameId,
