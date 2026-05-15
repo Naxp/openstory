@@ -73,6 +73,7 @@ async function seed() {
       },
     })
     .returning();
+  if (!style) throw new Error('test setup: style insert returned nothing');
   await db
     .insert(sequences)
     .values([
@@ -82,6 +83,7 @@ async function seed() {
     .insert(frames)
     .values({ sequenceId, orderIndex: 0 })
     .returning();
+  if (!frame) throw new Error('test setup: frame insert returned nothing');
   frameId = frame.id;
 }
 
@@ -301,6 +303,9 @@ describe('frame_variants discard / undiscard / listDivergent', () => {
         discardedAt: opts.discardedAt ?? null,
       })
       .returning();
+    if (!variant) {
+      throw new Error('test setup: frameVariants insert returned nothing');
+    }
     return variant;
   }
 

@@ -68,6 +68,7 @@ async function seed() {
       },
     })
     .returning();
+  if (!style) throw new Error('test setup: style insert returned nothing');
   await db
     .insert(sequences)
     .values([
@@ -184,7 +185,9 @@ describe('createSequenceVariantsMethods — video', () => {
     expect(second.divergent).toBe(false);
     const all = await db.select().from(sequenceVideoVariants);
     expect(all).toHaveLength(1);
-    expect(all[0].url).toBe('https://example.com/v1-resigned.mp4');
+    const [onlyVariant] = all;
+    if (!onlyVariant) throw new Error('test: expected one variant row');
+    expect(onlyVariant.url).toBe('https://example.com/v1-resigned.mp4');
   });
 
   it('writeVideoVariant forks to divergent when currentHash differs from inputHash (within-run drift)', async () => {
@@ -559,6 +562,8 @@ describe('listDivergentByTeam', () => {
         },
       })
       .returning();
+    if (!otherStyle)
+      throw new Error('test setup: otherStyle insert returned nothing');
     const otherSequenceId = generateId();
     await db.insert(sequences).values({
       id: otherSequenceId,
@@ -575,6 +580,8 @@ describe('listDivergentByTeam', () => {
       .select()
       .from(styles)
       .where(eq(styles.teamId, team.id));
+    if (!seedStyle)
+      throw new Error('test setup: seedStyle lookup returned nothing');
     await db.insert(sequences).values({
       id: secondSeedSequenceId,
       teamId: team.id,

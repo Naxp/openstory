@@ -108,7 +108,9 @@ describe('llm-client', () => {
       }
 
       expect(mockChat).toHaveBeenCalledTimes(1);
-      const callArgs = mockChat.mock.calls[0][0];
+      const firstCall = mockChat.mock.calls[0];
+      if (!firstCall) throw new Error('expected mockChat to have been called');
+      const callArgs = firstCall[0];
       expect(callArgs.metadata).toMatchObject({
         userId: 'user-123',
         sessionId: 'seq-456',

@@ -69,6 +69,7 @@ describe('buildMusicSceneSummaries', () => {
   it('falls back to empty string for visualSummary when prompts.visual is absent', () => {
     const scene = sceneWithMetadata();
     const [summary] = buildMusicSceneSummaries([scene]);
+    if (!summary) throw new Error('expected summary to be defined');
     expect(summary.visualSummary).toBe('');
   });
 
@@ -94,6 +95,7 @@ describe('buildMusicSceneSummaries', () => {
     });
 
     const [summary] = buildMusicSceneSummaries([scene]);
+    if (!summary) throw new Error('expected summary to be defined');
     expect(summary.visualSummary).toBe('tense corporate');
   });
 });

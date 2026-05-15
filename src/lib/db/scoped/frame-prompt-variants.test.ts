@@ -75,6 +75,7 @@ async function seed() {
       },
     })
     .returning();
+  if (!style) throw new Error('test setup: style insert returned nothing');
   await db.insert(sequences).values({
     id: sequenceId,
     teamId,
@@ -85,6 +86,7 @@ async function seed() {
     .insert(frames)
     .values({ sequenceId, orderIndex: 0 })
     .returning();
+  if (!frame) throw new Error('test setup: frame insert returned nothing');
   frameId = frame.id;
 }
 
@@ -134,6 +136,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe('User edited prompt');
     expect(refreshed.visualPromptInputHash).toBeNull();
   });
@@ -165,6 +168,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe('User edited prompt');
     expect(refreshed.visualPromptInputHash).toBe('hash-at-edit-time');
   });
@@ -188,6 +192,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe('AI prompt v2');
     expect(refreshed.visualPromptInputHash).toBe('context-hash-abc');
   });
@@ -215,10 +220,12 @@ describe('frame_prompt_variants helper', () => {
     const history = await methods.listByFrame(frameId, 'visual');
     expect(history).toHaveLength(2);
     // Newest first.
-    expect(history[0].source).toBe('user-edit');
-    expect(history[1].source).toBe('ai-generated');
-    expect(history[1].text).toBe('AI prompt v1');
-    expect(history[1].inputHash).toBe('context-hash-1');
+    const [latest, prior] = history;
+    if (!latest || !prior) throw new Error('test setup: history missing rows');
+    expect(latest.source).toBe('user-edit');
+    expect(prior.source).toBe('ai-generated');
+    expect(prior.text).toBe('AI prompt v1');
+    expect(prior.inputHash).toBe('context-hash-1');
   });
 
   it('ai-generated → regenerated → user-edit chain reflects the workflow source-discrimination flow', async () => {
@@ -274,6 +281,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     // Cached column reflects the latest write (user-edit) and the hash is
     // cleared since the cached value is no longer derived from upstream.
     expect(refreshed.imagePrompt).toBe('User polished it');
@@ -355,6 +363,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe('visual');
     expect(refreshed.motionPrompt).toBe('motion');
     expect(refreshed.visualPromptInputHash).toBe('visual-hash');
@@ -372,6 +381,8 @@ describe('frame_prompt_variants helper', () => {
       .insert(frames)
       .values({ sequenceId, orderIndex: 1 })
       .returning();
+    if (!siblingFrame)
+      throw new Error('test setup: sibling frame insert returned nothing');
 
     const ownVariant = await methods.write({
       frameId,
@@ -453,6 +464,7 @@ describe('frame_prompt_variants helper', () => {
       .select()
       .from(frames)
       .where(eq(frames.id, frameId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.imagePrompt).toBe('AI prompt v1');
     expect(refreshed.visualPromptInputHash).toBe('context-hash-1');
   });
@@ -596,6 +608,7 @@ describe('sequence_music_prompt_variants helper', () => {
       .select()
       .from(sequences)
       .where(eq(sequences.id, sequenceId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.musicPrompt).toBe('User edited music prompt');
     expect(refreshed.musicTags).toBe('rock,fast');
     expect(refreshed.musicPromptInputHash).toBeNull();
@@ -640,6 +653,7 @@ describe('sequence_music_prompt_variants helper', () => {
       .select()
       .from(sequences)
       .where(eq(sequences.id, sequenceId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.musicPrompt).toBe('AI music v2');
     expect(refreshed.musicPromptInputHash).toBe('music-hash-v2');
   });
@@ -687,6 +701,7 @@ describe('sequence_music_prompt_variants helper', () => {
       .select()
       .from(sequences)
       .where(eq(sequences.id, sequenceId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.musicPrompt).toBe('AI music v2');
     expect(refreshed.musicPromptInputHash).toBe('music-context-hash');
   });
@@ -700,6 +715,8 @@ describe('sequence_music_prompt_variants helper', () => {
       .select()
       .from(sequences)
       .where(eq(sequences.id, sequenceId));
+    if (!seededSequence)
+      throw new Error('test setup: seeded sequence not found');
     const otherSequenceId = generateId();
     await db.insert(sequences).values({
       id: otherSequenceId,
@@ -775,6 +792,7 @@ describe('sequence_music_prompt_variants helper', () => {
       .select()
       .from(sequences)
       .where(eq(sequences.id, sequenceId));
+    if (!refreshed) throw new Error('test setup: refresh failed');
     expect(refreshed.musicPrompt).toBe('AI music v1');
     expect(refreshed.musicPromptInputHash).toBe('music-hash-v1');
   });

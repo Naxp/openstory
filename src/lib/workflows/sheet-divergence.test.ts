@@ -110,7 +110,9 @@ describe('saveDivergentCharacterSheet', () => {
 
     expect(variantId).toBe('character-variant-id');
     expect(characterInsertDivergent).toHaveBeenCalledTimes(1);
-    const insertArgs = characterInsertDivergent.mock.calls[0][0];
+    const [firstCharCall] = characterInsertDivergent.mock.calls;
+    if (!firstCharCall) throw new Error('test setup: insert call missing');
+    const [insertArgs] = firstCharCall;
     expect(insertArgs).toMatchObject({
       characterId: 'char-1',
       model: 'flux-pro',
@@ -145,7 +147,9 @@ describe('saveDivergentLocationSheet', () => {
 
     expect(variantId).toBe('location-variant-id');
     expect(locationInsertDivergent).toHaveBeenCalledTimes(1);
-    expect(locationInsertDivergent.mock.calls[0][0]).toMatchObject({
+    const [firstLocCall] = locationInsertDivergent.mock.calls;
+    if (!firstLocCall) throw new Error('test setup: insert call missing');
+    expect(firstLocCall[0]).toMatchObject({
       parentType: 'sequence_location',
       parentId: 'loc-1',
       inputHash: 'hash-loc',
@@ -174,7 +178,9 @@ describe('saveDivergentLocationSheet', () => {
       snapshotInputHash: 'hash-loc',
     });
 
-    expect(locationInsertDivergent.mock.calls[0][0]).toMatchObject({
+    const [firstLibLocCall] = locationInsertDivergent.mock.calls;
+    if (!firstLibLocCall) throw new Error('test setup: insert call missing');
+    expect(firstLibLocCall[0]).toMatchObject({
       parentType: 'library_location',
       parentId: 'lib-loc-1',
     });
@@ -206,7 +212,9 @@ describe('saveDivergentTalentSheet', () => {
     });
 
     expect(variantId).toBe('talent-variant-id');
-    expect(talentInsertDivergent.mock.calls[0][0]).toMatchObject({
+    const [firstTalentCall] = talentInsertDivergent.mock.calls;
+    if (!firstTalentCall) throw new Error('test setup: insert call missing');
+    expect(firstTalentCall[0]).toMatchObject({
       talentSheetId: 'sheet-1',
       inputHash: 'hash-tal',
     });
