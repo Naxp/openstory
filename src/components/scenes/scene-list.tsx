@@ -153,7 +153,7 @@ const SceneListComponent: React.FC<SceneListProps> = ({
 
   const isMotionInProgress = regeneratingMotion.size > 0 || hasGeneratingFrames;
   const showButton =
-    !hideBatchButton && (notStartedFrames.length > 0 || isMotionInProgress);
+    !hideBatchButton && notStartedFrames.length > 0 && !isMotionInProgress;
   const isButtonDisabled =
     isGenerating ||
     notStartedFrames.length === 0 ||

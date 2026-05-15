@@ -152,7 +152,7 @@ export const MobileSceneDrawer: React.FC<MobileSceneDrawerProps> = ({
   const hasEligibleFrames = eligibleFrames.length > 0;
   const isMotionInProgress = regeneratingMotion.size > 0;
   const showFooter =
-    !hideBatchButton && (hasEligibleFrames || isMotionInProgress);
+    !hideBatchButton && hasEligibleFrames && !isMotionInProgress;
   const isButtonDisabled =
     isGenerating ||
     isMotionInProgress ||
