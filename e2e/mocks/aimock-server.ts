@@ -232,18 +232,16 @@ export async function startAimockServer(): Promise<string> {
     // Recordings land in `_unsorted/`; the record script sorts them into
     // stage subfolders post-run so they don't pollute the curated layout.
     ...(E2E_RECORDING && {
-      // Local record mode also wants `bodyTimeoutMs: 180_000` and
-      // `upstreamTimeoutMs: 60_000` set on this record config — reasoning
-      // models (e.g. Grok 4.3 + structured output under concurrent load)
-      // routinely leave 30s+ gaps between SSE chunks while thinking, which
-      // trips aimock's hardcoded 30s body-idle timer and truncates the
-      // recorded stream. The options exist on the linked aimock fork
-      // (CopilotKit/aimock#197) but aren't on the published RecordConfig
-      // type yet, so they'd fail typecheck if checked in here. Add them back
-      // once the option ships in a release and we bump @copilotkit/aimock.
       record: {
         providers: { openai: 'https://openrouter.ai/api/v1' },
         fixturePath: RECORD_STAGING_DIR,
+        // Reasoning models (e.g. Grok 4.3 + structured output under concurrent
+        // load) routinely leave 30s+ gaps between SSE chunks while thinking,
+        // which trips aimock's default 30s body-idle timer and truncates the
+        // recorded stream. Option ships on the linked aimock fork
+        // (CopilotKit/aimock#197); requires @copilotkit/aimock linked locally
+        // until the option is in a published release.
+        // bodyTimeoutMs: 120_000,
       },
     }),
   });

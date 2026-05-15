@@ -7,14 +7,14 @@
   "entries": [
     {
       "request": {
-        "key": "elements/01KRK3X10CEA03G1ZDJJQWT682/temp/01KRK3XSQPRVE77WQ4Z55KWZQ9.jpg",
+        "key": "elements/01KRMHKYTXRVDTB0QMQPXPXB77/temp/01KRMHMN3410TSMQBHW3EM4D6H.jpg",
         "bodyHash": "17801ae0c5bd909d3844c401f2368d3902660247382771c5ce8ab33175523ba8",
         "bodySize": 122891
       },
       "response": {
-        "path": "elements/01KRK3X10CEA03G1ZDJJQWT682/temp/01KRK3XSQPRVE77WQ4Z55KWZQ9.jpg",
-        "publicUrl": "https://storage-dev.openstory.so/elements/01KRK3X10CEA03G1ZDJJQWT682/temp/01KRK3XSQPRVE77WQ4Z55KWZQ9.jpg",
-        "fullPath": "elements/01KRK3X10CEA03G1ZDJJQWT682/temp/01KRK3XSQPRVE77WQ4Z55KWZQ9.jpg"
+        "path": "elements/01KRMHKYTXRVDTB0QMQPXPXB77/temp/01KRMHMN3410TSMQBHW3EM4D6H.jpg",
+        "publicUrl": "https://storage-dev.openstory.so/elements/01KRMHKYTXRVDTB0QMQPXPXB77/temp/01KRMHMN3410TSMQBHW3EM4D6H.jpg",
+        "fullPath": "elements/01KRMHKYTXRVDTB0QMQPXPXB77/temp/01KRMHMN3410TSMQBHW3EM4D6H.jpg"
       }
     }
   ]
