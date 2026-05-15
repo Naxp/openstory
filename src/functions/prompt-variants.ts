@@ -234,6 +234,11 @@ export const regenerateFramePromptFn = createServerFn({ method: 'POST' })
       return { workflowRunId: null, alreadyUpToDate: true } as const;
     }
 
+    // Stream incremental deltas only on the explicit force-regen path — the
+    // user is actively watching the frame in that case. The auto-staleness
+    // path can land later when the user isn't viewing this frame, so we skip
+    // the realtime publishes to avoid burning Redis ops for a stream nobody
+    // is consuming.
     const baseInput:
       | VisualPromptSceneWorkflowInput
       | MotionPromptSceneWorkflowInput = {
@@ -249,6 +254,7 @@ export const regenerateFramePromptFn = createServerFn({ method: 'POST' })
       styleConfig: ctx.styleConfig,
       analysisModelId:
         getAnalysisModelById(ctx.analysisModel)?.id ?? DEFAULT_ANALYSIS_MODEL,
+      emitStreaming: data.force === true,
     };
 
     const urlPath =

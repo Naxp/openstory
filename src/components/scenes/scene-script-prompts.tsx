@@ -46,10 +46,11 @@ import {
 } from '@/lib/ai/models';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
+import { useFramePromptStream } from '@/lib/realtime/use-frame-prompt-stream';
 import type { Frame } from '@/types/database';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CopyIcon, History, Loader2, Minimize2, RefreshCw } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { FrameStalenessBanners } from './frame-staleness-banners';
 import { SceneCastTab } from './scene-cast-tab';
@@ -241,6 +242,98 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     },
   });
 
+  // Subscribe to the per-frame prompt-regen realtime channel only while the
+  // user is viewing this frame. The workflow emits incremental deltas during
+  // the LLM call; on nav-back, channel history replay reconstructs the
+  // streaming state via `getChannelHistoryFn`. The actual workflow is
+  // triggered by `regeneratePromptMutation` below — the user just listens to
+  // its progress here.
+  const { state: framePromptStream } = useFramePromptStream(
+    frame?.id,
+    Boolean(frame?.id)
+  );
+
+  const isStreamingVisualPrompt =
+    framePromptStream.visual.status === 'streaming';
+  const isStreamingMotionPrompt =
+    framePromptStream.motion.status === 'streaming';
+
+  // Surface workflow failures as a toast — the workflow runs out-of-process
+  // so the regenerate mutation's onError doesn't see them.
+  const visualError = framePromptStream.visual.error;
+  const motionError = framePromptStream.motion.error;
+  useEffect(() => {
+    if (framePromptStream.visual.status === 'failed' && visualError) {
+      toast.error('Visual prompt regenerate failed', {
+        description: visualError,
+      });
+    }
+  }, [framePromptStream.visual.status, visualError]);
+  useEffect(() => {
+    if (framePromptStream.motion.status === 'failed' && motionError) {
+      toast.error('Motion prompt regenerate failed', {
+        description: motionError,
+      });
+    }
+  }, [framePromptStream.motion.status, motionError]);
+
+  // When a streamed regen lands, the workflow has already written the new
+  // variant to the DB and emitted `generation.frame:updated` — refetch so
+  // the textarea swaps from the live-streamed text to the persisted prompt
+  // without a flicker.
+  const frameId = frame?.id;
+  useEffect(() => {
+    if (!frameId) return;
+    if (framePromptStream.visual.status !== 'completed') return;
+    void queryClient.invalidateQueries({
+      queryKey: frameKeys.detail(frameId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: frameKeys.list(sequenceId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: frameStalenessKey(frameId),
+    });
+  }, [framePromptStream.visual.status, frameId, sequenceId, queryClient]);
+  useEffect(() => {
+    if (!frameId) return;
+    if (framePromptStream.motion.status !== 'completed') return;
+    void queryClient.invalidateQueries({
+      queryKey: frameKeys.detail(frameId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: frameKeys.list(sequenceId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: frameStalenessKey(frameId),
+    });
+  }, [framePromptStream.motion.status, frameId, sequenceId, queryClient]);
+
+  // Trigger the durable workflow with `force: true` so the user's explicit
+  // click always reaches the LLM and the workflow emits per-frame streaming
+  // events. The mutation resolves the moment QStash accepts the enqueue —
+  // the actual streaming UI updates come from the realtime hook above.
+  const handleStreamRegenerate = useCallback(
+    async (promptType: 'visual' | 'motion') => {
+      if (!frame?.id) return;
+      try {
+        await regenerateFramePromptFn({
+          data: {
+            sequenceId,
+            frameId: frame.id,
+            promptType,
+            force: true,
+          },
+        });
+      } catch (error) {
+        toast.error('Prompt regenerate failed', {
+          description: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    },
+    [frame?.id, sequenceId]
+  );
+
   // Persist a scene-script edit. Sends the patched scene via `metadata`;
   // `updateFrameFn` (server) clears stale dialogue and mirrors the change into
   // `sequences.script`. Existing prompt-input-hash staleness lights up the
@@ -298,8 +391,10 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const inFlightPromptType = regeneratePromptMutation.isPending
     ? regeneratePromptMutation.variables?.promptType
     : null;
-  const isRegeneratingVisualPrompt = inFlightPromptType === 'visual';
-  const isRegeneratingMotionPrompt = inFlightPromptType === 'motion';
+  const isRegeneratingVisualPrompt =
+    inFlightPromptType === 'visual' || isStreamingVisualPrompt;
+  const isRegeneratingMotionPrompt =
+    inFlightPromptType === 'motion' || isStreamingMotionPrompt;
 
   const handleCopy = useCallback(
     async (text: string | undefined, tabName: string) => {
@@ -850,15 +945,21 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             </div>
             <Textarea
               id="image-prompt-input"
-              value={editedImagePrompt || imagePrompt || ''}
+              value={
+                isStreamingVisualPrompt
+                  ? framePromptStream.visual.text
+                  : editedImagePrompt || imagePrompt || ''
+              }
               onChange={(e) => setEditedImagePrompt(e.target.value)}
               placeholder={
-                isGenerating
-                  ? 'Prompt is being generated…'
-                  : 'Enter image prompt…'
+                isStreamingVisualPrompt
+                  ? 'Streaming prompt…'
+                  : isGenerating
+                    ? 'Prompt is being generated…'
+                    : 'Enter image prompt…'
               }
               className="min-h-[120px] resize-y"
-              disabled={isGenerating}
+              disabled={isGenerating || isStreamingVisualPrompt}
             />
           </div>
 
@@ -916,19 +1017,14 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             />
           )}
 
-          {/* Explicit regenerate-prompt button — always available so the user
-              can roll the dice on a fresh LLM completion regardless of
-              staleness. Passes `force: true` so the server skips the
-              up-to-date short-circuit even when no upstream input changed. */}
+          {/* Explicit regenerate-prompt button — streams a fresh LLM
+              completion straight into the textarea so the user sees the
+              prompt forming. The staleness-banner path above keeps using the
+              durable QStash workflow. */}
           <Button
             type="button"
             variant="outline"
-            onClick={() =>
-              regeneratePromptMutation.mutate({
-                promptType: 'visual',
-                force: true,
-              })
-            }
+            onClick={() => void handleStreamRegenerate('visual')}
             disabled={!frame || isRegeneratingVisualPrompt}
             className="w-full"
             aria-label="Regenerate visual prompt"
@@ -1024,15 +1120,23 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             </div>
             <Textarea
               id="motion-prompt-input"
-              value={editedMotionPrompt || rawMotionPrompt}
+              value={
+                isStreamingMotionPrompt
+                  ? framePromptStream.motion.text
+                  : editedMotionPrompt || rawMotionPrompt
+              }
               onChange={(e) => setEditedMotionPrompt(e.target.value)}
               placeholder={
-                isGeneratingMotion
-                  ? 'Prompt is being generated…'
-                  : 'Enter motion prompt…'
+                isStreamingMotionPrompt
+                  ? 'Streaming prompt…'
+                  : isGeneratingMotion
+                    ? 'Prompt is being generated…'
+                    : 'Enter motion prompt…'
               }
               className="min-h-[120px] resize-y"
-              disabled={isGenerating || isGeneratingMotion}
+              disabled={
+                isGenerating || isGeneratingMotion || isStreamingMotionPrompt
+              }
             />
           </div>
 
@@ -1100,18 +1204,13 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             />
           )}
 
-          {/* Explicit regenerate-prompt button — see image-prompt tab for the
-              full rationale; `force: true` lets the user request a fresh LLM
-              completion even when upstream inputs are unchanged. */}
+          {/* Explicit regenerate-prompt button — streams a fresh LLM
+              completion straight into the textarea. See the image-prompt tab
+              for the full rationale. */}
           <Button
             type="button"
             variant="outline"
-            onClick={() =>
-              regeneratePromptMutation.mutate({
-                promptType: 'motion',
-                force: true,
-              })
-            }
+            onClick={() => void handleStreamRegenerate('motion')}
             disabled={!frame || isRegeneratingMotionPrompt}
             className="w-full"
             aria-label="Regenerate motion prompt"
