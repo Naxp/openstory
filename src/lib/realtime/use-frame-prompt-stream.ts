@@ -13,6 +13,7 @@ const historyPayloadSchema = z.object({
 
 export type FramePromptStreamStatus =
   | 'idle'
+  | 'pending'
   | 'streaming'
   | 'completed'
   | 'failed';
@@ -36,6 +37,7 @@ const initialState: FramePromptStreamState = {
 };
 
 type Action =
+  | { type: 'PENDING'; promptType: FramePromptKind }
   | { type: 'DELTA'; promptType: FramePromptKind; delta: string }
   | { type: 'COMPLETED'; promptType: FramePromptKind }
   | { type: 'FAILED'; promptType: FramePromptKind; error: string }
@@ -51,6 +53,11 @@ function reducePromptState(
   action: Extract<Action, { promptType: FramePromptKind }>
 ): PerPromptState {
   switch (action.type) {
+    case 'PENDING':
+      // Caller-driven: the mutation enqueued a workflow and we're waiting for
+      // the first realtime delta. Clears any prior run's text so the textarea
+      // doesn't display the previous prompt during the gap.
+      return { text: '', status: 'pending', error: undefined };
     case 'DELTA':
       if (state.status === 'streaming') {
         return { ...state, text: state.text + action.delta };
@@ -190,6 +197,10 @@ export function useFramePromptStream(
   });
 
   const reset = useCallback(() => dispatch({ type: 'RESET' }), []);
+  const markPending = useCallback(
+    (promptType: FramePromptKind) => dispatch({ type: 'PENDING', promptType }),
+    []
+  );
 
-  return { state, reset };
+  return { state, reset, markPending };
 }

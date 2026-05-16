@@ -29,6 +29,7 @@ import {
   useSetImageFromVariant,
 } from '@/hooks/use-frames';
 import {
+  type FrameStaleness,
   frameStalenessKey,
   useFrameStaleness,
 } from '@/hooks/use-frame-staleness';
@@ -204,6 +205,12 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     sequenceId,
     frameId: frame?.id,
   });
+  // The realtime hook owns the per-prompt-type stream status — `'pending'`
+  // covers the window between a successful enqueue and the first delta, so
+  // the button stays in its busy state without a sibling useState to sync.
+  const { state: framePromptStream, markPending: markPromptPending } =
+    useFramePromptStream(frame?.id, Boolean(frame?.id));
+
   const regeneratePromptMutation = useMutation({
     mutationFn: (vars: {
       promptType: 'visual' | 'motion';
@@ -219,10 +226,33 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         },
       });
     },
+    // Optimistically mark the prompt as fresh so the stale-prompt banner clears
+    // the moment the click registers — otherwise it lingers until the workflow
+    // lands and staleness is re-queried. `isPending` flips on the same render,
+    // which is what drives the button's `Regenerating…` label.
+    onMutate: async (vars) => {
+      if (!frame?.id) return { previous: undefined };
+      const key = frameStalenessKey(frame.id);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<FrameStaleness>(key);
+      if (previous) {
+        const promptKey =
+          vars.promptType === 'visual' ? 'visualPrompt' : 'motionPrompt';
+        queryClient.setQueryData<FrameStaleness>(key, {
+          ...previous,
+          [promptKey]: 'fresh',
+        });
+      }
+      return { previous };
+    },
     onSuccess: async (result, vars) => {
       if (result.alreadyUpToDate) {
         toast.info('Prompt is already up to date');
       } else {
+        // Workflow is now enqueued; hold the busy state via the stream's
+        // `'pending'` status until deltas start arriving. Naturally cleared
+        // when the DELTA/COMPLETED/FAILED reducer cases fire.
+        markPromptPending(vars.promptType);
         toast.success(
           vars.promptType === 'visual'
             ? 'Regenerating visual prompt…'
@@ -235,24 +265,22 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         });
       }
     },
-    onError: (error) => {
+    onError: (error, _vars, context) => {
+      if (context?.previous && frame?.id) {
+        queryClient.setQueryData(frameStalenessKey(frame.id), context.previous);
+      }
       toast.error('Prompt regenerate failed', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     },
   });
 
-  // Subscribe to the per-frame prompt-regen realtime channel only while the
-  // user is viewing this frame. The workflow emits incremental deltas during
-  // the LLM call; on nav-back, channel history replay reconstructs the
-  // streaming state via `getChannelHistoryFn`. The actual workflow is
-  // triggered by `regeneratePromptMutation` below — the user just listens to
-  // its progress here.
-  const { state: framePromptStream } = useFramePromptStream(
-    frame?.id,
-    Boolean(frame?.id)
-  );
-
+  const isAwaitingVisualPrompt =
+    framePromptStream.visual.status === 'pending' ||
+    framePromptStream.visual.status === 'streaming';
+  const isAwaitingMotionPrompt =
+    framePromptStream.motion.status === 'pending' ||
+    framePromptStream.motion.status === 'streaming';
   const isStreamingVisualPrompt =
     framePromptStream.visual.status === 'streaming';
   const isStreamingMotionPrompt =
@@ -308,31 +336,6 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       queryKey: frameStalenessKey(frameId),
     });
   }, [framePromptStream.motion.status, frameId, sequenceId, queryClient]);
-
-  // Trigger the durable workflow with `force: true` so the user's explicit
-  // click always reaches the LLM and the workflow emits per-frame streaming
-  // events. The mutation resolves the moment QStash accepts the enqueue —
-  // the actual streaming UI updates come from the realtime hook above.
-  const handleStreamRegenerate = useCallback(
-    async (promptType: 'visual' | 'motion') => {
-      if (!frame?.id) return;
-      try {
-        await regenerateFramePromptFn({
-          data: {
-            sequenceId,
-            frameId: frame.id,
-            promptType,
-            force: true,
-          },
-        });
-      } catch (error) {
-        toast.error('Prompt regenerate failed', {
-          description: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    },
-    [frame?.id, sequenceId]
-  );
 
   // Persist a scene-script edit. Sends the patched scene via `metadata`;
   // `updateFrameFn` (server) clears stale dialogue and mirrors the change into
@@ -392,9 +395,9 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     ? regeneratePromptMutation.variables?.promptType
     : null;
   const isRegeneratingVisualPrompt =
-    inFlightPromptType === 'visual' || isStreamingVisualPrompt;
+    inFlightPromptType === 'visual' || isAwaitingVisualPrompt;
   const isRegeneratingMotionPrompt =
-    inFlightPromptType === 'motion' || isStreamingMotionPrompt;
+    inFlightPromptType === 'motion' || isAwaitingMotionPrompt;
 
   const handleCopy = useCallback(
     async (text: string | undefined, tabName: string) => {
@@ -1019,12 +1022,19 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
 
           {/* Explicit regenerate-prompt button — streams a fresh LLM
               completion straight into the textarea so the user sees the
-              prompt forming. The staleness-banner path above keeps using the
-              durable QStash workflow. */}
+              prompt forming. Routed through the shared mutation so
+              `isPending` flips synchronously on click and the busy state
+              shows instantly, instead of waiting for the realtime channel's
+              first delta. */}
           <Button
             type="button"
             variant="outline"
-            onClick={() => void handleStreamRegenerate('visual')}
+            onClick={() =>
+              regeneratePromptMutation.mutate({
+                promptType: 'visual',
+                force: true,
+              })
+            }
             disabled={!frame || isRegeneratingVisualPrompt}
             className="w-full"
             aria-label="Regenerate visual prompt"
@@ -1210,7 +1220,12 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           <Button
             type="button"
             variant="outline"
-            onClick={() => void handleStreamRegenerate('motion')}
+            onClick={() =>
+              regeneratePromptMutation.mutate({
+                promptType: 'motion',
+                force: true,
+              })
+            }
             disabled={!frame || isRegeneratingMotionPrompt}
             className="w-full"
             aria-label="Regenerate motion prompt"
