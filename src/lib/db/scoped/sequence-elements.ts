@@ -10,9 +10,13 @@ import type {
   NewSequenceElement,
   SequenceElement,
 } from '@/lib/db/schema';
-import { frames, sequenceElements } from '@/lib/db/schema';
+import { frames, sequenceElements, sequences } from '@/lib/db/schema';
+import {
+  buildFrameRenameDeltas,
+  replaceTokenInText,
+} from '@/lib/sequence-elements/cascade-rename';
 import { matchElementsToScene } from '@/lib/workflows/scene-matching';
-import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, ne, or, sql } from 'drizzle-orm';
 
 export function createSequenceElementsMethods(db: Database) {
   const update = async (
@@ -59,6 +63,31 @@ export function createSequenceElementsMethods(db: Database) {
     },
 
     getByToken,
+
+    /**
+     * Throws if `token` is already taken by another element in this sequence.
+     * Use for user-driven renames where collisions must be surfaced; for
+     * system-driven renames (vision auto-suggest), use ensureUniqueToken
+     * which suffixes a `_N` instead.
+     */
+    isTokenTaken: async (
+      sequenceId: string,
+      token: string,
+      excludeElementId?: string
+    ): Promise<boolean> => {
+      const whereClauses = [
+        eq(sequenceElements.sequenceId, sequenceId),
+        eq(sequenceElements.token, token),
+      ];
+      if (excludeElementId) {
+        whereClauses.push(ne(sequenceElements.id, excludeElementId));
+      }
+      const rows = await db
+        .select({ id: sequenceElements.id })
+        .from(sequenceElements)
+        .where(and(...whereClauses));
+      return rows.length > 0;
+    },
 
     ensureUniqueToken: async (
       sequenceId: string,
@@ -162,6 +191,72 @@ export function createSequenceElementsMethods(db: Database) {
       });
     },
 
+    /**
+     * Rename an element's token and rewrite every reference to the old token
+     * across the sequence: `sequences.script`, per-frame `metadata` (continuity
+     * tags, originalScript extract, prompt strings) and the user-edit
+     * `imagePrompt`/`motionPrompt` overrides on `frames`.
+     *
+     * Returns the affected counts so callers can surface a meaningful toast
+     * ("Renamed LOGO → BRAND across 5 frames + script"). The caller is
+     * expected to have already validated uniqueness of `newToken` within the
+     * sequence — this method does not check collisions.
+     */
+    cascadeRename: async (args: {
+      sequenceId: string;
+      elementId: string;
+      oldToken: string;
+      newToken: string;
+    }): Promise<{
+      element: SequenceElement;
+      framesUpdated: number;
+      scriptUpdated: boolean;
+    }> => {
+      const { sequenceId, elementId, oldToken, newToken } = args;
+      const element = await update(elementId, { token: newToken });
+
+      if (oldToken === newToken) {
+        return { element, framesUpdated: 0, scriptUpdated: false };
+      }
+
+      let scriptUpdated = false;
+      const [sequenceRow] = await db
+        .select({ script: sequences.script })
+        .from(sequences)
+        .where(eq(sequences.id, sequenceId));
+      if (sequenceRow?.script) {
+        const rewritten = replaceTokenInText(
+          sequenceRow.script,
+          oldToken,
+          newToken
+        );
+        if (rewritten !== sequenceRow.script) {
+          await db
+            .update(sequences)
+            .set({ script: rewritten, updatedAt: new Date() })
+            .where(eq(sequences.id, sequenceId));
+          scriptUpdated = true;
+        }
+      }
+
+      const allFrames = (await db
+        .select()
+        .from(frames)
+        .where(eq(frames.sequenceId, sequenceId))) as Frame[];
+      const deltas = buildFrameRenameDeltas(allFrames, oldToken, newToken);
+      for (const delta of deltas) {
+        const set: Record<string, unknown> = { updatedAt: new Date() };
+        if (delta.metadata !== undefined) set.metadata = delta.metadata;
+        if (delta.imagePrompt !== undefined)
+          set.imagePrompt = delta.imagePrompt;
+        if (delta.motionPrompt !== undefined)
+          set.motionPrompt = delta.motionPrompt;
+        await db.update(frames).set(set).where(eq(frames.id, delta.frameId));
+      }
+
+      return { element, framesUpdated: deltas.length, scriptUpdated };
+    },
+
     delete: async (id: string): Promise<boolean> => {
       const result = await db
         .delete(sequenceElements)
@@ -210,14 +305,15 @@ export function createSequenceElementsMethods(db: Database) {
      */
     getFrameCountsByElement: async (
       sequenceId: string
-    ): Promise<Record<string, number>> => {
+    ): Promise<Record<string, { frameCount: number; videoCount: number }>> => {
       const allElements = await db
         .select()
         .from(sequenceElements)
         .where(eq(sequenceElements.sequenceId, sequenceId));
-      const counts: Record<string, number> = {};
+      const counts: Record<string, { frameCount: number; videoCount: number }> =
+        {};
       for (const el of allElements) {
-        counts[el.id] = 0;
+        counts[el.id] = { frameCount: 0, videoCount: 0 };
       }
       if (allElements.length === 0) return counts;
 
@@ -234,8 +330,12 @@ export function createSequenceElementsMethods(db: Database) {
           elementTags,
           sceneScript
         );
+        const hasVideo = !!frame.videoUrl;
         for (const el of matched) {
-          counts[el.id] = (counts[el.id] ?? 0) + 1;
+          const entry = counts[el.id];
+          if (!entry) continue;
+          entry.frameCount += 1;
+          if (hasVideo) entry.videoCount += 1;
         }
       }
       return counts;

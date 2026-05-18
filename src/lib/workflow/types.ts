@@ -880,6 +880,8 @@ export interface ElementVisionWorkflowResult {
   elementId: string;
   description: string;
   consistencyTag: string;
+  /** Final token after any vision-driven auto-rename. */
+  token: string;
 }
 
 /**

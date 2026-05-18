@@ -146,21 +146,17 @@ export function useUploadDraftElement() {
         presign.contentType,
         data.onProgress
       );
-      const token = data.file.name
-        .replace(/\.[^.]+$/, '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const finalToken = token.length > 0 ? token : 'ELEMENT';
-
       data.onAnalyzingChange?.(true);
-      let result: { description: string; consistencyTag: string };
+      let result: {
+        description: string;
+        consistencyTag: string;
+        suggestedToken: string;
+      };
       try {
         result = await analyzeDraftElementFn({
           data: {
             publicUrl: presign.publicUrl,
             filename: data.file.name,
-            token: finalToken,
           },
         });
       } finally {
@@ -171,7 +167,7 @@ export function useUploadDraftElement() {
         tempPath: presign.path,
         tempPublicUrl: presign.publicUrl,
         filename: data.file.name,
-        token: finalToken,
+        token: result.suggestedToken,
         description: result.description,
         consistencyTag: result.consistencyTag,
       };
@@ -200,10 +196,20 @@ export function useRenameSequenceElementToken() {
       sequenceId: string;
       token: string;
     }) => renameSequenceElementTokenFn({ data }),
-    onSuccess: (_res, variables) => {
+    onSuccess: (result, variables) => {
       void queryClient.invalidateQueries({
         queryKey: sequenceElementKeys.bySequence(variables.sequenceId),
       });
+      // Frames now contain the new token in metadata / prompts. Refresh
+      // anything that renders frame text or counts.
+      if (result.framesUpdated > 0) {
+        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        void queryClient.invalidateQueries({
+          queryKey: sequenceElementKeys.frameCountsBySequence(
+            variables.sequenceId
+          ),
+        });
+      }
     },
   });
 }
@@ -271,15 +277,38 @@ export function useReplaceElementProgress(
 
       if (evt.event === 'generation.replace-element:complete') {
         setEditing(false);
-        const { successCount, failedCount } = evt.data;
+        const {
+          successCount,
+          failedCount,
+          videoSuccessCount,
+          videoFailedCount,
+          renamedTo,
+        } = evt.data;
+        const displayName = renamedTo ?? token;
+        if (renamedTo && renamedTo !== token) {
+          toast.message(`Renamed ${token} → ${renamedTo}`);
+        }
         if (failedCount > 0) {
           toast.warning(
-            `${token}: ${successCount} edited, ${failedCount} failed`
+            `${displayName}: ${successCount} edited, ${failedCount} failed`
           );
         } else if (successCount > 0) {
           toast.success(
-            `${token}: edited ${successCount} frame${successCount === 1 ? '' : 's'}`
+            `${displayName}: edited ${successCount} frame${successCount === 1 ? '' : 's'}`
           );
+        }
+        const vidSuccess = videoSuccessCount ?? 0;
+        const vidFailed = videoFailedCount ?? 0;
+        if (vidSuccess > 0 || vidFailed > 0) {
+          if (vidFailed > 0) {
+            toast.warning(
+              `${displayName} videos: ${vidSuccess} regenerated, ${vidFailed} failed`
+            );
+          } else {
+            toast.success(
+              `${displayName}: regenerated ${vidSuccess} video${vidSuccess === 1 ? '' : 's'}`
+            );
+          }
         }
         if (sequenceId) {
           void queryClient.invalidateQueries({

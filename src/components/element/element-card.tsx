@@ -1,77 +1,41 @@
 import { Button } from '@/components/ui/button';
 import {
   useDeleteSequenceElement,
-  useRenameSequenceElementToken,
   useReplaceElementProgress,
-  useReplaceSequenceElement,
 } from '@/hooks/use-sequence-elements';
 import type { SequenceElement } from '@/lib/db/schema';
-import { Loader2, RefreshCw, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
-import { toast } from 'sonner';
-import { ReplaceElementConfirmDialog } from './replace-element-confirm-dialog';
+import { Loader2, Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { RenameElementDialog } from './rename-element-dialog';
+import { ReplaceElementPopover } from './replace-element-popover';
 
 type ElementCardProps = {
   element: SequenceElement;
   sequenceId: string;
   affectedFrameCount: number;
+  affectedVideoCount: number;
 };
 
 export const ElementCard: React.FC<ElementCardProps> = ({
   element,
   sequenceId,
   affectedFrameCount,
+  affectedVideoCount,
 }) => {
   const deleteMutation = useDeleteSequenceElement();
-  const renameMutation = useRenameSequenceElementToken();
-  const replaceMutation = useReplaceSequenceElement();
   const { editing: editingFrames } = useReplaceElementProgress(
     sequenceId,
     element.id,
     element.token
   );
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Reset the input so re-selecting the same file fires onChange.
-    e.target.value = '';
-    if (!file) return;
-    setPendingFile(file);
-    setConfirmOpen(true);
-  };
-
-  const handleConfirm = () => {
-    if (!pendingFile) return;
-    replaceMutation.mutate(
-      { file: pendingFile, sequenceId, elementId: element.id },
-      {
-        onSuccess: (result) => {
-          setConfirmOpen(false);
-          setPendingFile(null);
-          const count = result.affectedFrameIds.length;
-          toast.info(
-            count > 0
-              ? `Replacing ${element.token} — editing ${count} frame${count === 1 ? '' : 's'}…`
-              : `Replaced ${element.token}`
-          );
-        },
-        onError: (err) => {
-          toast.error('Failed to replace element', {
-            description: err instanceof Error ? err.message : 'Unknown error',
-          });
-        },
-      }
-    );
-  };
-
-  const isReplacing =
-    replaceMutation.isPending ||
-    editingFrames ||
-    element.visionStatus === 'analyzing';
+  const isAnalyzing =
+    element.visionStatus === 'pending' || element.visionStatus === 'analyzing';
+  const isReplacing = editingFrames || isAnalyzing;
+  const visionDone = element.visionStatus === 'completed';
+  const visionFailed = element.visionStatus === 'failed';
 
   return (
     <>
@@ -81,7 +45,7 @@ export const ElementCard: React.FC<ElementCardProps> = ({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
               <p className="text-xs text-muted-foreground">
-                {replaceMutation.isPending ? 'Uploading…' : 'Editing frames…'}
+                {isAnalyzing ? 'Analyzing…' : 'Editing frames…'}
               </p>
             </div>
           ) : null}
@@ -92,32 +56,48 @@ export const ElementCard: React.FC<ElementCardProps> = ({
           />
         </div>
         <div className="flex items-center justify-between gap-2">
-          <input
-            type="text"
-            defaultValue={element.token}
-            className="flex-1 rounded-md border border-input bg-background px-2 py-1 font-mono text-sm"
-            onBlur={(e) => {
-              const next = e.currentTarget.value.trim();
-              if (next && next.toUpperCase() !== element.token) {
-                renameMutation.mutate({
-                  elementId: element.id,
-                  sequenceId,
-                  token: next,
-                });
-              }
-            }}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
+          <div className="flex flex-1 items-center gap-2 min-w-0">
+            {visionDone ? (
+              <>
+                <span
+                  className="flex-1 truncate rounded-md border border-input bg-background px-2 py-1 font-mono text-sm"
+                  title={element.token}
+                >
+                  {element.token}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={isReplacing}
+                  aria-label={`Rename ${element.token}`}
+                  title="Rename"
+                  onClick={() => setRenameOpen(true)}
+                >
+                  <Pencil className="size-4" />
+                </Button>
+              </>
+            ) : (
+              <span className="flex-1 inline-flex items-center gap-2 rounded-md border border-input bg-muted px-2 py-1 text-sm text-muted-foreground italic">
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="size-3 animate-spin" />
+                    Naming…
+                  </>
+                ) : (
+                  'Unnamed'
+                )}
+              </span>
+            )}
+          </div>
+          <ReplaceElementPopover
+            sequenceId={sequenceId}
+            elementId={element.id}
+            token={element.token}
+            affectedFrameCount={affectedFrameCount}
+            affectedVideoCount={affectedVideoCount}
             disabled={isReplacing}
-            aria-label={`Replace ${element.token} image`}
-            title="Replace image"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <RefreshCw className="size-4" />
-          </Button>
+          />
           <Button
             type="button"
             variant="ghost"
@@ -135,13 +115,12 @@ export const ElementCard: React.FC<ElementCardProps> = ({
           </Button>
         </div>
         <div className="text-xs text-muted-foreground">
-          {element.visionStatus === 'pending' ||
-          element.visionStatus === 'analyzing' ? (
+          {isAnalyzing ? (
             <span className="inline-flex items-center gap-1">
               <Loader2 className="size-3 animate-spin" />
               Analyzing image…
             </span>
-          ) : element.visionStatus === 'failed' ? (
+          ) : visionFailed ? (
             <span className="text-destructive">
               Vision failed: {element.visionError ?? 'unknown error'}
             </span>
@@ -153,32 +132,23 @@ export const ElementCard: React.FC<ElementCardProps> = ({
           <p className="text-xs text-muted-foreground/70">
             Used in {affectedFrameCount} frame
             {affectedFrameCount === 1 ? '' : 's'}
+            {affectedVideoCount > 0
+              ? ` (${affectedVideoCount} with video)`
+              : ''}
           </p>
         ) : null}
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileSelected}
-      />
-
-      {pendingFile ? (
-        <ReplaceElementConfirmDialog
-          open={confirmOpen}
-          onOpenChange={(next) => {
-            setConfirmOpen(next);
-            if (!next) setPendingFile(null);
-          }}
-          onConfirm={handleConfirm}
-          token={element.token}
-          newFilename={pendingFile.name}
+      {visionDone && (
+        <RenameElementDialog
+          open={renameOpen}
+          onOpenChange={setRenameOpen}
+          sequenceId={sequenceId}
+          elementId={element.id}
+          currentToken={element.token}
           affectedFrameCount={affectedFrameCount}
-          isLoading={replaceMutation.isPending}
         />
-      ) : null}
+      )}
     </>
   );
 };

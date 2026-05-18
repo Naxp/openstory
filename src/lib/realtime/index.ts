@@ -195,11 +195,16 @@ export const realtimeSchema = {
     'replace-element:start': z.object({
       elementId: z.string().min(1),
       frameCount: z.number().int().nonnegative(),
+      videoCount: z.number().int().nonnegative().optional(),
     }),
     'replace-element:complete': z.object({
       elementId: z.string().min(1),
       successCount: z.number().int().nonnegative(),
       failedCount: z.number().int().nonnegative(),
+      videoSuccessCount: z.number().int().nonnegative().optional(),
+      videoFailedCount: z.number().int().nonnegative().optional(),
+      /** Token after any vision-driven auto-rename. */
+      renamedTo: z.string().min(1).optional(),
     }),
     'replace-element:failed': z.object({
       elementId: z.string().min(1),

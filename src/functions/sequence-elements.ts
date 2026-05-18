@@ -124,7 +124,6 @@ export const analyzeDraftElementFn = createServerFn({ method: 'POST' })
       z.object({
         publicUrl: z.string().url(),
         filename: z.string().min(1),
-        token: z.string().min(1).max(100),
       })
     )
   )
@@ -134,12 +133,12 @@ export const analyzeDraftElementFn = createServerFn({ method: 'POST' })
     const result = await describeElementImage({
       imageUrl: data.publicUrl,
       filename: data.filename,
-      token: data.token,
       openRouterApiKey: openRouterApiKeyInfo.key,
     });
     return {
       description: result.description,
       consistencyTag: result.consistencyTag,
+      suggestedToken: result.suggestedToken,
     };
   });
 
@@ -251,13 +250,32 @@ export const renameSequenceElementTokenFn = createServerFn({ method: 'POST' })
     }
 
     const cleaned = deriveTokenFromFilename(data.token);
-    const unique = await context.scopedDb.sequenceElements.ensureUniqueToken(
-      context.sequence.id,
-      cleaned
-    );
+    if (cleaned === element.token) {
+      return {
+        element,
+        framesUpdated: 0,
+        scriptUpdated: false,
+      };
+    }
 
-    return await context.scopedDb.sequenceElements.update(data.elementId, {
-      token: unique,
+    // User-driven rename: hard-reject on collision rather than silently
+    // suffixing — the user explicitly typed this name and expects it.
+    const taken = await context.scopedDb.sequenceElements.isTokenTaken(
+      context.sequence.id,
+      cleaned,
+      element.id
+    );
+    if (taken) {
+      throw new Error(
+        `Another element is already named "${cleaned}". Pick a different name.`
+      );
+    }
+
+    return await context.scopedDb.sequenceElements.cascadeRename({
+      sequenceId: context.sequence.id,
+      elementId: element.id,
+      oldToken: element.token,
+      newToken: cleaned,
     });
   });
 

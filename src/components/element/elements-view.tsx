@@ -113,7 +113,8 @@ export const ElementsView: React.FC<ElementsViewProps> = ({ sequenceId }) => {
               key={el.id}
               element={el}
               sequenceId={sequenceId}
-              affectedFrameCount={frameCounts?.[el.id] ?? 0}
+              affectedFrameCount={frameCounts?.[el.id]?.frameCount ?? 0}
+              affectedVideoCount={frameCounts?.[el.id]?.videoCount ?? 0}
             />
           ))}
         </div>

@@ -129,7 +129,8 @@ describe('getFrameCountsByElement', () => {
     if (!unused) throw new Error('test setup: element insert returned nothing');
 
     const result = await methods.getFrameCountsByElement(sequenceId);
-    expect(result[unused.id]).toBe(0);
+    expect(result[unused.id]?.frameCount).toBe(0);
+    expect(result[unused.id]?.videoCount).toBe(0);
   });
 
   it('counts a frame against every matched element (multi-tag frame increments each)', async () => {
@@ -192,8 +193,8 @@ describe('getFrameCountsByElement', () => {
     });
 
     const result = await methods.getFrameCountsByElement(sequenceId);
-    expect(result[logo.id]).toBe(2);
-    expect(result[bottle.id]).toBe(1);
-    expect(result[orphan.id]).toBe(0);
+    expect(result[logo.id]?.frameCount).toBe(2);
+    expect(result[bottle.id]?.frameCount).toBe(1);
+    expect(result[orphan.id]?.frameCount).toBe(0);
   });
 });
