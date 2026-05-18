@@ -29,13 +29,15 @@ import {
   type ChatMessage,
   type ChatMessageContentPart,
 } from '@/lib/prompts';
+import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { authWithTeamMiddleware } from './middleware';
+import { authWithTeamMiddleware, frameAccessMiddleware } from './middleware';
 
 const promptShorteningRateLimiter = new RateLimiter(10, 60_000);
+const sceneDurationEstimationRateLimiter = new RateLimiter(20, 60_000);
 
 const SHORTEN_PROMPT_SYSTEM = `You are an expert at condensing image generation prompts while preserving all critical visual elements.
 
@@ -154,6 +156,98 @@ export const shortenPromptFn = createServerFn({ method: 'POST' })
         ((data.prompt.length - trimmedPrompt.length) / data.prompt.length) * 100
       ),
     };
+  });
+
+// -- Estimate Scene Duration --
+
+const ESTIMATE_SCENE_DURATION_SYSTEM = `You estimate how many seconds a single scene runs as a short-form video clip. Default to short — most scenes are 3-6 seconds.
+
+Honor explicit duration cues in the script. If the script text references a length (e.g. "10 second clip", "5s", "for thirty seconds", "a brief two-second beat"), use that number directly.
+
+Otherwise:
+- Pure visual / establishing shot, no dialogue → 3-4
+- Single short action or reaction beat → 4-5
+- One spoken line → time the dialogue at ~200 spoken words per minute and add 1 second of breathing room
+- Multiple actions or lines → sum the components
+
+Avoid generous padding. Reach 10+ seconds only when the script clearly demands it. Never invent visual moments that aren't in the script.
+
+Return ONLY valid JSON: {"durationSeconds": <integer between 1 and 60>}.`;
+
+// Schema sent to the LLM as the structured-output JSON Schema. Use plain
+// `z.number()` rather than `.int()` / `.min()` / `.max()` — Zod injects
+// JS-safe-integer bounds for `.int()`, and Amazon Bedrock (one of the
+// OpenRouter providers for Sonnet) rejects ANY `minimum`/`maximum` on
+// integer types: "For 'integer' type, properties maximum, minimum are not
+// supported". Range + integer enforcement happen post-parse via clamp.
+const sceneDurationResponseSchema = z.object({
+  durationSeconds: z.number(),
+});
+
+const SCENE_DURATION_MIN = 1;
+const SCENE_DURATION_MAX = 60;
+const clampDuration = (n: number) =>
+  Math.min(SCENE_DURATION_MAX, Math.max(SCENE_DURATION_MIN, Math.round(n)));
+
+const estimateSceneDurationInputSchema = z.object({
+  sequenceId: ulidSchema,
+  frameId: ulidSchema,
+  extract: z
+    .string()
+    .min(1, 'Scene script is empty')
+    .max(5000, 'Scene script too long for estimation'),
+});
+
+export const estimateSceneDurationFn = createServerFn({ method: 'POST' })
+  .middleware([frameAccessMiddleware])
+  .inputValidator(zodValidator(estimateSceneDurationInputSchema))
+  .handler(async ({ data, context }) => {
+    enforceRateLimit(sceneDurationEstimationRateLimiter, getClientIP());
+
+    if (!getEnv().OPENROUTER_KEY) {
+      throw new Error('AI service not configured');
+    }
+
+    const analysisModel =
+      (isValidAnalysisModelId(context.sequence.analysisModel)
+        ? context.sequence.analysisModel
+        : null) ?? RECOMMENDED_MODELS.fast;
+
+    const deduct = await prepareBilling(
+      context.scopedDb,
+      `Scene duration estimate (${analysisModel})`,
+      { model: analysisModel, frameId: context.frame.id }
+    );
+
+    const sceneMetadata = context.frame.metadata?.metadata;
+    const userPrompt = [
+      sceneMetadata?.title && `Title: ${sceneMetadata.title}`,
+      sceneMetadata?.location && `Location: ${sceneMetadata.location}`,
+      sceneMetadata?.timeOfDay && `Time of day: ${sceneMetadata.timeOfDay}`,
+      sceneMetadata?.storyBeat && `Story beat: ${sceneMetadata.storyBeat}`,
+      '',
+      'Script:',
+      data.extract,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const response = await callLLM({
+      model: analysisModel,
+      messages: [
+        { role: 'system' as const, content: ESTIMATE_SCENE_DURATION_SYSTEM },
+        { role: 'user' as const, content: userPrompt },
+      ],
+      max_tokens: 50,
+      temperature: 0.2,
+      observationName: 'estimateSceneDuration',
+      userId: context.user.id,
+      responseSchema: sceneDurationResponseSchema,
+    });
+
+    await deduct?.();
+
+    return { durationSeconds: clampDuration(response.durationSeconds) };
   });
 
 // -- Enhance Script --

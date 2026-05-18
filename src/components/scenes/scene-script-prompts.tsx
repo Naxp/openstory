@@ -59,6 +59,7 @@ import { FrameStalenessBanners } from './frame-staleness-banners';
 import { SceneCastTab } from './scene-cast-tab';
 import { SceneElementsTab } from './scene-elements-tab';
 import { SceneLocationTab } from './scene-location-tab';
+import { SceneScriptTab } from './scene-script-tab';
 import { VariantSelector } from './variant-selector';
 
 export type TabValue =
@@ -192,6 +193,9 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const [editedScript, setEditedScript] = useState<string | undefined>(
     undefined
   );
+  const [editedDurationSeconds, setEditedDurationSeconds] = useState<
+    number | undefined
+  >(undefined);
   const prevScriptFrameIdRef = useRef<string | undefined>(undefined);
 
   // Previous value tracking for prop-to-state sync (refs avoid extra re-renders)
@@ -347,25 +351,46 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     });
   }, [framePromptStream.motion.status, frameId, sequenceId, queryClient]);
 
-  // Persist a scene-script edit. Sends the patched scene via `metadata`;
-  // `updateFrameFn` (server) clears stale dialogue and mirrors the change into
-  // `sequences.script`. Existing prompt-input-hash staleness lights up the
-  // Image/Motion banners automatically once the new extract lands.
+  // Persist a scene-script and/or duration edit. Sends the patched scene via
+  // `metadata`; `updateFrameFn` (server) clears stale dialogue (when extract
+  // changes) and mirrors the new extract into `sequences.script`. Existing
+  // prompt-input-hash staleness lights up the Image/Motion banners
+  // automatically once the new scene metadata lands.
   const saveScriptMutation = useMutation({
-    mutationFn: async (nextExtract: string) => {
+    mutationFn: async (input: {
+      nextExtract: string;
+      nextDurationSeconds: number | undefined;
+    }) => {
       if (!frame?.id || !frame.metadata) {
         throw new Error('frame metadata required');
       }
+      const { nextExtract, nextDurationSeconds } = input;
       const updated = await updateFrameFn({
         data: {
           sequenceId,
           frameId: frame.id,
+          ...(nextDurationSeconds !== undefined
+            ? { durationMs: Math.round(nextDurationSeconds * 1000) }
+            : {}),
           metadata: {
             ...frame.metadata,
             originalScript: {
               ...frame.metadata.originalScript,
               extract: nextExtract,
             },
+            ...(nextDurationSeconds !== undefined
+              ? {
+                  metadata: {
+                    ...(frame.metadata.metadata ?? {
+                      title: '',
+                      location: '',
+                      timeOfDay: '',
+                      storyBeat: '',
+                    }),
+                    durationSeconds: nextDurationSeconds,
+                  },
+                }
+              : {}),
           },
         },
       });
@@ -376,6 +401,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     },
     onSuccess: async (updated) => {
       setEditedScript(undefined);
+      setEditedDurationSeconds(undefined);
       queryClient.setQueryData(frameKeys.detail(updated.id), updated);
       await Promise.all([
         queryClient.invalidateQueries({
@@ -388,10 +414,10 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           queryKey: sequenceKeys.detail(sequenceId),
         }),
       ]);
-      toast.success('Scene script saved');
+      toast.success('Scene saved');
     },
     onError: (error) => {
-      toast.error('Failed to save scene script', {
+      toast.error('Failed to save scene', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     },
@@ -730,6 +756,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   if (frame?.id !== prevScriptFrameIdRef.current) {
     prevScriptFrameIdRef.current = frame?.id;
     setEditedScript(undefined);
+    setEditedDurationSeconds(undefined);
   }
 
   if (imagePrompt !== prevImagePromptRef.current) {
@@ -862,90 +889,20 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       </TabsList>
 
       <TabsContent value="script">
-        {(() => {
-          const savedScript = scriptText ?? '';
-          const currentScript = editedScript ?? savedScript;
-          const isDirty =
-            editedScript !== undefined && editedScript !== savedScript;
-          const canSave =
-            isDirty && !!frame?.metadata && !saveScriptMutation.isPending;
-          return (
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="script-extract-input"
-                    className="text-sm font-medium"
-                  >
-                    Scene script
-                  </label>
-                  <span className="text-xs text-muted-foreground">
-                    {currentScript.length} characters
-                  </span>
-                </div>
-                <div className="relative">
-                  <Textarea
-                    id="script-extract-input"
-                    value={currentScript}
-                    onChange={(e) => setEditedScript(e.target.value)}
-                    placeholder="Enter the script text for this scene…"
-                    className="min-h-[180px] resize-y pr-10"
-                    disabled={!frame || saveScriptMutation.isPending}
-                  />
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => void handleCopy(currentScript, 'script')}
-                    disabled={!currentScript}
-                    aria-label="Copy scene script"
-                    className="absolute right-1 top-1 h-8 w-8"
-                  >
-                    {copiedTab === 'script' ? (
-                      <span className="text-xs">✓</span>
-                    ) : (
-                      <CopyIcon className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setEditedScript(undefined)}
-                  disabled={!isDirty || saveScriptMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => saveScriptMutation.mutate(currentScript)}
-                  disabled={!canSave}
-                >
-                  {saveScriptMutation.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  {saveScriptMutation.isPending ? 'Saving…' : 'Save'}
-                </Button>
-              </div>
-
-              {isDirty && (
-                <p className="text-xs text-muted-foreground">
-                  Saving will mark the image and motion prompts as stale.
-                </p>
-              )}
-
-              {frame?.durationMs !== undefined &&
-                frame.durationMs !== null &&
-                frame.durationMs > 0 && (
-                  <div className="text-xs text-muted-foreground">
-                    Duration: {(frame.durationMs / 1000).toFixed(1)}s
-                  </div>
-                )}
-            </div>
-          );
-        })()}
+        <SceneScriptTab
+          frame={frame}
+          sequenceId={sequenceId}
+          scriptText={scriptText}
+          motionModel={selectedMotionModel || DEFAULT_VIDEO_MODEL}
+          editedScript={editedScript}
+          onEditedScriptChange={setEditedScript}
+          editedDurationSeconds={editedDurationSeconds}
+          onEditedDurationChange={setEditedDurationSeconds}
+          isSaving={saveScriptMutation.isPending}
+          onSave={(payload) => saveScriptMutation.mutate(payload)}
+          isCopied={copiedTab === 'script'}
+          onCopy={(text) => void handleCopy(text, 'script')}
+        />
       </TabsContent>
 
       <TabsContent value="image-prompt">

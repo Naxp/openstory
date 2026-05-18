@@ -15,6 +15,7 @@ import {
 import { estimateVideoCost } from '@/lib/billing/cost-estimation';
 import { multiplyMicros, usdToMicros } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
+import { resolveFrameDuration } from '@/lib/motion/resolve-frame-duration';
 import { snapDuration } from '@/lib/motion/motion-generation';
 import { generateMotionSchema } from '@/lib/schemas/frame.schemas';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
@@ -75,7 +76,17 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
       }
     }
 
-    const duration = data.duration ?? snapDuration(undefined, model);
+    // Snap the resolved duration onto the selected model's valid set before
+    // both the credit pre-flight and the workflow input — otherwise an
+    // unsnapped value (e.g. legacy `durationMs` from a different model) gets
+    // priced at the raw seconds while the workflow bills against the snapped
+    // value, leaving the two paths inconsistent.
+    const duration = resolveFrameDuration({
+      explicit: data.duration,
+      durationMs: frame.durationMs,
+      metadataSeconds: frame.metadata?.metadata?.durationSeconds,
+      model,
+    });
 
     await requireCredits(context.scopedDb, estimateVideoCost(model, duration), {
       errorMessage: 'Insufficient credits for motion generation',

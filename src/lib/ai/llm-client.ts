@@ -66,6 +66,9 @@ export type LLMRequestParams<T = unknown> = {
   apiKey?: string;
   /** OpenRouter plugins (e.g. web search) to enable for this request */
   plugins?: Array<{ id: 'web'; max_results?: number }>;
+
+  /** Debug mode for LLM client */
+  debug?: boolean;
 };
 
 /**
@@ -92,14 +95,10 @@ export function modelSupportsStructuredOutputs(model: string): boolean {
   return STRUCTURED_OUTPUT_MODELS.has(model);
 }
 
-const DEFAULT_PROVIDER: ProviderPreference = {
-  order: ['Cerebras'],
-};
-
 export const RECOMMENDED_MODELS = {
   creative: 'anthropic/claude-sonnet-4.6',
   structured: 'anthropic/claude-sonnet-4.6',
-  fast: 'google/gemini-3-flash-preview',
+  fast: 'anthropic/claude-sonnet-4.6',
   premium: 'anthropic/claude-sonnet-4.6',
 } as const;
 
@@ -141,7 +140,7 @@ function convertMessages(messages: ChatMessage[]): {
 
 function buildModelOptions(params: LLMRequestParams) {
   return {
-    provider: params.provider ?? DEFAULT_PROVIDER,
+    ...(params.provider && { provider: params.provider }),
     frequency_penalty: params.frequency_penalty,
     presence_penalty: params.presence_penalty,
     ...(params.plugins && { plugins: params.plugins }),
@@ -178,7 +177,7 @@ function baseChatOptions(params: LLMRequestParams) {
     temperature: params.temperature,
     topP: params.top_p,
     modelOptions: buildModelOptions(params),
-    debug: false as const,
+    debug: params.debug ?? false,
   };
 }
 
