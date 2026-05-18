@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import {
   useDeleteSequenceElement,
   useRenameSequenceElementToken,
+  useReplaceElementProgress,
   useReplaceSequenceElement,
 } from '@/hooks/use-sequence-elements';
 import type { SequenceElement } from '@/lib/db/schema';
@@ -24,6 +25,11 @@ export const ElementCard: React.FC<ElementCardProps> = ({
   const deleteMutation = useDeleteSequenceElement();
   const renameMutation = useRenameSequenceElementToken();
   const replaceMutation = useReplaceSequenceElement();
+  const { editing: editingFrames } = useReplaceElementProgress(
+    sequenceId,
+    element.id,
+    element.token
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -47,9 +53,9 @@ export const ElementCard: React.FC<ElementCardProps> = ({
           setConfirmOpen(false);
           setPendingFile(null);
           const count = result.affectedFrameIds.length;
-          toast.success(
+          toast.info(
             count > 0
-              ? `Replaced ${element.token} — editing ${count} frame${count === 1 ? '' : 's'}…`
+              ? `Replacing ${element.token} — editing ${count} frame${count === 1 ? '' : 's'}…`
               : `Replaced ${element.token}`
           );
         },
@@ -63,7 +69,9 @@ export const ElementCard: React.FC<ElementCardProps> = ({
   };
 
   const isReplacing =
-    replaceMutation.isPending || element.visionStatus === 'analyzing';
+    replaceMutation.isPending ||
+    editingFrames ||
+    element.visionStatus === 'analyzing';
 
   return (
     <>

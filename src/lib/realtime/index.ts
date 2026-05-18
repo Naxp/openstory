@@ -193,17 +193,17 @@ export const realtimeSchema = {
 
     // Replace-element events: edit affected frames to swap an element
     'replace-element:start': z.object({
-      elementId: z.string(),
-      frameCount: z.number(),
+      elementId: z.string().min(1),
+      frameCount: z.number().int().nonnegative(),
     }),
     'replace-element:complete': z.object({
-      elementId: z.string(),
-      successCount: z.number(),
-      failedCount: z.number(),
+      elementId: z.string().min(1),
+      successCount: z.number().int().nonnegative(),
+      failedCount: z.number().int().nonnegative(),
     }),
     'replace-element:failed': z.object({
-      elementId: z.string(),
-      error: z.string(),
+      elementId: z.string().min(1),
+      error: z.string().min(1),
     }),
 
     // Location matching events
@@ -328,6 +328,16 @@ export const realtimeSchema = {
  */
 export type StaleDetectedPayload = z.infer<
   (typeof realtimeSchema.generation)['stale:detected']
+>;
+
+export type ReplaceElementStartPayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:start']
+>;
+export type ReplaceElementCompletePayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:complete']
+>;
+export type ReplaceElementFailedPayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:failed']
 >;
 
 let realtimeInstance: ReturnType<typeof createRealtime> | null = null;

@@ -11,8 +11,30 @@ import {
   replaceSequenceElementFn,
 } from '@/functions/sequence-elements';
 import type { SequenceElement } from '@/lib/db/schema';
+import type {
+  ReplaceElementCompletePayload,
+  ReplaceElementFailedPayload,
+  ReplaceElementStartPayload,
+} from '@/lib/realtime';
+import { useRealtime } from '@/lib/realtime/client';
 import { putToR2 } from '@/lib/utils/upload';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
+
+type ReplaceElementEvent =
+  | {
+      event: 'generation.replace-element:start';
+      data: ReplaceElementStartPayload;
+    }
+  | {
+      event: 'generation.replace-element:complete';
+      data: ReplaceElementCompletePayload;
+    }
+  | {
+      event: 'generation.replace-element:failed';
+      data: ReplaceElementFailedPayload;
+    };
 
 export const sequenceElementKeys = {
   all: ['sequence-elements'] as const,
@@ -32,7 +54,6 @@ export function useSequenceElements(sequenceId: string | undefined) {
     queryFn: () =>
       listSequenceElementsFn({ data: { sequenceId: sequenceId ?? '' } }),
     enabled: Boolean(sequenceId),
-    // Poll while vision is still analyzing
     refetchInterval: (query) => {
       const data = query.state.data as SequenceElement[] | undefined;
       if (!data) return false;
@@ -223,6 +244,80 @@ export function useFrameIdsForElement(
 }
 
 /**
+ * Subscribes to `replace-element:start|complete|failed` for one element so
+ * the card can show a spinner across the whole flow (server-fn → :start →
+ * vision → per-frame edits → :complete) and surface a final-state toast.
+ *
+ * Without this hook the card's `isReplacing` clears the moment vision flips
+ * to `completed`, hiding the per-frame edit phase from the user — and any
+ * post-vision failure becomes user-invisible.
+ */
+export function useReplaceElementProgress(
+  sequenceId: string | undefined,
+  elementId: string,
+  token: string
+): { editing: boolean } {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+
+  const onData = useCallback(
+    (evt: ReplaceElementEvent) => {
+      if (evt.data.elementId !== elementId) return;
+
+      if (evt.event === 'generation.replace-element:start') {
+        setEditing(true);
+        return;
+      }
+
+      if (evt.event === 'generation.replace-element:complete') {
+        setEditing(false);
+        const { successCount, failedCount } = evt.data;
+        if (failedCount > 0) {
+          toast.warning(
+            `${token}: ${successCount} edited, ${failedCount} failed`
+          );
+        } else if (successCount > 0) {
+          toast.success(
+            `${token}: edited ${successCount} frame${successCount === 1 ? '' : 's'}`
+          );
+        }
+        if (sequenceId) {
+          void queryClient.invalidateQueries({
+            queryKey: sequenceElementKeys.bySequence(sequenceId),
+          });
+        }
+        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        return;
+      }
+
+      setEditing(false);
+      toast.error(`Replace failed for ${token}`, {
+        description: evt.data.error,
+      });
+      if (sequenceId) {
+        void queryClient.invalidateQueries({
+          queryKey: sequenceElementKeys.bySequence(sequenceId),
+        });
+      }
+    },
+    [elementId, token, sequenceId, queryClient]
+  );
+
+  useRealtime({
+    channels: sequenceId ? [sequenceId] : [],
+    events: [
+      'generation.replace-element:start',
+      'generation.replace-element:complete',
+      'generation.replace-element:failed',
+    ] as const,
+    onData,
+    enabled: Boolean(sequenceId),
+  });
+
+  return { editing };
+}
+
+/**
  * Replace an element image: presign → R2 → finalize.
  * Triggers per-frame image edits via the replace-element workflow.
  */
@@ -269,7 +364,6 @@ export function useReplaceSequenceElement() {
           variables.sequenceId
         ),
       });
-      // Affected frames will be edited; refresh frame views.
       void queryClient.invalidateQueries({ queryKey: ['frames'] });
     },
   });

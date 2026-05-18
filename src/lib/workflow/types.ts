@@ -893,6 +893,8 @@ export interface ElementVisionWorkflowResult {
  * regenerate the frame).
  */
 export interface ReplaceElementWorkflowInput extends SequenceWorkflowContext {
+  /** Always present for this workflow — narrowed from the optional base type. */
+  sequenceId: string;
   elementId: string;
   /** Token of the element being replaced (for logging + edit prompt) */
   token: string;
@@ -910,6 +912,6 @@ export interface ReplaceElementWorkflowInput extends SequenceWorkflowContext {
 
 export interface ReplaceElementWorkflowResult {
   elementId: string;
-  framesEdited: number;
-  framesFailed: number;
+  successCount: number;
+  failedCount: number;
 }

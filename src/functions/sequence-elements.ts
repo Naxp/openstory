@@ -27,7 +27,10 @@ import { authWithTeamMiddleware, sequenceAccessMiddleware } from './middleware';
  * practical blast radius is small, but rejecting `..` and `//` segments closes
  * the namespace boundary explicitly.
  */
-function isValidElementStoragePath(path: string, teamId: string): boolean {
+export function isValidElementStoragePath(
+  path: string,
+  teamId: string
+): boolean {
   const prefix = `elements/${teamId}/`;
   if (!path.startsWith(prefix)) return false;
   const rest = path.slice(prefix.length);
@@ -177,15 +180,26 @@ export const finalizeElementUploadFn = createServerFn({ method: 'POST' })
       visionStatus: 'pending',
     });
 
-    // Kick off vision workflow — do not block the upload response.
-    await triggerElementVision(
-      element.id,
-      element.sequenceId,
-      element.imageUrl,
-      element.uploadedFilename,
-      context.teamId,
-      context.user.id
-    );
+    // If the QStash trigger fails, mark the row failed before re-throwing —
+    // otherwise the element would poll forever in `pending`.
+    try {
+      await triggerElementVision(
+        element.id,
+        element.sequenceId,
+        element.imageUrl,
+        element.uploadedFilename,
+        context.teamId,
+        context.user.id
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      await context.scopedDb.sequenceElements.updateVisionStatus(
+        element.id,
+        'failed',
+        message
+      );
+      throw err;
+    }
 
     return element;
   });
@@ -346,10 +360,10 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
       affectedFrameIds,
     };
 
-    // Workflow emits :start/:complete/:failed exclusively (matches the recast
-    // pattern). If the trigger throws here, the element is stranded in
-    // `analyzing` — recover by marking vision failed and emitting :failed so
-    // any UI subscriber sees a final lifecycle event.
+    // If the trigger throws, the row is stranded in `analyzing` — restore
+    // status and emit :failed so subscribers see a terminal lifecycle event.
+    // Each side effect is isolated so a Turso/Redis blip can't replace the
+    // original `err` with a downstream error the user can't act on.
     let workflowRunId: string;
     try {
       workflowRunId = await triggerWorkflow('/replace-element', workflowInput, {
@@ -357,15 +371,26 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      await context.scopedDb.sequenceElements.updateVisionStatus(
-        data.elementId,
-        'failed',
-        message
-      );
-      await getGenerationChannel(context.sequence.id).emit(
-        'generation.replace-element:failed',
-        { elementId: data.elementId, error: message }
-      );
+      try {
+        await context.scopedDb.sequenceElements.updateVisionStatus(
+          data.elementId,
+          'failed',
+          message
+        );
+      } catch (e) {
+        console.error(
+          '[replaceSequenceElementFn] persist failed status threw:',
+          e
+        );
+      }
+      try {
+        await getGenerationChannel(context.sequence.id).emit(
+          'generation.replace-element:failed',
+          { elementId: data.elementId, error: message }
+        );
+      } catch (e) {
+        console.error('[replaceSequenceElementFn] emit :failed threw:', e);
+      }
       throw err;
     }
 

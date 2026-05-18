@@ -3,7 +3,6 @@
  * Element CRUD for per-sequence uploaded reference images.
  */
 
-import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import type { Database } from '@/lib/db/client';
 import type {
   ElementVisionStatus,
@@ -13,6 +12,7 @@ import type {
 } from '@/lib/db/schema';
 import { frames, sequenceElements } from '@/lib/db/schema';
 import { matchElementsToScene } from '@/lib/workflows/scene-matching';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 
 export function createSequenceElementsMethods(db: Database) {
   const update = async (
@@ -82,6 +82,8 @@ export function createSequenceElementsMethods(db: Database) {
       const taken = new Set(rows.map((r) => r.token));
       if (!taken.has(token)) return token;
 
+      // Hard cap — 100 is well above any realistic upload-of-same-name count
+      // and bounds the worst-case query path.
       for (let suffix = 2; suffix <= 100; suffix += 1) {
         const candidate = `${token}_${suffix}`;
         if (!taken.has(candidate)) return candidate;
@@ -190,7 +192,7 @@ export function createSequenceElementsMethods(db: Database) {
       return (allFrames as Frame[])
         .filter((frame) => {
           const elementTags = frame.metadata?.continuity?.elementTags ?? [];
-          const sceneScript = frame.metadata?.originalScript.extract ?? '';
+          const sceneScript = frame.metadata?.originalScript?.extract ?? '';
           return (
             matchElementsToScene([element], elementTags, sceneScript).length > 0
           );
@@ -200,10 +202,11 @@ export function createSequenceElementsMethods(db: Database) {
 
     /**
      * Frame counts for *all* elements in a sequence, computed in a single
-     * scan over frames + elements. The elements grid renders N cards, each of
-     * which previously called `getFrameIdsForElement` — an N+1 over the full
-     * frame set. Returns a token→count map (elementId would re-issue per
-     * element on the client; the grid only needs counts).
+     * scan over frames + elements. The elements grid renders N cards, each
+     * of which previously called `getFrameIdsForElement` — an N+1 over the
+     * full frame set. Returns an `elementId → count` map; elements with zero
+     * matches are pre-seeded so the grid can render `Used in 0 frames`
+     * instead of `undefined`.
      */
     getFrameCountsByElement: async (
       sequenceId: string
