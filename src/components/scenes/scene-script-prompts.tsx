@@ -891,6 +891,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       <TabsContent value="script">
         <SceneScriptTab
           frame={frame}
+          sequenceId={sequenceId}
           scriptText={scriptText}
           motionModel={selectedMotionModel || DEFAULT_VIDEO_MODEL}
           editedScript={editedScript}

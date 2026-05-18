@@ -33,9 +33,11 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { authWithTeamMiddleware } from './middleware';
+import { ulidSchema } from '@/lib/schemas/id.schemas';
+import { authWithTeamMiddleware, frameAccessMiddleware } from './middleware';
 
 const promptShorteningRateLimiter = new RateLimiter(10, 60_000);
+const sceneDurationEstimationRateLimiter = new RateLimiter(20, 60_000);
 
 const SHORTEN_PROMPT_SYSTEM = `You are an expert at condensing image generation prompts while preserving all critical visual elements.
 
@@ -154,6 +156,87 @@ export const shortenPromptFn = createServerFn({ method: 'POST' })
         ((data.prompt.length - trimmedPrompt.length) / data.prompt.length) * 100
       ),
     };
+  });
+
+// -- Estimate Scene Duration --
+
+const ESTIMATE_SCENE_DURATION_SYSTEM = `You estimate how many seconds a single scene should run when produced as a short visual sequence.
+
+Consider:
+- Spoken dialogue at ~150 words per minute
+- Action density: terse beats run shorter, descriptive action runs longer
+- Visual moments implied by the writing (establishing shots, reactions, transitions)
+- Typical pacing for short-form video scenes is 3-15 seconds
+
+Return ONLY valid JSON: {"durationSeconds": <integer between 1 and 60>}.`;
+
+const sceneDurationResponseSchema = z.object({
+  durationSeconds: z.number().int().min(1).max(60),
+});
+
+const estimateSceneDurationInputSchema = z.object({
+  sequenceId: ulidSchema,
+  frameId: ulidSchema,
+  extract: z
+    .string()
+    .min(1, 'Scene script is empty')
+    .max(5000, 'Scene script too long for estimation'),
+});
+
+export const estimateSceneDurationFn = createServerFn({ method: 'POST' })
+  .middleware([frameAccessMiddleware])
+  .inputValidator(zodValidator(estimateSceneDurationInputSchema))
+  .handler(async ({ data, context }) => {
+    enforceRateLimit(sceneDurationEstimationRateLimiter, getClientIP());
+
+    if (!getEnv().OPENROUTER_KEY) {
+      throw new Error('AI service not configured');
+    }
+
+    const analysisModel =
+      (isValidAnalysisModelId(context.sequence.analysisModel)
+        ? context.sequence.analysisModel
+        : null) ?? RECOMMENDED_MODELS.fast;
+
+    const deduct = await prepareBilling(
+      context.scopedDb,
+      `Scene duration estimate (${analysisModel})`,
+      { model: analysisModel, frameId: context.frame.id }
+    );
+
+    const sceneMetadata = context.frame.metadata?.metadata;
+    const userPrompt = [
+      sceneMetadata?.title && `Title: ${sceneMetadata.title}`,
+      sceneMetadata?.location && `Location: ${sceneMetadata.location}`,
+      sceneMetadata?.timeOfDay && `Time of day: ${sceneMetadata.timeOfDay}`,
+      sceneMetadata?.storyBeat && `Story beat: ${sceneMetadata.storyBeat}`,
+      '',
+      'Script:',
+      data.extract,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const response = await callLLM({
+      model: analysisModel,
+      messages: [
+        { role: 'system' as const, content: ESTIMATE_SCENE_DURATION_SYSTEM },
+        { role: 'user' as const, content: userPrompt },
+      ],
+      max_tokens: 100,
+      temperature: 0.2,
+      observationName: 'estimateSceneDuration',
+      userId: context.user.id,
+      responseSchema: sceneDurationResponseSchema,
+    });
+
+    await deduct?.();
+
+    if (!response) {
+      throw new Error('No response received from AI service');
+    }
+
+    return { durationSeconds: response.durationSeconds };
   });
 
 // -- Enhance Script --

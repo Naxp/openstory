@@ -14,12 +14,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { estimateSceneDurationFn } from '@/functions/ai';
 import { IMAGE_TO_VIDEO_MODELS, type ImageToVideoModel } from '@/lib/ai/models';
 import { MOTION_JSON_SCHEMAS } from '@/lib/motion/endpoint-map';
 import { snapDuration } from '@/lib/motion/motion-generation';
 import { getDurationValues, numericOf } from '@/lib/motion/motion-transform';
 import type { Frame } from '@/types/database';
-import { CopyIcon, Loader2 } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { CopyIcon, Loader2, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 
 export type SceneScriptTabSavePayload = {
   nextExtract: string;
@@ -28,6 +31,7 @@ export type SceneScriptTabSavePayload = {
 
 type SceneScriptTabProps = {
   frame: Frame | undefined;
+  sequenceId: string;
   scriptText: string | undefined;
   motionModel: ImageToVideoModel;
   editedScript: string | undefined;
@@ -42,6 +46,7 @@ type SceneScriptTabProps = {
 
 export const SceneScriptTab: React.FC<SceneScriptTabProps> = ({
   frame,
+  sequenceId,
   scriptText,
   motionModel,
   editedScript,
@@ -80,8 +85,35 @@ export const SceneScriptTab: React.FC<SceneScriptTabProps> = ({
       ? editedDurationSeconds !== savedDurationSeconds
       : isSavedOutOfRange;
 
+  const estimateMutation = useMutation({
+    mutationFn: async () => {
+      if (!frame?.id) throw new Error('frame required');
+      if (!currentScript.trim()) throw new Error('script is empty');
+      return estimateSceneDurationFn({
+        data: {
+          sequenceId,
+          frameId: frame.id,
+          extract: currentScript,
+        },
+      });
+    },
+    onSuccess: ({ durationSeconds }) => {
+      const snapped = snapDuration(durationSeconds, motionModel);
+      onEditedDurationChange(snapped);
+      toast.success(`Suggested duration: ${snapped}s`);
+    },
+    onError: (error) => {
+      toast.error('Duration estimate failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    },
+  });
+
   const isDirty = isScriptDirty || isDurationDirty;
-  const canSave = isDirty && !!frame?.metadata && !isSaving;
+  const isEstimating = estimateMutation.isPending;
+  const canSave = isDirty && !!frame?.metadata && !isSaving && !isEstimating;
+  const canEstimate =
+    !!frame && !!currentScript.trim() && !isSaving && !isEstimating;
 
   const handleCancel = () => {
     onEditedScriptChange(undefined);
@@ -136,22 +168,37 @@ export const SceneScriptTab: React.FC<SceneScriptTabProps> = ({
         <label htmlFor="scene-duration-input" className="text-sm font-medium">
           Duration (seconds)
         </label>
-        <Select
-          value={String(currentDurationSeconds)}
-          onValueChange={(value) => onEditedDurationChange(Number(value))}
-          disabled={!frame || isSaving}
-        >
-          <SelectTrigger id="scene-duration-input" className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {durationOptions.map((seconds) => (
-              <SelectItem key={seconds} value={String(seconds)}>
-                {seconds}s
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select
+            value={String(currentDurationSeconds)}
+            onValueChange={(value) => onEditedDurationChange(Number(value))}
+            disabled={!frame || isSaving || isEstimating}
+          >
+            <SelectTrigger id="scene-duration-input" className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {durationOptions.map((seconds) => (
+                <SelectItem key={seconds} value={String(seconds)}>
+                  {seconds}s
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => estimateMutation.mutate()}
+            disabled={!canEstimate}
+          >
+            {isEstimating ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="mr-2 h-4 w-4" />
+            )}
+            {isEstimating ? 'Estimating…' : 'Estimate'}
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center justify-end gap-2">
