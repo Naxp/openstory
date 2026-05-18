@@ -481,7 +481,6 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
       });
     }
 
-    console.log('[MotionWorkflow] Motion generation workflow completed');
     // Return the video URL and duration
     return { videoUrl, duration };
   },

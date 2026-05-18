@@ -1,10 +1,5 @@
 import { Info } from 'lucide-react';
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type {
@@ -79,7 +74,6 @@ export const DivergentAlternateBanner: React.FC<
 
   return (
     <Alert
-      role="status"
       aria-live="polite"
       data-slot="divergent-alternate-banner"
       data-density="inline"
@@ -94,7 +88,7 @@ export const DivergentAlternateBanner: React.FC<
         An alternate {ARTIFACT_LABEL[artifact]} was generated with the inputs
         you had at the time.
       </AlertDescription>
-      <AlertAction className="flex items-center gap-1">
+      <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onCompare}>
           Compare
         </Button>
@@ -108,7 +102,7 @@ export const DivergentAlternateBanner: React.FC<
             Discard
           </Button>
         )}
-      </AlertAction>
+      </div>
     </Alert>
   );
 };

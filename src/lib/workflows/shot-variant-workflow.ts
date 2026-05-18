@@ -170,7 +170,11 @@ export const generateShotVariantWorkflow = createScopedWorkflow<
       });
     });
 
-    let imageUrl: string = imageResult.imageUrls[0];
+    const generatedImageUrl = imageResult.imageUrls[0];
+    if (!generatedImageUrl) {
+      throw new Error('Image generation did not return any image URLs');
+    }
+    let imageUrl: string = generatedImageUrl;
 
     if (input.frameId && input.sequenceId && input.teamId) {
       await context.run('upload-to-storage', async () => {
@@ -245,8 +249,6 @@ export const generateShotVariantWorkflow = createScopedWorkflow<
         return { url: result.url, path: result.path };
       });
     }
-
-    console.log('[ShotVariantWorkflow]', 'Image generation workflow completed');
 
     // Return workflow result
     const result: ShotVariantWorkflowResult = {
