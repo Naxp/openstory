@@ -17,11 +17,6 @@
  *     two parallel `spawnAndAwaitChild` calls (Pattern 3 from
  *     docs/investigations/cloudflare-workflows.md §4 Gap A).
  *
- * NOTE: the `motion-prompts` workflow IS NOT yet ported as a CF workflow —
- * only the per-scene leaf (`motion-prompt-scene`) exists. Until the
- * Pattern 3 batch lands a CF-native parent for it, the motion-prompts arm
- * of the fan-out throws `NonRetryableError` from inside a `step.do` so the
- * engine registry keeps this workflow routed via QStash.
  *
  * The QStash version stays as-is — both run side by side until
  * `engine-registry.ts` flips `motion-music-prompts` to `'cloudflare'`. See
@@ -39,6 +34,7 @@ import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type {
   MotionMusicPromptsWorkflowInput,
   MotionMusicPromptsWorkflowResult,
+  MotionPromptWorkflowInput,
   MusicPromptWorkflowInput,
   MusicPromptWorkflowResult,
 } from '@/lib/workflow/types';
@@ -62,6 +58,12 @@ export class MotionMusicPromptsWorkflow extends OpenStoryWorkflowEntrypoint<Moti
       sequenceId,
       userId,
       teamId,
+      aspectRatio,
+      characterBible,
+      locationBible,
+      elementBible,
+      styleConfig,
+      frameMapping,
     } = input;
 
     const modelKey = videoModel || DEFAULT_VIDEO_MODEL;
@@ -90,28 +92,40 @@ export class MotionMusicPromptsWorkflow extends OpenStoryWorkflowEntrypoint<Moti
     // Build scene summaries for music design (uses snapped durations).
     const sceneSummaries = buildMusicSceneSummaries(scenesWithSnappedDurations);
 
-    // Run motion prompts and music design in parallel.
-    //
-    // `motion-prompts` is not yet ported as a CF parent workflow — only the
-    // per-scene leaf is — so we stub it inside a `step.do` with a
-    // `NonRetryableError`. The dispatcher keeps this workflow on QStash via
-    // engine-registry until the Pattern 3 batch lands a CF-native parent.
-    //
-    // `music-prompt` IS ported (see `cf/music-prompt-workflow.ts`); we spawn
-    // it via `spawnAndAwaitChild` so the two arms run concurrently.
+    // Run motion prompts and music design in parallel via Pattern 3.
     const musicBinding = this.env.MUSIC_PROMPT_WORKFLOW;
-    if (!musicBinding) {
+    const motionBinding = this.env.MOTION_PROMPT_WORKFLOW;
+    if (!musicBinding || !motionBinding) {
       throw new WorkflowValidationError(
-        '[MotionMusicPromptsWorkflow:cf] MUSIC_PROMPT_WORKFLOW binding missing on env; check wrangler.jsonc'
+        '[MotionMusicPromptsWorkflow:cf] MUSIC_PROMPT_WORKFLOW or MOTION_PROMPT_WORKFLOW binding missing on env; check wrangler.jsonc'
       );
     }
 
     const [motionPrompts, musicDesign] = await Promise.all([
-      step.do('motion-prompts', async (): Promise<MotionPromptsResult> => {
-        throw new NonRetryableError(
-          'Child invocation pending Pattern 3 batch; route this workflow via QStash',
-          'WorkflowValidationError'
-        );
+      spawnAndAwaitChild<MotionPromptWorkflowInput, MotionPromptsResult>(step, {
+        binding: motionBinding as Workflow<
+          MotionPromptWorkflowInput & {
+            _parent: import('@/lib/workflow/cf/await-child').ParentNotifyHint;
+          }
+        >,
+        parentBindingName: 'MOTION_MUSIC_PROMPTS_WORKFLOW',
+        parentInstanceId: event.instanceId,
+        childId: `motion-prompts:${sequenceId}`,
+        childPayload: {
+          userId,
+          teamId,
+          sequenceId,
+          scenes: scenesWithSnappedDurations,
+          aspectRatio,
+          characterBible,
+          locationBible,
+          elementBible,
+          styleConfig,
+          analysisModelId,
+          frameMapping,
+        },
+        spawnStepName: 'spawn-motion-prompts',
+        awaitStepName: 'await-motion-prompts',
       }),
       spawnAndAwaitChild<MusicPromptWorkflowInput, MusicPromptWorkflowResult>(
         step,
