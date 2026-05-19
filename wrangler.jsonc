@@ -109,5 +109,10 @@
       "binding": "VISUAL_PROMPT_SCENE_WORKFLOW",
       "class_name": "VisualPromptSceneWorkflow",
     },
+    {
+      "name": "motion-prompt-scene-workflow",
+      "binding": "MOTION_PROMPT_SCENE_WORKFLOW",
+      "class_name": "MotionPromptSceneWorkflow",
+    },
   ],
 }

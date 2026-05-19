@@ -24,6 +24,7 @@ export { LibraryLocationSheetWorkflow } from '@/lib/workflows/cf/library-locatio
 export { ShotVariantWorkflow } from '@/lib/workflows/cf/shot-variant-workflow';
 export { UpscaleShotVariantWorkflow } from '@/lib/workflows/cf/upscale-shot-variant-workflow';
 export { VisualPromptSceneWorkflow } from '@/lib/workflows/cf/visual-prompt-scene-workflow';
+export { MotionPromptSceneWorkflow } from '@/lib/workflows/cf/motion-prompt-scene-workflow';
 
 export default {
   fetch(request: Request) {
