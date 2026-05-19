@@ -1,0 +1,23 @@
+name: Workflow lint
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+
+jobs:
+  no-pull-request-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Reject pull_request_target trigger
+        run: |
+          # Exclude this lint workflow itself so the literal in the error
+          # message below doesn't self-match.
+          if grep -rn --exclude='workflow-lint.yml' 'pull_request_target' .github/workflows/; then
+            echo '::error::pull_request_target is not allowed in this repo.'
+            echo 'It runs base-branch workflow code with secrets in the context of fork PRs and is a known secret-leak vector.'
+            echo 'See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/'
+            exit 1
+          fi
