@@ -29,12 +29,12 @@ import type { ScopedDb } from '@/lib/db/scoped';
 import { reinforceInstrumentalTags } from '@/lib/prompts/music-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
-import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type {
   MusicPromptWorkflowInput,
   MusicPromptWorkflowResult,
 } from '@/lib/workflow/types';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
 
 export class MusicPromptWorkflow extends OpenStoryWorkflowEntrypoint<MusicPromptWorkflowInput> {
   protected override async runImpl(
@@ -51,11 +51,16 @@ export class MusicPromptWorkflow extends OpenStoryWorkflowEntrypoint<MusicPrompt
     // and has no CF equivalent yet — porting it is the Pattern 3 batch.
     // Until then we surface a non-retryable validation error so the
     // dispatcher falls back to QStash and the instance fails fast on CF.
+    // Use CF's `NonRetryableError` directly so the step machinery doesn't
+    // retry the stub up to 5×. `WorkflowValidationError` would also surface
+    // as non-retryable at the runImpl boundary (the base class re-wraps),
+    // but only AFTER the step has burned its retry budget.
     const musicDesignResult: MusicPromptWorkflowResult = await step.do(
       'music-prompt-generation',
       async (): Promise<MusicPromptWorkflowResult> => {
-        throw new WorkflowValidationError(
-          'Child invocation pending Pattern 3 batch; route this workflow via QStash'
+        throw new NonRetryableError(
+          'Child invocation pending Pattern 3 batch; route this workflow via QStash',
+          'WorkflowValidationError'
         );
       }
     );

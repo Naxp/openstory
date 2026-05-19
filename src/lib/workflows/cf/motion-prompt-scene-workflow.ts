@@ -26,9 +26,9 @@ import type { MotionPrompt } from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getFramePromptChannel, getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
-import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
 
 type MotionPromptSceneWorkflowResult = {
   sceneId: string;
@@ -87,11 +87,16 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
     // has not been ported yet. Stub the LLM step so the engine registry keeps
     // this workflow on QStash until the Pattern 3 batch lands a CF-native
     // helper.
+    // Use CF's `NonRetryableError` directly so the step machinery doesn't
+    // retry the stub. `WorkflowValidationError` would also surface as
+    // non-retryable at the runImpl boundary (the base class re-wraps), but
+    // only AFTER the step has burned its retry budget.
     const motionPrompt: MotionPrompt = await step.do(
       'motion-prompts',
       async () => {
-        throw new WorkflowValidationError(
-          'Child invocation pending Pattern 3 batch; route this workflow via QStash'
+        throw new NonRetryableError(
+          'Child invocation pending Pattern 3 batch; route this workflow via QStash',
+          'WorkflowValidationError'
         );
       }
     );
