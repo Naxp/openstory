@@ -27,6 +27,17 @@ export { VisualPromptSceneWorkflow } from '@/lib/workflows/cf/visual-prompt-scen
 export { MotionPromptSceneWorkflow } from '@/lib/workflows/cf/motion-prompt-scene-workflow';
 export { MusicPromptWorkflow } from '@/lib/workflows/cf/music-prompt-workflow';
 export { RecastCharacterWorkflow } from '@/lib/workflows/cf/recast-character-workflow';
+export { LocationMatchingWorkflow } from '@/lib/workflows/cf/location-matching-workflow';
+export { FrameImagesWorkflow } from '@/lib/workflows/cf/frame-images-workflow';
+export { TalentMatchingWorkflow } from '@/lib/workflows/cf/talent-matching-workflow';
+export { CharacterBibleWorkflow } from '@/lib/workflows/cf/character-bible-workflow';
+export { LocationBibleWorkflow } from '@/lib/workflows/cf/location-bible-workflow';
+export { VisualPromptWorkflow } from '@/lib/workflows/cf/visual-prompt-workflow';
+export { MotionPromptWorkflow } from '@/lib/workflows/cf/motion-prompt-workflow';
+export { MotionMusicPromptsWorkflow } from '@/lib/workflows/cf/motion-music-prompts-workflow';
+export { RegenerateFramesWorkflow } from '@/lib/workflows/cf/regenerate-frames-workflow';
+export { RecastLocationWorkflow } from '@/lib/workflows/cf/recast-location-workflow';
+export { ReplaceElementWorkflow } from '@/lib/workflows/cf/replace-element-workflow';
 
 export default {
   fetch(request: Request) {

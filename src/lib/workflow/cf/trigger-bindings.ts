@@ -33,6 +33,17 @@ const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   'motion-prompt-scene': 'MOTION_PROMPT_SCENE_WORKFLOW',
   'music-prompt': 'MUSIC_PROMPT_WORKFLOW',
   'recast-character': 'RECAST_CHARACTER_WORKFLOW',
+  'location-matching': 'LOCATION_MATCHING_WORKFLOW',
+  'frame-images': 'FRAME_IMAGES_WORKFLOW',
+  'talent-matching': 'TALENT_MATCHING_WORKFLOW',
+  'character-sheet-from-bible': 'CHARACTER_BIBLE_WORKFLOW',
+  'location-sheet-from-bible': 'LOCATION_BIBLE_WORKFLOW',
+  'visual-prompts': 'VISUAL_PROMPT_WORKFLOW',
+  'motion-prompts': 'MOTION_PROMPT_WORKFLOW',
+  'motion-music-prompts': 'MOTION_MUSIC_PROMPTS_WORKFLOW',
+  'regenerate-frames': 'REGENERATE_FRAMES_WORKFLOW',
+  'recast-location': 'RECAST_LOCATION_WORKFLOW',
+  'replace-element': 'REPLACE_ELEMENT_WORKFLOW',
 };
 
 export type CfTriggerResult = { workflowRunId: string };

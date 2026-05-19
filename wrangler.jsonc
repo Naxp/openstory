@@ -124,5 +124,60 @@
       "binding": "RECAST_CHARACTER_WORKFLOW",
       "class_name": "RecastCharacterWorkflow",
     },
+    {
+      "name": "location-matching-workflow",
+      "binding": "LOCATION_MATCHING_WORKFLOW",
+      "class_name": "LocationMatchingWorkflow",
+    },
+    {
+      "name": "frame-images-workflow",
+      "binding": "FRAME_IMAGES_WORKFLOW",
+      "class_name": "FrameImagesWorkflow",
+    },
+    {
+      "name": "talent-matching-workflow",
+      "binding": "TALENT_MATCHING_WORKFLOW",
+      "class_name": "TalentMatchingWorkflow",
+    },
+    {
+      "name": "character-bible-workflow",
+      "binding": "CHARACTER_BIBLE_WORKFLOW",
+      "class_name": "CharacterBibleWorkflow",
+    },
+    {
+      "name": "location-bible-workflow",
+      "binding": "LOCATION_BIBLE_WORKFLOW",
+      "class_name": "LocationBibleWorkflow",
+    },
+    {
+      "name": "visual-prompt-workflow",
+      "binding": "VISUAL_PROMPT_WORKFLOW",
+      "class_name": "VisualPromptWorkflow",
+    },
+    {
+      "name": "motion-prompt-workflow",
+      "binding": "MOTION_PROMPT_WORKFLOW",
+      "class_name": "MotionPromptWorkflow",
+    },
+    {
+      "name": "motion-music-prompts-workflow",
+      "binding": "MOTION_MUSIC_PROMPTS_WORKFLOW",
+      "class_name": "MotionMusicPromptsWorkflow",
+    },
+    {
+      "name": "regenerate-frames-workflow",
+      "binding": "REGENERATE_FRAMES_WORKFLOW",
+      "class_name": "RegenerateFramesWorkflow",
+    },
+    {
+      "name": "recast-location-workflow",
+      "binding": "RECAST_LOCATION_WORKFLOW",
+      "class_name": "RecastLocationWorkflow",
+    },
+    {
+      "name": "replace-element-workflow",
+      "binding": "REPLACE_ELEMENT_WORKFLOW",
+      "class_name": "ReplaceElementWorkflow",
+    },
   ],
 }

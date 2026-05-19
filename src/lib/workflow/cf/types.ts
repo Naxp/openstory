@@ -28,12 +28,23 @@ export type CloudflareEnv = Cloudflare.Env & {
   LOCATION_SHEET_WORKFLOW?: Workflow<unknown>;
   LIBRARY_TALENT_SHEET_WORKFLOW?: Workflow<unknown>;
   LIBRARY_LOCATION_SHEET_WORKFLOW?: Workflow<unknown>;
+  LOCATION_BIBLE_WORKFLOW?: Workflow<unknown>;
   SHOT_VARIANT_WORKFLOW?: Workflow<unknown>;
   UPSCALE_SHOT_VARIANT_WORKFLOW?: Workflow<unknown>;
   VISUAL_PROMPT_SCENE_WORKFLOW?: Workflow<unknown>;
   MOTION_PROMPT_SCENE_WORKFLOW?: Workflow<unknown>;
+  MOTION_PROMPT_WORKFLOW?: Workflow<unknown>;
   MUSIC_PROMPT_WORKFLOW?: Workflow<unknown>;
+  MOTION_MUSIC_PROMPTS_WORKFLOW?: Workflow<unknown>;
   RECAST_CHARACTER_WORKFLOW?: Workflow<unknown>;
+  RECAST_LOCATION_WORKFLOW?: Workflow<unknown>;
+  LOCATION_MATCHING_WORKFLOW?: Workflow<unknown>;
+  TALENT_MATCHING_WORKFLOW?: Workflow<unknown>;
+  CHARACTER_BIBLE_WORKFLOW?: Workflow<unknown>;
+  VISUAL_PROMPT_WORKFLOW?: Workflow<unknown>;
+  FRAME_IMAGES_WORKFLOW?: Workflow<unknown>;
+  REGENERATE_FRAMES_WORKFLOW?: Workflow<unknown>;
+  REPLACE_ELEMENT_WORKFLOW?: Workflow<unknown>;
 };
 
 /** Engine selector for the per-workflow rollout switch. */
