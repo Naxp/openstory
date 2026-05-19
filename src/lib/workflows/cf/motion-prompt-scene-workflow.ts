@@ -22,13 +22,16 @@
 
 import { computeMotionPromptInputHash } from '@/lib/ai/input-hash';
 import { narrowFramePromptContext } from '@/lib/ai/prompt-context';
-import type { MotionPrompt } from '@/lib/ai/scene-analysis.schema';
+import {
+  motionPromptSchema,
+  type MotionPrompt,
+} from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getFramePromptChannel, getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
 import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
+import { durableStreamingLLMCallCf } from '@/lib/workflows/cf/llm-call-helper';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { NonRetryableError } from 'cloudflare:workflows';
 
 type MotionPromptSceneWorkflowResult = {
   sceneId: string;
@@ -60,44 +63,41 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
     // PHASE 3: Motion Prompt Generation (using durableLLMCall helper)
     // ============================================================
 
-    await step.do('prepare-motion-prompt-generation', async () => {
-      console.log(
-        `[MotionPromptSceneWorkflow:cf] Generating motion prompt for scene ${scene.sceneId}`
-      );
-      return {
-        promptVariables: {
-          sceneBefore: sceneBefore
-            ? JSON.stringify(sceneBefore, null, 2)
-            : '(none)',
-          sceneAfter: sceneAfter
-            ? JSON.stringify(sceneAfter, null, 2)
-            : '(none)',
-          scene: JSON.stringify(scene, null, 2),
-          characterBible: JSON.stringify(characterBible, null, 2),
-          locationBible: JSON.stringify(locationBible, null, 2),
-          elementBible: JSON.stringify(elementBible, null, 2),
-          styleConfig: JSON.stringify(styleConfig, null, 2),
-          aspectRatio,
-        },
-        additionalMetadata: { frameId },
-      };
-    });
+    const promptVariables = {
+      sceneBefore: sceneBefore
+        ? JSON.stringify(sceneBefore, null, 2)
+        : '(none)',
+      sceneAfter: sceneAfter ? JSON.stringify(sceneAfter, null, 2) : '(none)',
+      scene: JSON.stringify(scene, null, 2),
+      characterBible: JSON.stringify(characterBible, null, 2),
+      locationBible: JSON.stringify(locationBible, null, 2),
+      elementBible: JSON.stringify(elementBible, null, 2),
+      styleConfig: JSON.stringify(styleConfig, null, 2),
+      aspectRatio,
+    };
 
-    // `durableStreamingLLMCall` is bound to the QStash `WorkflowContext` and
-    // has not been ported yet. Stub the LLM step so the engine registry keeps
-    // this workflow on QStash until the Pattern 3 batch lands a CF-native
-    // helper.
-    // Use CF's `NonRetryableError` directly so the step machinery doesn't
-    // retry the stub. `WorkflowValidationError` would also surface as
-    // non-retryable at the runImpl boundary (the base class re-wraps), but
-    // only AFTER the step has burned its retry budget.
-    const motionPrompt: MotionPrompt = await step.do(
-      'motion-prompts',
-      async () => {
-        throw new NonRetryableError(
-          'Child invocation pending Pattern 3 batch; route this workflow via QStash',
-          'WorkflowValidationError'
-        );
+    console.log(
+      `[MotionPromptSceneWorkflow:cf] Generating motion prompt for scene ${scene.sceneId}`
+    );
+
+    const motionPrompt: MotionPrompt = await durableStreamingLLMCallCf(
+      step,
+      {
+        name: 'motion-prompts',
+        phase: { number: 5, name: 'Writing motion prompts…' },
+        promptName: 'phase/motion-prompt-scene-generation-chat',
+        promptVariables,
+        modelId: analysisModelId,
+        responseSchema: motionPromptSchema,
+        additionalMetadata: { frameId },
+      },
+      {
+        sequenceId,
+        scopedDb,
+        framePromptStream:
+          input.emitStreaming && frameId
+            ? { frameId, promptType: 'motion' }
+            : undefined,
       }
     );
 

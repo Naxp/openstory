@@ -11,7 +11,7 @@
  *   - Uses `step.do` instead of `context.run`.
  *   - Reads payload from `event.payload` instead of `context.requestPayload`.
  *
- * NOTE: the LLM step is stubbed pending Pattern 3 batch — `durableLLMCall`
+ * The LLM call goes through `durableLLMCallCf` (the CF port of `durableLLMCall`)
  * takes an Upstash `WorkflowContext` and is not yet portable to a
  * Cloudflare `WorkflowStep`. Until that helper grows a CF code path, this
  * workflow must be routed via QStash. See
@@ -21,17 +21,18 @@
  * `engine-registry.ts` flips `talent-matching` to `'cloudflare'`.
  */
 
+import { talentMatchResponseSchema } from '@/lib/ai/response-schemas';
 import { buildMatchingPromptVariables } from '@/lib/ai/talent-matching-prompt';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
+import { durableLLMCallCf } from '@/lib/workflows/cf/llm-call-helper';
 import type {
   TalentCharacterMatch,
   TalentMatchingWorkflowInput,
   TalentMatchingWorkflowOutput,
 } from '@/lib/workflow/types';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { NonRetryableError } from 'cloudflare:workflows';
 
 export class TalentMatchingWorkflow extends OpenStoryWorkflowEntrypoint<TalentMatchingWorkflowInput> {
   protected override async runImpl(
@@ -40,7 +41,7 @@ export class TalentMatchingWorkflow extends OpenStoryWorkflowEntrypoint<TalentMa
     scopedDb: ScopedDb
   ): Promise<TalentMatchingWorkflowOutput> {
     const input = event.payload;
-    const { suggestedTalentIds, sequenceId } = input;
+    const { suggestedTalentIds, sequenceId, analysisModelId } = input;
 
     // Use pre-extracted bible from scene splitting (always provided by upstream)
     const characterBible = input.characterBible;
@@ -49,44 +50,42 @@ export class TalentMatchingWorkflow extends OpenStoryWorkflowEntrypoint<TalentMa
     // it only runs against pre-selected talent IDs. Characters without a
     // pre-cast talent are auto-extracted later in the pipeline and given
     // AI-generated portraits — script generation never waits for sheets.
-    const { talentList } = await step.do('get-talent-list', async () => {
-      if (!suggestedTalentIds?.length || !input.teamId) {
-        return { talentList: [], matchingPromptVariables: {} };
+    const { talentList, matchingPromptVariables } = await step.do(
+      'get-talent-list',
+      async () => {
+        if (!suggestedTalentIds?.length || !input.teamId) {
+          return { talentList: [], matchingPromptVariables: {} };
+        }
+        const talentList = await scopedDb.talent.getByIds(suggestedTalentIds);
+        return {
+          talentList,
+          matchingPromptVariables: buildMatchingPromptVariables(
+            characterBible,
+            talentList
+          ),
+        };
       }
-      const talentList = await scopedDb.talent.getByIds(suggestedTalentIds);
-      return {
-        talentList,
-        matchingPromptVariables: buildMatchingPromptVariables(
-          characterBible,
-          talentList
-        ),
-      };
-    });
+    );
 
-    // `durableLLMCall` is the QStash-flavored LLM step from
-    // `src/lib/workflows/llm-call-helper.ts`. It binds to Upstash's
-    // `WorkflowContext` (uses `context.run`, observability headers, etc.)
-    // and has no CF equivalent yet — porting it is the Pattern 3 batch.
-    // Until then we surface a non-retryable validation error so the
-    // dispatcher falls back to QStash and the instance fails fast on CF.
-    // Use CF's `NonRetryableError` directly so the step machinery doesn't
-    // retry the stub up to 5×. `WorkflowValidationError` would also surface
-    // as non-retryable at the runImpl boundary (the base class re-wraps),
-    // but only AFTER the step has burned its retry budget.
     const { matches: talentMatches } =
       talentList.length > 0
-        ? await step.do(
-            'talent-matching',
-            async (): Promise<{
-              matches: Array<{ characterId: string; talentId: string }>;
-            }> => {
-              throw new NonRetryableError(
-                'Child invocation pending Pattern 3 batch; route this workflow via QStash',
-                'WorkflowValidationError'
-              );
+        ? await durableLLMCallCf(
+            step,
+            {
+              name: 'talent-matching',
+              phase: { number: 2, name: 'Matching talent…' },
+              promptName: 'phase/talent-matching-chat',
+              promptVariables: matchingPromptVariables,
+              modelId: analysisModelId,
+              responseSchema: talentMatchResponseSchema,
+            },
+            {
+              sequenceId,
+              userId: input.userId,
+              scopedDb,
             }
           )
-        : { matches: [] };
+        : { matches: [] as Array<{ characterId: string; talentId: string }> };
 
     const talentCharacterMatches: TalentCharacterMatch[] = await step.do(
       'build-matches',

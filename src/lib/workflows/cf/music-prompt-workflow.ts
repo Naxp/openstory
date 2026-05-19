@@ -11,11 +11,8 @@
  *   - Uses `step.do` instead of `context.run`.
  *   - Reads payload from `event.payload` instead of `context.requestPayload`.
  *
- * NOTE: the LLM step is stubbed pending Pattern 3 batch — `durableLLMCall`
- * takes an Upstash `WorkflowContext` and is not yet portable to a
- * Cloudflare `WorkflowStep`. Until that helper grows a CF code path, this
- * workflow must be routed via QStash. See
- * docs/investigations/cloudflare-workflows-poc.md.
+ * The LLM call goes through `durableLLMCallCf` (the CF port of
+ * `durableLLMCall`); see `src/lib/workflows/cf/llm-call-helper.ts`.
  *
  * The QStash version stays as-is — both run side by side until
  * `engine-registry.ts` flips `music-prompt` to `'cloudflare'`.
@@ -25,6 +22,7 @@
  */
 
 import { computeMusicPromptInputHash } from '@/lib/ai/input-hash';
+import { musicDesignResultSchema } from '@/lib/ai/response-schemas';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { reinforceInstrumentalTags } from '@/lib/prompts/music-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
@@ -33,8 +31,8 @@ import type {
   MusicPromptWorkflowInput,
   MusicPromptWorkflowResult,
 } from '@/lib/workflow/types';
+import { durableLLMCallCf } from '@/lib/workflows/cf/llm-call-helper';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { NonRetryableError } from 'cloudflare:workflows';
 
 export class MusicPromptWorkflow extends OpenStoryWorkflowEntrypoint<MusicPromptWorkflowInput> {
   protected override async runImpl(
@@ -45,23 +43,22 @@ export class MusicPromptWorkflow extends OpenStoryWorkflowEntrypoint<MusicPrompt
     const input = event.payload;
     const { sceneSummaries, analysisModelId, sequenceId } = input;
 
-    // `durableLLMCall` is the QStash-flavored LLM step from
-    // `src/lib/workflows/llm-call-helper.ts`. It binds to Upstash's
-    // `WorkflowContext` (uses `context.run`, observability headers, etc.)
-    // and has no CF equivalent yet — porting it is the Pattern 3 batch.
-    // Until then we surface a non-retryable validation error so the
-    // dispatcher falls back to QStash and the instance fails fast on CF.
-    // Use CF's `NonRetryableError` directly so the step machinery doesn't
-    // retry the stub up to 5×. `WorkflowValidationError` would also surface
-    // as non-retryable at the runImpl boundary (the base class re-wraps),
-    // but only AFTER the step has burned its retry budget.
-    const musicDesignResult: MusicPromptWorkflowResult = await step.do(
-      'music-prompt-generation',
-      async (): Promise<MusicPromptWorkflowResult> => {
-        throw new NonRetryableError(
-          'Child invocation pending Pattern 3 batch; route this workflow via QStash',
-          'WorkflowValidationError'
-        );
+    const musicDesignResult: MusicPromptWorkflowResult = await durableLLMCallCf(
+      step,
+      {
+        name: 'music-prompt-generation',
+        phase: { number: 6, name: 'Composing music…' },
+        promptName: 'phase/music-design-chat',
+        promptVariables: {
+          scenes: JSON.stringify(sceneSummaries, null, 2),
+        },
+        modelId: analysisModelId,
+        responseSchema: musicDesignResultSchema,
+      },
+      {
+        sequenceId,
+        userId: input.userId,
+        scopedDb,
       }
     );
 

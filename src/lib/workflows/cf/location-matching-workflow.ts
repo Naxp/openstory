@@ -11,30 +11,28 @@
  *   - Uses `step.do` instead of `context.run`.
  *   - Reads payload from `event.payload` instead of `context.requestPayload`.
  *
- * NOTE: the LLM step is stubbed pending Pattern 3 batch — `durableLLMCall`
- * binds to Upstash's `WorkflowContext` (uses `context.run`, observability
- * headers, etc.) and has no CF equivalent yet. Until that helper grows a CF
- * code path, this workflow must be routed via QStash. See
- * docs/investigations/cloudflare-workflows-poc.md.
+ * The LLM call goes through `durableLLMCallCf` (the CF port of
+ * `durableLLMCall`); see `src/lib/workflows/cf/llm-call-helper.ts`.
  *
- * This workflow does not invoke any child workflows — the QStash version is
- * a leaf orchestrator that runs a single LLM call and assembles matches.
- * No `spawnAndAwaitChild` is needed.
+ * This workflow does not invoke any child workflows — it's a leaf
+ * orchestrator that runs a single LLM call and assembles matches.
  *
  * The QStash version stays as-is — both run side by side until
  * `engine-registry.ts` flips `location-matching` to `'cloudflare'`.
  */
 
+import { buildLocationMatchingPromptVariables } from '@/lib/ai/location-matching-prompt';
+import { locationMatchResponseSchema } from '@/lib/ai/response-schemas';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
+import { durableLLMCallCf } from '@/lib/workflows/cf/llm-call-helper';
 import type {
   LibraryLocationMatch,
   LocationMatchingWorkflowInput,
   LocationMatchingWorkflowOutput,
 } from '@/lib/workflow/types';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { NonRetryableError } from 'cloudflare:workflows';
 
 type LocationMatchEntry = {
   libraryLocationId: string;
@@ -49,47 +47,48 @@ export class LocationMatchingWorkflow extends OpenStoryWorkflowEntrypoint<Locati
     scopedDb: ScopedDb
   ): Promise<LocationMatchingWorkflowOutput> {
     const input = event.payload;
-    const { suggestedLocationIds, sequenceId } = input;
+    const { suggestedLocationIds, sequenceId, analysisModelId } = input;
 
     const locationBible = input.locationBible;
 
-    // Location matching (conditional) — DB read to resolve suggested library
-    // locations. When no suggestions are present, short-circuit to an empty
-    // list so we never run the LLM step.
-    const { libraryLocationList } = await step.do(
-      'get-library-locations',
-      async () => {
+    const { libraryLocationList, locationMatchingPromptVariables } =
+      await step.do('get-library-locations', async () => {
         if (!suggestedLocationIds?.length || !input.teamId) {
-          return { libraryLocationList: [] };
+          return {
+            libraryLocationList: [],
+            locationMatchingPromptVariables: {},
+          };
         }
         const libraryLocationList =
           await scopedDb.locations.getByIds(suggestedLocationIds);
-        return { libraryLocationList };
-      }
-    );
+        return {
+          libraryLocationList,
+          locationMatchingPromptVariables: buildLocationMatchingPromptVariables(
+            locationBible,
+            libraryLocationList
+          ),
+        };
+      });
 
-    // `durableLLMCall` is the QStash-flavored LLM step from
-    // `src/lib/workflows/llm-call-helper.ts`. It binds to Upstash's
-    // `WorkflowContext` (uses `context.run`, observability headers, etc.)
-    // and has no CF equivalent yet — porting it is the Pattern 3 batch.
-    // Until then we surface a non-retryable validation error so the
-    // dispatcher falls back to QStash and the instance fails fast on CF.
-    // Use CF's `NonRetryableError` directly so the step machinery doesn't
-    // retry the stub up to 5×. `WorkflowValidationError` would also surface
-    // as non-retryable at the runImpl boundary (the base class re-wraps),
-    // but only AFTER the step has burned its retry budget.
-    const locationMatches: LocationMatchEntry[] =
+    const { matches: locationMatches } =
       libraryLocationList.length > 0
-        ? await step.do(
-            'location-matching',
-            async (): Promise<LocationMatchEntry[]> => {
-              throw new NonRetryableError(
-                'Child invocation pending Pattern 3 batch; route this workflow via QStash',
-                'WorkflowValidationError'
-              );
+        ? await durableLLMCallCf(
+            step,
+            {
+              name: 'location-matching',
+              phase: { number: 2, name: 'Matching locations…' },
+              promptName: 'phase/location-matching-chat',
+              promptVariables: locationMatchingPromptVariables,
+              modelId: analysisModelId,
+              responseSchema: locationMatchResponseSchema,
+            },
+            {
+              sequenceId,
+              userId: input.userId,
+              scopedDb,
             }
           )
-        : [];
+        : { matches: [] as LocationMatchEntry[] };
 
     const libraryLocationMatches: LibraryLocationMatch[] = await step.do(
       'build-location-matches',
