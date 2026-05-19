@@ -27,3 +27,24 @@ pre-commit:
     migration-safety:
       glob: 'drizzle/migrations/**/*.sql'
       run: bun scripts/check-migrations.ts {staged_files}
+    workflow-trigger-safety:
+      glob: '.github/workflows/*.{yml,yaml}'
+      run: |
+        violations=0
+        for wf in {staged_files}; do
+          block=$(awk '/^["'"'"']?on["'"'"']?[[:space:]]*:/{flag=1; print; next} flag && /^[a-zA-Z"'"'"']/{flag=0} flag' "$wf")
+          if [ -z "$block" ]; then
+            echo "ERROR $wf: could not locate top-level 'on:' block — unsupported YAML format"
+            violations=$((violations + 1))
+            continue
+          fi
+          if printf '%s\n' "$block" | sed 's/[[:space:]]*#.*$//' | grep -q 'pull_request_target'; then
+            echo "ERROR $wf: pull_request_target trigger is not allowed in this repo."
+            violations=$((violations + 1))
+          fi
+        done
+        if [ "$violations" -gt 0 ]; then
+          echo 'It runs base-branch workflow code with secrets in the context of fork PRs.'
+          echo 'See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/'
+          exit 1
+        fi
