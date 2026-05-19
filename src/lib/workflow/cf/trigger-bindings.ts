@@ -19,6 +19,7 @@ import { getEngineForWorkflow } from '@/lib/workflow/cf/engine-registry';
 const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   image: 'IMAGE_WORKFLOW',
   'element-vision': 'ELEMENT_VISION_WORKFLOW',
+  music: 'MUSIC_WORKFLOW',
 };
 
 export type CfTriggerResult = { workflowRunId: string };

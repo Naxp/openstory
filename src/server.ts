@@ -13,6 +13,7 @@ import handler from '@tanstack/react-start/server-entry';
 // `workflows[]`. See docs/investigations/cloudflare-workflows-poc.md.
 export { ImageWorkflow } from '@/lib/workflows/cf/image-workflow';
 export { ElementVisionWorkflow } from '@/lib/workflows/cf/element-vision-workflow';
+export { MusicWorkflow } from '@/lib/workflows/cf/music-workflow';
 
 export default {
   fetch(request: Request) {

@@ -20,6 +20,7 @@ export type CloudflareEnv = Cloudflare.Env & {
   // Node/Vercel runs don't bind workflows.
   IMAGE_WORKFLOW?: Workflow<unknown>;
   ELEMENT_VISION_WORKFLOW?: Workflow<unknown>;
+  MUSIC_WORKFLOW?: Workflow<unknown>;
 };
 
 /** Engine selector for the per-workflow rollout switch. */

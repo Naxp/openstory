@@ -54,5 +54,10 @@
       "binding": "ELEMENT_VISION_WORKFLOW",
       "class_name": "ElementVisionWorkflow",
     },
+    {
+      "name": "music-workflow",
+      "binding": "MUSIC_WORKFLOW",
+      "class_name": "MusicWorkflow",
+    },
   ],
 }
