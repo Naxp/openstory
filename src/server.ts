@@ -17,6 +17,7 @@ export { MusicWorkflow } from '@/lib/workflows/cf/music-workflow';
 export { MergeAudioVideoWorkflow } from '@/lib/workflows/cf/merge-audio-video-workflow';
 export { MergeVideoWorkflow } from '@/lib/workflows/cf/merge-video-workflow';
 export { MotionWorkflow } from '@/lib/workflows/cf/motion-workflow';
+export { CharacterSheetWorkflow } from '@/lib/workflows/cf/character-sheet-workflow';
 
 export default {
   fetch(request: Request) {

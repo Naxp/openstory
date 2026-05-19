@@ -23,6 +23,7 @@ const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   'merge-audio-video': 'MERGE_AUDIO_VIDEO_WORKFLOW',
   'merge-video': 'MERGE_VIDEO_WORKFLOW',
   motion: 'MOTION_WORKFLOW',
+  'character-sheet': 'CHARACTER_SHEET_WORKFLOW',
 };
 
 export type CfTriggerResult = { workflowRunId: string };

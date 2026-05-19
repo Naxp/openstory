@@ -74,5 +74,10 @@
       "binding": "MOTION_WORKFLOW",
       "class_name": "MotionWorkflow",
     },
+    {
+      "name": "character-sheet-workflow",
+      "binding": "CHARACTER_SHEET_WORKFLOW",
+      "class_name": "CharacterSheetWorkflow",
+    },
   ],
 }
