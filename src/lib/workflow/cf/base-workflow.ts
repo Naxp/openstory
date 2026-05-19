@@ -19,6 +19,7 @@
  */
 
 import { createScopedDb, type ScopedDb } from '@/lib/db/scoped';
+import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import type { UserWorkflowContext } from '@/lib/workflow/types';
 import type { CloudflareEnv } from '@/lib/workflow/cf/types';
@@ -27,6 +28,7 @@ import {
   type WorkflowEvent,
   type WorkflowStep,
 } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
 
 export type OpenStoryFailureContext<T extends UserWorkflowContext> = {
   event: Readonly<WorkflowEvent<T>>;
@@ -93,6 +95,13 @@ export abstract class OpenStoryWorkflowEntrypoint<
         });
       }
 
+      // `WorkflowValidationError` extends `@upstash/workflow`'s non-retryable
+      // base, which CF doesn't recognize — so without this re-wrap CF would
+      // retry validation throws up to the step's retry limit (10× by default).
+      // Re-throw as CF's `NonRetryableError` so the instance fails immediately.
+      if (error instanceof WorkflowValidationError) {
+        throw new NonRetryableError(sanitized, error.name);
+      }
       throw error;
     }
   }
