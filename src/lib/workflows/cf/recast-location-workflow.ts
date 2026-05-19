@@ -32,6 +32,7 @@ import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
 import { spawnAndAwaitChild } from '@/lib/workflow/cf/await-child';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/cf/base-workflow';
+import type { CloudflareEnv } from '@/lib/workflow/cf/types';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type {
   LocationSheetWorkflowInput,
@@ -67,6 +68,8 @@ type RecastLocationWorkflowResult = {
  */
 async function regenerateFramesIfNeeded(
   step: WorkflowStep,
+  env: CloudflareEnv,
+  parentInstanceId: string,
   scopedDb: ScopedDb,
   input: RecastLocationWorkflowInput
 ): Promise<{ framesRegenerated: number; framesFailed: number }> {
@@ -74,17 +77,17 @@ async function regenerateFramesIfNeeded(
     return { framesRegenerated: 0, framesFailed: 0 };
   }
 
-  const sequenceId = input.sequenceId;
-  if (!sequenceId) {
-    throw new WorkflowValidationError(
-      '[RecastLocationWorkflow:cf] sequenceId is required to regenerate frames'
-    );
-  }
-  const imageModel = input.imageModel ?? DEFAULT_IMAGE_MODEL;
-
-  await step.do(
+  const regenerateBody = await step.do(
     'build-regenerate-snapshot',
     async (): Promise<RegenerateFramesWorkflowInput> => {
+      const sequenceId = input.sequenceId;
+      if (!sequenceId) {
+        throw new NonRetryableError(
+          '[RecastLocationWorkflow:cf] sequenceId is required to regenerate frames',
+          'WorkflowValidationError'
+        );
+      }
+      const imageModel = input.imageModel ?? DEFAULT_IMAGE_MODEL;
       const sequence = await scopedDb.sequences.getById(sequenceId);
       if (!sequence) {
         throw new Error(
@@ -96,10 +99,6 @@ async function regenerateFramesIfNeeded(
         scopedDb.sequenceLocations.listWithReferences(sequenceId),
         scopedDb.frames.getByIds(input.affectedFrameIds),
       ]);
-      // Reject silent drops: getByIds returns only existing rows, so a
-      // missing frame would shrink frameSnapshots below frameIds without
-      // any signal. Surface the gap so the caller can fix data drift
-      // instead of zero-counting frames that never ran.
       if (frames.length !== input.affectedFrameIds.length) {
         const found = new Set(frames.map((f) => f.id));
         const missing = input.affectedFrameIds.filter((id) => !found.has(id));
@@ -119,12 +118,7 @@ async function regenerateFramesIfNeeded(
           })
         )
       );
-      const partial = {
-        sequenceId,
-        imageModel,
-        aspectRatio,
-        frameSnapshots,
-      };
+      const partial = { sequenceId, imageModel, aspectRatio, frameSnapshots };
       const snapshotInputHash = await computeRegenerateFramesBatchHash(partial);
       return {
         userId: input.userId,
@@ -141,22 +135,31 @@ async function regenerateFramesIfNeeded(
     }
   );
 
-  // Stub for `regenerate-frames` child invocation. Pattern 3 will replace
-  // this with a `spawnAndAwaitChild` call against `REGENERATE_FRAMES_WORKFLOW`
-  // once that workflow's CF port lands in the same Wave 3 batch. Until then
-  // throw a NonRetryableError so the instance fails immediately and the
-  // registry switch keeps the QStash engine for `recast-location`.
-  await step.do('invoke-regenerate-frames', async () => {
+  const regenerateBinding = env.REGENERATE_FRAMES_WORKFLOW;
+  if (!regenerateBinding) {
     throw new NonRetryableError(
-      'Child invocation pending Pattern 3 batch; route this workflow via QStash',
+      '[RecastLocationWorkflow:cf] REGENERATE_FRAMES_WORKFLOW binding missing on env',
       'WorkflowValidationError'
     );
+  }
+  await spawnAndAwaitChild<RegenerateFramesWorkflowInput, unknown>(step, {
+    binding: regenerateBinding as Workflow<
+      RegenerateFramesWorkflowInput & {
+        _parent: import('@/lib/workflow/cf/await-child').ParentNotifyHint;
+      }
+    >,
+    parentBindingName: 'RECAST_LOCATION_WORKFLOW',
+    parentInstanceId,
+    childId: `regenerate-frames:location:${input.locationDbId}`,
+    childPayload: regenerateBody,
+    spawnStepName: 'spawn-regenerate-frames',
+    awaitStepName: 'await-regenerate-frames',
   });
 
-  // Unreachable — kept for diff parity with the QStash original so the
-  // future Pattern 3 wiring slots in without restructuring the helper.
-  // oxlint-disable-next-line no-unreachable -- gated by Pattern 3 stub above
-  return { framesRegenerated: 0, framesFailed: 0 };
+  return {
+    framesRegenerated: input.affectedFrameIds.length,
+    framesFailed: 0,
+  };
 }
 
 export class RecastLocationWorkflow extends OpenStoryWorkflowEntrypoint<RecastLocationWorkflowInput> {
@@ -239,11 +242,11 @@ export class RecastLocationWorkflow extends OpenStoryWorkflowEntrypoint<RecastLo
       `Location reference generated for ${input.locationName}, regenerating ${input.affectedFrameIds.length} frames`
     );
 
-    // Step 2: Regenerate frames if there are any affected. The helper
-    // throws (stub) if there are frames to regenerate — see comment inside
-    // `regenerateFramesIfNeeded` for why.
+    // Step 2: Regenerate affected frames via Pattern 3 spawn.
     const { framesRegenerated, framesFailed } = await regenerateFramesIfNeeded(
       step,
+      this.env,
+      event.instanceId,
       scopedDb,
       input
     );
