@@ -35,7 +35,6 @@ import type {
   ReplaceElementWorkflowInput,
   ReplaceElementWorkflowResult,
 } from '@/lib/workflow/types';
-import { getFalFlowControl } from './constants';
 import { generateImageWorkflow } from './image-workflow';
 import { generateMotionWorkflow } from './motion-workflow';
 
@@ -317,7 +316,7 @@ export const replaceElementWorkflow = createScopedWorkflow<
       previousDescription: input.previousDescription,
     });
 
-    // Parallel fan-out — flowControl + per-invoke retries handle backpressure.
+    // Parallel fan-out — per-invoke retries handle backpressure.
     // `allSettled` so a per-frame throw (e.g. invoke rejection that bypasses
     // the isFailed/isCanceled return path) doesn't abort sibling frames.
     const settled = await Promise.allSettled(
@@ -378,7 +377,6 @@ export const replaceElementWorkflow = createScopedWorkflow<
           body,
           retries: 3,
           retryDelay: 'pow(2, retried) * 1000',
-          flowControl: getFalFlowControl(),
         });
 
         // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
@@ -473,7 +471,6 @@ export const replaceElementWorkflow = createScopedWorkflow<
               body,
               retries: 3,
               retryDelay: 'pow(2, retried) * 1000',
-              flowControl: getFalFlowControl(),
             }
           );
 
