@@ -22,6 +22,11 @@ import { createScopedDb, type ScopedDb } from '@/lib/db/scoped';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import type { UserWorkflowContext } from '@/lib/workflow/types';
+import {
+  notifyParent,
+  notifyParentOfFailure,
+  type ParentNotifyHint,
+} from '@/lib/workflow/cf/await-child';
 import type { CloudflareEnv } from '@/lib/workflow/cf/types';
 import {
   WorkflowEntrypoint,
@@ -29,6 +34,26 @@ import {
   type WorkflowStep,
 } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
+
+/**
+ * Read the `_parent` notify hint a parent workflow injects via
+ * `spawnAndAwaitChild`. The runtime payload may carry the slot even though
+ * the typed `T` doesn't include it (Pattern 3 injects it as an addition).
+ */
+function extractParentHint(payload: unknown): ParentNotifyHint | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- runtime-injected slot not part of the typed payload shape
+  const hint = (payload as { _parent?: ParentNotifyHint })._parent;
+  if (!hint) return undefined;
+  if (
+    typeof hint.bindingName === 'string' &&
+    typeof hint.parentInstanceId === 'string' &&
+    typeof hint.eventType === 'string'
+  ) {
+    return hint;
+  }
+  return undefined;
+}
 
 export type OpenStoryFailureContext<T extends UserWorkflowContext> = {
   event: Readonly<WorkflowEvent<T>>;
@@ -71,8 +96,19 @@ export abstract class OpenStoryWorkflowEntrypoint<
 
     const scopedDb = createScopedDb(event.payload.teamId, event.payload.userId);
 
+    // Pull the parent notify hint once — used on both success and failure
+    // paths so a parent's `spawnAndAwaitChild` always sees a terminal event.
+    const parentHint = extractParentHint(event.payload);
+
     try {
-      return await this.runImpl(event, step, scopedDb);
+      const result = await this.runImpl(event, step, scopedDb);
+
+      // Notify the parent on success (Pattern 3 fan-in). No-op for top-level
+      // workflows that weren't spawned via spawnAndAwaitChild.
+      if (parentHint) {
+        await notifyParent(step, this.env, parentHint, result);
+      }
+      return result;
     } catch (error) {
       const sanitized = sanitizeFailResponse(error);
       console.error(`[${this.constructor.name}] Failure:`, sanitized);
@@ -93,6 +129,13 @@ export abstract class OpenStoryWorkflowEntrypoint<
             // want to surface as the instance's terminal state.
           }
         });
+      }
+
+      // Notify the parent on failure too — otherwise a parent's
+      // `step.waitForEvent` would hang until its timeout. Errors from this
+      // notification are swallowed internally so they can't mask the original.
+      if (parentHint) {
+        await notifyParentOfFailure(this.env, parentHint, sanitized);
       }
 
       // `WorkflowValidationError` extends `@upstash/workflow`'s non-retryable
