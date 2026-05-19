@@ -19,4 +19,7 @@
 
 # Pre-commit guards themselves — if weakened, the local checks above disappear
 /lefthook.yml                    @tombeckenham
-/scripts/check-migrations.ts     @tombeckenham
+
+# Scripts directory — anything CI invokes here (e.g. scripts/upload-e2e-report.ts
+# in test.yml) runs with deploy-secret access, same blast radius as workflows.
+/scripts/                        @tombeckenham

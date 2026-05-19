@@ -15,14 +15,22 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          # Inspect only each workflow's top-level `on:` block, so the trigger
-          # name appearing inside a step's `run:` script (like this one) is not
-          # a false positive — and so this workflow can't shield itself just by
-          # being named the lint workflow.
+          # Inspect only each workflow's top-level `on:` block so the trigger
+          # name appearing inside a `run:` script is not a false positive.
+          # `on` is a YAML 1.1 boolean, so formatters may quote it as `'on':`
+          # or `"on":` — handle all three forms. Empty extraction is treated
+          # as an error so a future YAML quirk cannot silently bypass.
           violations=0
           for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
-            block=$(awk '/^on:/{flag=1; print; next} flag && /^[a-zA-Z]/{flag=0} flag' "$wf")
-            if echo "$block" | grep -q 'pull_request_target'; then
+            block=$(awk '/^["'"'"']?on["'"'"']?[[:space:]]*:/{flag=1; print; next} flag && /^[a-zA-Z"'"'"']/{flag=0} flag' "$wf")
+            if [ -z "$block" ]; then
+              echo "::error file=$wf::could not locate top-level 'on:' block — workflow uses an unsupported format"
+              violations=$((violations + 1))
+              continue
+            fi
+            # Strip YAML comments before scanning so policy-documenting comments
+            # like `# pull_request_target is forbidden` do not false-positive.
+            if printf '%s\n' "$block" | sed 's/[[:space:]]*#.*$//' | grep -q 'pull_request_target'; then
               echo "::error file=$wf::pull_request_target trigger is not allowed in this repo."
               violations=$((violations + 1))
             fi
