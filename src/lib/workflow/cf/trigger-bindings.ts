@@ -32,6 +32,7 @@ const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   'visual-prompt-scene': 'VISUAL_PROMPT_SCENE_WORKFLOW',
   'motion-prompt-scene': 'MOTION_PROMPT_SCENE_WORKFLOW',
   'music-prompt': 'MUSIC_PROMPT_WORKFLOW',
+  'recast-character': 'RECAST_CHARACTER_WORKFLOW',
 };
 
 export type CfTriggerResult = { workflowRunId: string };

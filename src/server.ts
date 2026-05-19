@@ -26,6 +26,7 @@ export { UpscaleShotVariantWorkflow } from '@/lib/workflows/cf/upscale-shot-vari
 export { VisualPromptSceneWorkflow } from '@/lib/workflows/cf/visual-prompt-scene-workflow';
 export { MotionPromptSceneWorkflow } from '@/lib/workflows/cf/motion-prompt-scene-workflow';
 export { MusicPromptWorkflow } from '@/lib/workflows/cf/music-prompt-workflow';
+export { RecastCharacterWorkflow } from '@/lib/workflows/cf/recast-character-workflow';
 
 export default {
   fetch(request: Request) {

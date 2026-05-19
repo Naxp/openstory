@@ -119,5 +119,10 @@
       "binding": "MUSIC_PROMPT_WORKFLOW",
       "class_name": "MusicPromptWorkflow",
     },
+    {
+      "name": "recast-character-workflow",
+      "binding": "RECAST_CHARACTER_WORKFLOW",
+      "class_name": "RecastCharacterWorkflow",
+    },
   ],
 }

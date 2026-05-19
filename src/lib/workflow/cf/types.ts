@@ -33,6 +33,7 @@ export type CloudflareEnv = Cloudflare.Env & {
   VISUAL_PROMPT_SCENE_WORKFLOW?: Workflow<unknown>;
   MOTION_PROMPT_SCENE_WORKFLOW?: Workflow<unknown>;
   MUSIC_PROMPT_WORKFLOW?: Workflow<unknown>;
+  RECAST_CHARACTER_WORKFLOW?: Workflow<unknown>;
 };
 
 /** Engine selector for the per-workflow rollout switch. */
