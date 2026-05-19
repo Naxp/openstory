@@ -156,32 +156,39 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       consistencyTag: el.consistencyTag,
     }));
 
-    // scene-split (Gap C) — not yet CF-ported. Build the payload for diff
-    // parity with the QStash original, then surface a non-retryable validation
-    // error so the dispatcher falls back to QStash. The payload itself is
-    // discarded for now; once the child lands, replace the throw with a
-    // `spawnAndAwaitChild` against `SCENE_SPLIT_WORKFLOW`.
-    const sceneSplitResult = await step.do(
-      'spawn-scene-split',
-      async (): Promise<SceneSplitWorkflowResult> => {
-        const _payload: SceneSplitWorkflowInput = {
-          userId: input.userId,
-          teamId: input.teamId,
-          sequenceId,
-          promptName: 'phase/scene-splitting-chat',
-          aspectRatio,
-          script: sanitizeScriptContent(script),
-          styleConfig,
-          modelId: analysisModelId,
-          elements: elementsMinimal,
-        };
-        void _payload;
-        throw new NonRetryableError(
-          'Child invocation pending scene-split port; route this workflow via QStash',
-          'WorkflowValidationError'
-        );
-      }
-    );
+    const sceneSplitBinding = this.env.SCENE_SPLIT_WORKFLOW;
+    if (!sceneSplitBinding) {
+      throw new NonRetryableError(
+        '[AnalyzeScriptWorkflow:cf] SCENE_SPLIT_WORKFLOW binding missing on env; check wrangler.jsonc',
+        'WorkflowValidationError'
+      );
+    }
+    const sceneSplitResult = await spawnAndAwaitChild<
+      SceneSplitWorkflowInput,
+      SceneSplitWorkflowResult
+    >(step, {
+      binding: sceneSplitBinding as Workflow<
+        SceneSplitWorkflowInput & {
+          _parent: import('@/lib/workflow/cf/await-child').ParentNotifyHint;
+        }
+      >,
+      parentBindingName: 'ANALYZE_SCRIPT_WORKFLOW',
+      parentInstanceId: event.instanceId,
+      childId: `scene-split:${sequenceId ?? 'no-seq'}`,
+      childPayload: {
+        userId: input.userId,
+        teamId: input.teamId,
+        sequenceId,
+        promptName: 'phase/scene-splitting-chat',
+        aspectRatio,
+        script: sanitizeScriptContent(script),
+        styleConfig,
+        modelId: analysisModelId,
+        elements: elementsMinimal,
+      },
+      spawnStepName: 'spawn-scene-split',
+      awaitStepName: 'await-scene-split',
+    });
 
     const {
       scenes,
@@ -610,12 +617,23 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         });
       });
 
-      // motion-batch is NOT yet CF-ported. Build the payload for diff parity,
-      // then surface a non-retryable validation error so the dispatcher falls
-      // back to QStash. Once the child lands, replace with `spawnAndAwaitChild`
-      // against `MOTION_BATCH_WORKFLOW`.
-      await step.do('spawn-motion-batch', async () => {
-        const _payload: BatchMotionMusicWorkflowInput = {
+      const motionBatchBinding = this.env.MOTION_BATCH_WORKFLOW;
+      if (!motionBatchBinding) {
+        throw new NonRetryableError(
+          '[AnalyzeScriptWorkflow:cf] MOTION_BATCH_WORKFLOW binding missing on env; check wrangler.jsonc',
+          'WorkflowValidationError'
+        );
+      }
+      await spawnAndAwaitChild<BatchMotionMusicWorkflowInput, unknown>(step, {
+        binding: motionBatchBinding as Workflow<
+          BatchMotionMusicWorkflowInput & {
+            _parent: import('@/lib/workflow/cf/await-child').ParentNotifyHint;
+          }
+        >,
+        parentBindingName: 'ANALYZE_SCRIPT_WORKFLOW',
+        parentInstanceId: event.instanceId,
+        childId: `motion-batch:${sequenceId ?? 'no-seq'}`,
+        childPayload: {
           userId: input.userId,
           teamId: input.teamId,
           sequenceId,
@@ -629,12 +647,9 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
                 model: musicModel,
               }
             : undefined,
-        };
-        void _payload;
-        throw new NonRetryableError(
-          'Child invocation pending motion-batch port; route this workflow via QStash',
-          'WorkflowValidationError'
-        );
+        },
+        spawnStepName: 'spawn-motion-batch',
+        awaitStepName: 'await-motion-batch',
       });
     }
 
