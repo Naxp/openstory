@@ -79,5 +79,10 @@
       "binding": "CHARACTER_SHEET_WORKFLOW",
       "class_name": "CharacterSheetWorkflow",
     },
+    {
+      "name": "location-sheet-workflow",
+      "binding": "LOCATION_SHEET_WORKFLOW",
+      "class_name": "LocationSheetWorkflow",
+    },
   ],
 }

@@ -25,6 +25,7 @@ export type CloudflareEnv = Cloudflare.Env & {
   MERGE_VIDEO_WORKFLOW?: Workflow<unknown>;
   MOTION_WORKFLOW?: Workflow<unknown>;
   CHARACTER_SHEET_WORKFLOW?: Workflow<unknown>;
+  LOCATION_SHEET_WORKFLOW?: Workflow<unknown>;
 };
 
 /** Engine selector for the per-workflow rollout switch. */
