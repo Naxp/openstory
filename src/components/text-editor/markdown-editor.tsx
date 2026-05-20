@@ -1,7 +1,12 @@
+import HardBreak from '@tiptap/extension-hard-break';
 import { Placeholder } from '@tiptap/extensions/placeholder';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
+import {
+  Markdown,
+  type MarkdownNodeSpec,
+  type MarkdownStorage,
+} from 'tiptap-markdown';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 import { useEffect, useRef } from 'react';
@@ -11,6 +16,27 @@ declare module '@tiptap/core' {
     markdown: MarkdownStorage;
   }
 }
+
+// Override tiptap-markdown's HardBreak serializer to emit a naked `\n` instead
+// of CommonMark's `\\\n`. We run with `breaks: true` on parse, so a plain `\n`
+// round-trips losslessly as a hard break — and the LLM enhance request body
+// then matches single-newline screenplay input verbatim (no `\\` injected),
+// which keeps recorded aimock fixtures matching.
+const HardBreakAsNewline = HardBreak.extend({
+  addStorage() {
+    const spec: MarkdownNodeSpec = {
+      serialize(state, node, parent, index) {
+        for (let i = index + 1; i < parent.childCount; i++) {
+          if (parent.child(i).type !== node.type) {
+            state.write('\n');
+            return;
+          }
+        }
+      },
+    };
+    return { markdown: spec };
+  },
+});
 
 type MarkdownEditorProps = {
   value: string;
@@ -65,7 +91,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     editable: !disabled,
     autofocus: autoFocus,
     extensions: [
-      StarterKit,
+      StarterKit.configure({ hardBreak: false }),
+      HardBreakAsNewline,
       Markdown.configure({
         html: false,
         linkify: true,
@@ -87,6 +114,39 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         class: cn(proseClasses, placeholderClasses),
       },
       handleKeyDown: (_view, event) => onKeyDownRef.current?.(event) === true,
+      // Bulk inputs that carry embedded newlines (Playwright .fill, drag-drop
+      // of multi-line text, programmatic execCommand('insertText', …)) would
+      // otherwise split each line into a separate paragraph and shred
+      // screenplay structure. Intercept beforeinput and convert single \n
+      // into HardBreak nodes so the line layout survives the round-trip;
+      // getMarkdown() then emits each as a single \n (with breaks:true).
+      // Enter keypresses arrive as a separate inputType ('insertParagraph')
+      // and aren't touched here, so typing a new paragraph still works.
+      handleDOMEvents: {
+        beforeinput: (view, event) => {
+          if (!(event instanceof InputEvent)) return false;
+          if (event.inputType !== 'insertText' || !event.data?.includes('\n')) {
+            return false;
+          }
+          const { schema, tr, selection } = view.state;
+          const hardBreak = schema.nodes.hardBreak;
+          if (!hardBreak) return false;
+          event.preventDefault();
+          const parts = event.data.split('\n');
+          const nodes = parts.flatMap((part, i) => {
+            const out = [];
+            if (part.length > 0) out.push(schema.text(part));
+            if (i < parts.length - 1) out.push(hardBreak.create());
+            return out;
+          });
+          view.dispatch(tr.replaceWith(selection.from, selection.to, nodes));
+          return true;
+        },
+      },
+      // Same treatment for actual paste events — markdown-it parses two
+      // trailing spaces + \n as a hard break, so the pasted block stays in
+      // one paragraph instead of splitting.
+      transformPastedText: (text) => text.replace(/(?<!\n)\n(?!\n)/g, '  \n'),
     },
     onUpdate: ({ editor: e }) => {
       onValueChange(e.storage.markdown.getMarkdown());
