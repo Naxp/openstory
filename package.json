@@ -117,7 +117,7 @@
     "db:migrate:cf-local": "bun --bun scripts/cf-local-migrate.ts",
     "db:seed:cf-local": "bun --bun scripts/seed.ts --cf-local",
     "db:setup:cf-local": "bun --bun --sequential db:migrate:cf-local db:seed:cf-local",
-    "cf:dev": "bun --sequential db:setup:cf-local cf:dev:vite",
+    "cf:dev": "bun --sequential cf:typegen db:setup:cf-local cf:dev:vite",
     "cf:dev:vite": "BUILD_CLOUDFLARE=1 bun vite dev",
     "cf:preview": "BUILD_CLOUDFLARE=1 vite preview",
     "cf:deploy:prd": "bun --bun run cf:build && wrangler deploy",
