@@ -34,6 +34,16 @@ import type { WorkflowSleepDuration, WorkflowStep } from 'cloudflare:workers';
 const DEFAULT_TIMEOUT: WorkflowSleepDuration = '30 minutes';
 
 /**
+ * Cloudflare Workflows enforces `^[a-zA-Z0-9_-]+$` on instance IDs. Callers
+ * typically pass semantic ids like `image:seq-123:frame-7` with colons —
+ * normalise to underscores so `binding.create({ id })` doesn't throw
+ * "Workflow instance has invalid id". Truncate to 100 chars (CF limit).
+ */
+function sanitizeChildId(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 100);
+}
+
+/**
  * Slot the parent injects into the child's payload so the child knows who
  * to notify. Payload size cost: ~150 bytes.
  */
@@ -76,11 +86,12 @@ export async function spawnAndAwaitChild<TInput, TOutput>(
   step: WorkflowStep,
   args: SpawnAndAwaitArgs<TInput>
 ): Promise<TOutput> {
-  const eventType = buildEventType(args.binding, args.childId);
+  const childId = sanitizeChildId(args.childId);
+  const eventType = buildEventType(args.binding, childId);
 
   await step.do(args.spawnStepName, async () => {
     await args.binding.create({
-      id: args.childId,
+      id: childId,
       params: {
         ...args.childPayload,
         _parent: {
@@ -90,7 +101,7 @@ export async function spawnAndAwaitChild<TInput, TOutput>(
         },
       },
     });
-    return { childId: args.childId, eventType };
+    return { childId, eventType };
   });
 
   // step.waitForEvent's generic is constrained to Rpc.Serializable, but
