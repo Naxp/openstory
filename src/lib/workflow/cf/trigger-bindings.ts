@@ -46,6 +46,8 @@ const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   'recast-location': 'RECAST_LOCATION_WORKFLOW',
   'replace-element': 'REPLACE_ELEMENT_WORKFLOW',
   'scene-split': 'SCENE_SPLIT_WORKFLOW',
+  storyboard: 'STORYBOARD_WORKFLOW',
+  'analyze-script': 'ANALYZE_SCRIPT_WORKFLOW',
 };
 
 export type CfTriggerResult = { workflowRunId: string };
