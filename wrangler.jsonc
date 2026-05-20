@@ -36,9 +36,13 @@
     {
       "binding": "R2_STORAGE_BUCKET",
       "bucket_name": "openstory-storage",
-      // Proxy to the real R2 bucket in local dev too, so getPublicUrl URLs
-      // (storage-dev.openstory.so/...) actually resolve — miniflare's local
-      // R2 emulator has no public domain to serve from.
+      // Local dev (wrangler dev / vite dev under @cloudflare/vite-plugin)
+      // uses the -dev bucket so uploads land where the storage-dev domain
+      // can serve them; production deploys keep using `bucket_name`.
+      "preview_bucket_name": "openstory-dev",
+      // Proxy the binding to the real bucket (not miniflare's local R2
+      // emulator) so getPublicUrl URLs at storage-dev.openstory.so actually
+      // resolve to the uploaded bytes.
       "remote": true,
     },
   ],
