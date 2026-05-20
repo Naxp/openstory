@@ -6,9 +6,12 @@
  *   bun db:seed           # Seed Turso database (requires TURSO_DATABASE_URL)
  *   bun db:seed:local     # Seed local SQLite database (file:local.db)
  *   bun db:seed:test      # Seed e2e test database (file:test.db)
+ *   bun db:seed:cf-local  # Seed wrangler-local D1 emulator
  *   bun db:seed:d1        # Seed Cloudflare D1 via HTTP API
  */
 
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { createD1HttpClient } from '@/lib/db/client-d1-http';
 import { generateId } from '@/lib/db/id';
 import {
@@ -52,16 +55,47 @@ function parseArgs() {
     local: args.includes('--local'),
     test: args.includes('--test'),
     d1: args.includes('--d1'),
+    cfLocal: args.includes('--cf-local'),
   };
 }
 
+function resolveCfLocalD1Path(): string {
+  const dir = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject';
+  if (!existsSync(dir)) {
+    throw new Error(
+      `[seed] No wrangler-local D1 directory at ${dir} — run \`bun db:migrate:cf-local\` first.`
+    );
+  }
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sqlite'));
+  if (files.length === 0) {
+    throw new Error(
+      `[seed] No D1 sqlite in ${dir} — run \`bun db:migrate:cf-local\` first.`
+    );
+  }
+  if (files.length > 1) {
+    throw new Error(
+      `[seed] Multiple D1 sqlite files in ${dir}: ${files.join(', ')}`
+    );
+  }
+  const sqlite = files[0];
+  if (!sqlite) {
+    throw new Error(`[seed] Unexpected empty .sqlite list in ${dir}`);
+  }
+  return join(dir, sqlite);
+}
+
 async function seed() {
-  const { local, test, d1 } = parseArgs();
+  const { local, test, d1, cfLocal } = parseArgs();
 
   let client: ReturnType<typeof createClient> | undefined;
   let db: ReturnType<typeof drizzle> | ReturnType<typeof createD1HttpClient>;
 
-  if (d1) {
+  if (cfLocal) {
+    const dbPath = resolveCfLocalD1Path();
+    console.log(`🗄️  Using wrangler-local D1 emulator (file:${dbPath})\n`);
+    client = createClient({ url: `file:${dbPath}` });
+    db = drizzle({ client });
+  } else if (d1) {
     const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
     const databaseId = process.env.CLOUDFLARE_D1_DATABASE_ID;
     const token = process.env.CLOUDFLARE_API_TOKEN;
