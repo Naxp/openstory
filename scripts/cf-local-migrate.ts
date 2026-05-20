@@ -22,12 +22,17 @@ import { migrate } from 'drizzle-orm/libsql/migrator';
 
 const D1_DIR = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject';
 const BOOTSTRAP_NAME = 'DB.sqlite';
+// miniflare keeps its own bookkeeping sqlite alongside the per-binding DB —
+// it's a fixed name, not a hash, so we exclude it from the database scan.
+const IGNORED_SQLITE = new Set(['metadata.sqlite']);
 
 function resolveD1Path(): string {
   if (!existsSync(D1_DIR)) {
     mkdirSync(D1_DIR, { recursive: true });
   }
-  const sqliteFiles = readdirSync(D1_DIR).filter((f) => f.endsWith('.sqlite'));
+  const sqliteFiles = readdirSync(D1_DIR).filter(
+    (f) => f.endsWith('.sqlite') && !IGNORED_SQLITE.has(f)
+  );
   if (sqliteFiles.length > 1) {
     throw new Error(
       `[cf-local-migrate] Found multiple D1 sqlite files in ${D1_DIR}: ${sqliteFiles.join(

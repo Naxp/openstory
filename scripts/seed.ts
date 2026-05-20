@@ -66,7 +66,10 @@ function resolveCfLocalD1Path(): string {
       `[seed] No wrangler-local D1 directory at ${dir} — run \`bun db:migrate:cf-local\` first.`
     );
   }
-  const files = readdirSync(dir).filter((f) => f.endsWith('.sqlite'));
+  // metadata.sqlite is miniflare's internal bookkeeping, not the D1 binding.
+  const files = readdirSync(dir).filter(
+    (f) => f.endsWith('.sqlite') && f !== 'metadata.sqlite'
+  );
   if (files.length === 0) {
     throw new Error(
       `[seed] No D1 sqlite in ${dir} — run \`bun db:migrate:cf-local\` first.`
