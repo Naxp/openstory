@@ -19,6 +19,7 @@ import { VideoIcon } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
+import { getCreatorIdentity } from './creator-identity';
 
 export type ViewMode = 'script' | 'prompts' | 'images' | 'motion';
 
@@ -254,11 +255,10 @@ function applyFiltersAndSort(
   if (hideDomains.length > 0) {
     const suffixes = hideDomains.map((d) => `@${d.toLowerCase()}`);
     result = result.filter((s) => {
-      if (!('creatorEmail' in s) || typeof s.creatorEmail !== 'string') {
-        return true;
-      }
-      const email = s.creatorEmail.toLowerCase();
-      return !suffixes.some((suffix) => email.endsWith(suffix));
+      const { email } = getCreatorIdentity(s);
+      if (!email) return true;
+      const lowered = email.toLowerCase();
+      return !suffixes.some((suffix) => lowered.endsWith(suffix));
     });
   }
 
@@ -267,18 +267,9 @@ function applyFiltersAndSort(
     const searchLower = filters.search.toLowerCase();
     result = result.filter((s) => {
       if (s.title.toLowerCase().includes(searchLower)) return true;
-      if (
-        'creatorName' in s &&
-        typeof s.creatorName === 'string' &&
-        s.creatorName.toLowerCase().includes(searchLower)
-      )
-        return true;
-      if (
-        'creatorEmail' in s &&
-        typeof s.creatorEmail === 'string' &&
-        s.creatorEmail.toLowerCase().includes(searchLower)
-      )
-        return true;
+      const { name, email } = getCreatorIdentity(s);
+      if (name && name.toLowerCase().includes(searchLower)) return true;
+      if (email && email.toLowerCase().includes(searchLower)) return true;
       return false;
     });
   }

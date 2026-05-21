@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -79,6 +79,55 @@ const countActiveFilters = (filters: FilterState): number => {
   return count;
 };
 
+const VIEW_MODE_ITEMS: {
+  value: ViewMode;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: 'script', label: 'Script', icon: FileTextIcon },
+  { value: 'prompts', label: 'Prompts', icon: TextIcon },
+  { value: 'images', label: 'Images', icon: ImageIcon },
+  { value: 'motion', label: 'Motion', icon: Clapperboard },
+];
+
+type ViewModeToggleProps = {
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  iconOnly?: boolean;
+};
+
+const ViewModeToggle: React.FC<ViewModeToggleProps> = ({
+  viewMode,
+  onViewModeChange,
+  iconOnly,
+}) => {
+  return (
+    <ToggleGroup
+      type="single"
+      value={viewMode}
+      onValueChange={(value) => {
+        if (value && isValidViewMode(value)) {
+          onViewModeChange(value);
+        }
+      }}
+      variant="outline"
+      className={iconOnly ? 'w-full' : undefined}
+    >
+      {VIEW_MODE_ITEMS.map(({ value, label, icon: Icon }) => (
+        <ToggleGroupItem
+          key={value}
+          value={value}
+          aria-label={`Show ${label.toLowerCase()}`}
+          className={iconOnly ? 'h-10 flex-1' : undefined}
+        >
+          <Icon className={iconOnly ? 'h-4 w-4' : 'h-4 w-4 mr-2'} />
+          {!iconOnly && label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  );
+};
+
 const getSortFieldOptions = (criteria: SortCriteria[], index: number) => {
   const usedFields = new Set(
     criteria.filter((_, i) => i !== index).map((c) => c.field)
@@ -155,6 +204,17 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
   const [searchDraft, setSearchDraft] = useState(filters.search);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  // Keep latest filters/onFiltersChange in refs so the debounce effect can
+  // depend only on the draft. Without this, an external `filters` change
+  // (e.g. parent clears search) restarts the timer and the in-flight commit
+  // overwrites the new value with the stale draft.
+  const filtersRef = useRef(filters);
+  const onFiltersChangeRef = useRef(onFiltersChange);
+  useEffect(() => {
+    filtersRef.current = filters;
+    onFiltersChangeRef.current = onFiltersChange;
+  });
+
   // Reset draft when the committed search changes from outside (e.g. Clear).
   useEffect(() => {
     setSearchDraft(filters.search);
@@ -162,12 +222,13 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
 
   // Debounce draft → committed search to avoid a server roundtrip per keystroke.
   useEffect(() => {
-    if (searchDraft === filters.search) return;
     const t = setTimeout(() => {
-      onFiltersChange({ ...filters, search: searchDraft });
+      const current = filtersRef.current;
+      if (searchDraft === current.search) return;
+      onFiltersChangeRef.current({ ...current, search: searchDraft });
     }, 250);
     return () => clearTimeout(t);
-  }, [searchDraft, filters, onFiltersChange]);
+  }, [searchDraft]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchDraft(e.target.value);
@@ -461,46 +522,11 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
           </Popover>
         </div>
 
-        <ToggleGroup
-          type="single"
-          value={viewMode}
-          onValueChange={(value) => {
-            if (value && isValidViewMode(value)) {
-              onViewModeChange(value);
-            }
-          }}
-          variant="outline"
-          className="w-full"
-        >
-          <ToggleGroupItem
-            value="script"
-            aria-label="Show script"
-            className="h-10 flex-1"
-          >
-            <FileTextIcon className="h-4 w-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="prompts"
-            aria-label="Show prompts"
-            className="h-10 flex-1"
-          >
-            <TextIcon className="h-4 w-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="images"
-            aria-label="Show images"
-            className="h-10 flex-1"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </ToggleGroupItem>
-          <ToggleGroupItem
-            value="motion"
-            aria-label="Show frame videos"
-            className="h-10 flex-1"
-          >
-            <Clapperboard className="h-4 w-4" />
-          </ToggleGroupItem>
-        </ToggleGroup>
+        <ViewModeToggle
+          viewMode={viewMode}
+          onViewModeChange={onViewModeChange}
+          iconOnly
+        />
       </div>
 
       {/* Desktop layout (≥sm) — keeps Card chrome */}
@@ -564,33 +590,10 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
 
         {/* Row 2: view toggle, sort, support mode */}
         <div className="flex flex-wrap items-center gap-3">
-          <ToggleGroup
-            type="single"
-            value={viewMode}
-            onValueChange={(value) => {
-              if (value && isValidViewMode(value)) {
-                onViewModeChange(value);
-              }
-            }}
-            variant="outline"
-          >
-            <ToggleGroupItem value="script" aria-label="Show script">
-              <FileTextIcon className="h-4 w-4 mr-2" />
-              Script
-            </ToggleGroupItem>
-            <ToggleGroupItem value="prompts" aria-label="Show prompts">
-              <TextIcon className="h-4 w-4 mr-2" />
-              Prompts
-            </ToggleGroupItem>
-            <ToggleGroupItem value="images" aria-label="Show images">
-              <ImageIcon className="h-4 w-4 mr-2" />
-              Images
-            </ToggleGroupItem>
-            <ToggleGroupItem value="motion" aria-label="Show frame videos">
-              <Clapperboard className="h-4 w-4 mr-2" />
-              Motion
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <ViewModeToggle
+            viewMode={viewMode}
+            onViewModeChange={onViewModeChange}
+          />
 
           <div className="flex items-center gap-2">
             <ArrowUpDown className="h-4 w-4 text-muted-foreground" />

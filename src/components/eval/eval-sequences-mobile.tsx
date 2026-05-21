@@ -7,15 +7,12 @@ import { EvalSceneCell } from './eval-scene-cell';
 import type { DialogTab } from './eval-cell-dialog';
 import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import type { ViewMode } from './eval-view';
-import type { AspectRatio } from '@/lib/constants/aspect-ratios';
-import {
-  DEFAULT_ASPECT_RATIO,
-  getAspectRatioData,
-} from '@/lib/constants/aspect-ratios';
+import { getAspectRatioData } from '@/lib/constants/aspect-ratios';
 import { getAnalysisModelById } from '@/lib/ai/models.config';
 import { Route as sequencesScenesRoute } from '@/routes/_protected/sequences/$id/scenes';
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, Mail, User } from 'lucide-react';
+import { getCreatorIdentity } from './creator-identity';
 
 // Strip cell height in px. Widths follow each sequence's aspect ratio so the
 // strip stays visually coherent inside one row.
@@ -112,8 +109,7 @@ const MobileReelRow: React.FC<MobileReelRowProps> = ({
   onOpenDialogChange,
   onNavigateToCell,
 }) => {
-  const aspectRatio: AspectRatio =
-    (sequence.aspectRatio as AspectRatio | null) ?? DEFAULT_ASPECT_RATIO;
+  const aspectRatio = sequence.aspectRatio;
   const ratioData = getAspectRatioData(aspectRatio);
   const cellWidth = ratioData
     ? (STRIP_HEIGHT * ratioData.width) / ratioData.height
@@ -249,15 +245,7 @@ const MobileReelRow: React.FC<MobileReelRowProps> = ({
 const CreatorIdentity: React.FC<{ sequence: SequenceWithFrames }> = ({
   sequence,
 }) => {
-  const name =
-    'creatorName' in sequence && typeof sequence.creatorName === 'string'
-      ? sequence.creatorName
-      : null;
-  const email =
-    'creatorEmail' in sequence && typeof sequence.creatorEmail === 'string'
-      ? sequence.creatorEmail
-      : null;
-
+  const { name, email } = getCreatorIdentity(sequence);
   if (!name && !email) return null;
 
   return (

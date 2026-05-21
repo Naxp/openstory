@@ -8,6 +8,7 @@ import { formatDistanceToNow } from '@/lib/format-date';
 import { Route as sequencesScenesRoute } from '@/routes/_protected/sequences/$id/scenes';
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Calendar, ImageIcon, Mail, User } from 'lucide-react';
+import { getCreatorIdentity } from './creator-identity';
 
 type EvalSequenceMetadataProps = {
   sequence: SequenceWithFrames;
@@ -89,15 +90,7 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
 const CreatorIdentity: React.FC<{ sequence: SequenceWithFrames }> = ({
   sequence,
 }) => {
-  const name =
-    'creatorName' in sequence && typeof sequence.creatorName === 'string'
-      ? sequence.creatorName
-      : null;
-  const email =
-    'creatorEmail' in sequence && typeof sequence.creatorEmail === 'string'
-      ? sequence.creatorEmail
-      : null;
-
+  const { name, email } = getCreatorIdentity(sequence);
   if (!name && !email) return null;
 
   if (name) {
