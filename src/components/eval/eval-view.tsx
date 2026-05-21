@@ -2,6 +2,7 @@ import type React from 'react';
 import { useMemo, useState } from 'react';
 import { EvalToolbar } from './eval-toolbar';
 import { EvalMatrix } from './eval-matrix';
+import { EvalSequencesMobile } from './eval-sequences-mobile';
 import {
   useSequencesWithFrames,
   type SequenceWithFrames,
@@ -37,8 +38,7 @@ export function isValidSortField(
     value === 'title' ||
     value === 'createdAt' ||
     value === 'analysisModel' ||
-    value === 'imageModel' ||
-    value === 'workflow'
+    value === 'imageModel'
   );
 }
 
@@ -48,13 +48,12 @@ export type FilterState = {
   dateTo: Date | null;
   analysisModel: string | null;
   imageModel: string | null;
-  workflow: string | null;
   aspectRatio: AspectRatio | null;
   hasMergedVideo: boolean;
 };
 
 export type SortCriteria = {
-  field: 'title' | 'createdAt' | 'analysisModel' | 'imageModel' | 'workflow';
+  field: 'title' | 'createdAt' | 'analysisModel' | 'imageModel';
   direction: 'asc' | 'desc';
 };
 
@@ -64,7 +63,6 @@ const defaultFilters: FilterState = {
   dateTo: null,
   analysisModel: null,
   imageModel: null,
-  workflow: null,
   aspectRatio: null,
   hasMergedVideo: false,
 };
@@ -166,13 +164,6 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     );
   }
 
-  // Unique workflows for filter dropdown — computed from loaded sequences.
-  const availableWorkflows = [
-    ...new Set(
-      sequences.map((s) => s.workflow).filter((w): w is string => w !== null)
-    ),
-  ].sort();
-
   return (
     <div className="flex-1 overflow-hidden flex flex-col gap-4">
       <EvalToolbar
@@ -182,7 +173,6 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
         onFiltersChange={setFilters}
         sortCriteria={sortCriteria}
         onSortChange={setSortCriteria}
-        availableWorkflows={availableWorkflows}
         supportMode={supportMode}
         isAdmin={isAdmin}
         onSupportModeChange={setSupportMode}
@@ -226,14 +216,28 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
           }
         />
       ) : (
-        <EvalMatrix
-          sequences={filteredAndSorted}
-          viewMode={viewMode}
-          framesLoadingMap={framesLoadingMap}
-          divergenceMap={divergenceMap}
-          onLoadMore={handleLoadMore}
-          hasMore={supportMode ? adminData.hasNextPage : false}
-        />
+        <>
+          <div className="flex-1 min-h-0 flex flex-col sm:hidden">
+            <EvalSequencesMobile
+              sequences={filteredAndSorted}
+              viewMode={viewMode}
+              framesLoadingMap={framesLoadingMap}
+              divergenceMap={divergenceMap}
+              onLoadMore={handleLoadMore}
+              hasMore={supportMode ? adminData.hasNextPage : false}
+            />
+          </div>
+          <div className="flex-1 min-h-0 hidden sm:flex sm:flex-col">
+            <EvalMatrix
+              sequences={filteredAndSorted}
+              viewMode={viewMode}
+              framesLoadingMap={framesLoadingMap}
+              divergenceMap={divergenceMap}
+              onLoadMore={handleLoadMore}
+              hasMore={supportMode ? adminData.hasNextPage : false}
+            />
+          </div>
+        </>
       )}
     </div>
   );
@@ -294,10 +298,6 @@ function applyFiltersAndSort(
 
   if (filters.imageModel) {
     result = result.filter((s) => s.imageModel === filters.imageModel);
-  }
-
-  if (filters.workflow) {
-    result = result.filter((s) => s.workflow === filters.workflow);
   }
 
   if (filters.aspectRatio) {

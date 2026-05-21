@@ -51,7 +51,6 @@ type EvalToolbarProps = {
   onFiltersChange: (filters: FilterState) => void;
   sortCriteria: SortCriteria[];
   onSortChange: (criteria: SortCriteria[]) => void;
-  availableWorkflows: string[];
   supportMode?: boolean;
   // Support-mode controls (rendered inline when isAdmin is true)
   isAdmin?: boolean;
@@ -67,14 +66,12 @@ const SORT_FIELDS: { value: SortCriteria['field']; label: string }[] = [
   { value: 'title', label: 'Title' },
   { value: 'analysisModel', label: 'Analysis Model' },
   { value: 'imageModel', label: 'Image Model' },
-  { value: 'workflow', label: 'Workflow' },
 ];
 
 const countActiveFilters = (filters: FilterState): number => {
   let count = 0;
   if (filters.analysisModel) count++;
   if (filters.imageModel) count++;
-  if (filters.workflow) count++;
   if (filters.aspectRatio) count++;
   if (filters.hasMergedVideo) count++;
   if (filters.dateFrom) count++;
@@ -147,7 +144,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
   onFiltersChange,
   sortCriteria,
   onSortChange,
-  availableWorkflows,
   supportMode,
   isAdmin,
   onSupportModeChange,
@@ -191,13 +187,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
     });
   };
 
-  const handleWorkflowChange = (value: string) => {
-    onFiltersChange({
-      ...filters,
-      workflow: value === 'all' ? null : value,
-    });
-  };
-
   const handleAspectRatioChange = (value: string) => {
     const match = ASPECT_RATIOS.find((r) => r.value === value);
     onFiltersChange({
@@ -213,7 +202,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
       dateTo: null,
       analysisModel: null,
       imageModel: null,
-      workflow: null,
       aspectRatio: null,
       hasMergedVideo: false,
     });
@@ -277,14 +265,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
       })),
   ];
 
-  const workflowOptions = [
-    { value: 'all', label: 'All Workflows' },
-    ...availableWorkflows.map((workflow) => ({
-      value: workflow,
-      label: workflow,
-    })),
-  ];
-
   const aspectRatioOptions = [
     { value: 'all', label: 'All Aspect Ratios' },
     ...ASPECT_RATIOS.map((r) => ({ value: r.value, label: r.label })),
@@ -293,38 +273,35 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
   const primarySort = sortCriteria[0];
 
   return (
-    <Card className="p-3">
-      {/* Mobile layout (≤sm) */}
-      <div className="flex flex-col gap-2 sm:hidden">
-        <Input
-          placeholder={
-            supportMode
-              ? 'Search by title, name, or email…'
-              : 'Search by title…'
-          }
-          value={searchDraft}
-          onChange={handleSearchChange}
-          className="h-11 w-full"
-        />
+    <>
+      {/* Mobile layout (≤sm) — flat, no Card chrome */}
+      <div className="flex flex-col gap-2 pb-3 border-b border-border sm:hidden">
         <div className="flex items-center gap-2">
+          <Input
+            placeholder={
+              supportMode ? 'Search title, name, email…' : 'Search by title…'
+            }
+            value={searchDraft}
+            onChange={handleSearchChange}
+            className="h-11 flex-1 min-w-0"
+          />
           <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 size="lg"
-                className="h-11 flex-1 justify-center gap-2"
+                className="h-11 shrink-0 gap-1.5 px-3"
                 aria-label={
                   activeFilterCount > 0
-                    ? `Open filters, ${activeFilterCount} active`
-                    : 'Open filters'
+                    ? `Filters and sort, ${activeFilterCount} active`
+                    : 'Filters and sort'
                 }
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                Filters
                 {activeFilterCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1 h-5 min-w-5 justify-center px-1.5"
+                    className="h-5 min-w-5 justify-center px-1.5"
                   >
                     {activeFilterCount}
                   </Badge>
@@ -332,9 +309,58 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              align="start"
+              align="end"
               className="flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-3"
             >
+              {primarySort && (
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Sort by
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={primarySort.field}
+                      onValueChange={(value) => {
+                        if (isValidSortField(value)) {
+                          updateSortField(0, value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        aria-label="Sort by"
+                        className="h-11 flex-1"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getSortFieldOptions(sortCriteria, 0).map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-11 w-11 shrink-0"
+                      onClick={() => toggleSortDirection(0)}
+                      aria-label={
+                        primarySort.direction === 'asc'
+                          ? 'Sort ascending'
+                          : 'Sort descending'
+                      }
+                    >
+                      {primarySort.direction === 'asc' ? (
+                        <ArrowUp className="h-4 w-4" />
+                      ) : (
+                        <ArrowDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <FilterSelect
                 id="mobile-analysis-model"
                 label="Analysis Model"
@@ -354,18 +380,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
                 placeholder="Image Model"
                 triggerClassName="h-11"
               />
-
-              {availableWorkflows.length > 0 && (
-                <FilterSelect
-                  id="mobile-workflow"
-                  label="Workflow"
-                  value={filters.workflow || 'all'}
-                  onValueChange={handleWorkflowChange}
-                  options={workflowOptions}
-                  placeholder="Workflow"
-                  triggerClassName="h-11"
-                />
-              )}
 
               <FilterSelect
                 id="mobile-aspect-ratio"
@@ -445,47 +459,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
               </div>
             </PopoverContent>
           </Popover>
-
-          {primarySort && (
-            <div className="flex items-center gap-1">
-              <Select
-                value={primarySort.field}
-                onValueChange={(value) => {
-                  if (isValidSortField(value)) {
-                    updateSortField(0, value);
-                  }
-                }}
-              >
-                <SelectTrigger aria-label="Sort by" className="h-11 w-28">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {getSortFieldOptions(sortCriteria, 0).map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-11 w-11"
-                onClick={() => toggleSortDirection(0)}
-                aria-label={
-                  primarySort.direction === 'asc'
-                    ? 'Sort ascending'
-                    : 'Sort descending'
-                }
-              >
-                {primarySort.direction === 'asc' ? (
-                  <ArrowUp className="h-4 w-4" />
-                ) : (
-                  <ArrowDown className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          )}
         </div>
 
         <ToggleGroup
@@ -502,36 +475,36 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
           <ToggleGroupItem
             value="script"
             aria-label="Show script"
-            className="h-11 flex-1"
+            className="h-10 flex-1"
           >
             <FileTextIcon className="h-4 w-4" />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="prompts"
             aria-label="Show prompts"
-            className="h-11 flex-1"
+            className="h-10 flex-1"
           >
             <TextIcon className="h-4 w-4" />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="images"
             aria-label="Show images"
-            className="h-11 flex-1"
+            className="h-10 flex-1"
           >
             <ImageIcon className="h-4 w-4" />
           </ToggleGroupItem>
           <ToggleGroupItem
             value="motion"
             aria-label="Show frame videos"
-            className="h-11 flex-1"
+            className="h-10 flex-1"
           >
             <Clapperboard className="h-4 w-4" />
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
 
-      {/* Desktop layout (≥sm) — unchanged */}
-      <div className="hidden sm:flex sm:flex-col sm:gap-3">
+      {/* Desktop layout (≥sm) — keeps Card chrome */}
+      <Card className="hidden sm:flex sm:flex-col sm:gap-3 p-3">
         {/* Row 1: filters */}
         <div className="flex flex-wrap items-center gap-2">
           <Input
@@ -558,15 +531,6 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
             placeholder="Image Model"
             triggerClassName="w-44"
           />
-          {availableWorkflows.length > 0 && (
-            <FilterSelect
-              value={filters.workflow || 'all'}
-              onValueChange={handleWorkflowChange}
-              options={workflowOptions}
-              placeholder="Workflow"
-              triggerClassName="w-52"
-            />
-          )}
           <FilterSelect
             value={filters.aspectRatio || 'all'}
             onValueChange={handleAspectRatioChange}
@@ -727,7 +691,7 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
             </div>
           )}
         </div>
-      </div>
-    </Card>
+      </Card>
+    </>
   );
 };
