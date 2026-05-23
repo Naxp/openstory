@@ -9,6 +9,7 @@ import type {
   SequenceElement,
   SequenceLocation,
 } from '@/lib/db/schema';
+import { elementCanonicalKebab } from '@/lib/workflows/scene-matching';
 
 export type MentionSection = 'elements' | 'cast' | 'locations';
 
@@ -56,20 +57,6 @@ function consistencyTagSlug(raw: string | null | undefined): string | null {
   return slug.length > 0 ? slug : null;
 }
 
-/**
- * Derive the new canonical kebab tag from a legacy uppercase-with-spaces or
- * UPPERCASE_SNAKE_CASE token. `RED HEX LOGO` → `red-hex-logo`, `PEPSI_LOGO`
- * → `pepsi-logo`. Keeps only `[a-z0-9-]` and trims edge separators.
- */
-function elementKebabFromToken(token: string): string {
-  return token
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 export function buildMentionItems(args: {
   characters: MentionCharacterInput[];
   elements: MentionElementInput[];
@@ -78,10 +65,9 @@ export function buildMentionItems(args: {
   const items: MentionItem[] = [];
 
   for (const el of args.elements) {
-    // New convention: lowercase kebab. Prefer the vision-LLM consistencyTag
-    // when present (already a clean slug); otherwise derive from the token.
-    const consistencySlug = consistencyTagSlug(el.consistencyTag);
-    const tag = consistencySlug || elementKebabFromToken(el.token) || el.token;
+    // New convention: lowercase kebab. Shared helper in scene-matching so the
+    // server-side parser and the editor pill the same thing.
+    const tag = elementCanonicalKebab(el);
     // Legacy form (e.g. `RED HEX LOGO`) still appears in existing prompts —
     // alias-match so old text auto-pills to the same item.
     const aliases = el.token && el.token !== tag ? [el.token] : undefined;
