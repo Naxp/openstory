@@ -113,10 +113,16 @@ function readSnapshot(): Snapshot {
         `  bun --bun scripts/snapshot-sequence.ts <sequenceId>\n`
     );
   }
-  const raw = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf-8')) as Snapshot;
-  reviveDates(raw.sequence as Record<string, unknown>, SEQUENCE_DATE_COLS);
+  // Trust the JSON shape — it's written by our own snapshot-sequence.ts and
+  // committed to the repo. The schema-change protection is the type
+  // signature in snapshot-sequence.ts, not a runtime validator here.
+  const raw: Snapshot = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf-8'));
+  reviveDates(
+    raw.sequence as unknown as Record<string, unknown>,
+    SEQUENCE_DATE_COLS
+  );
   for (const f of raw.frames)
-    reviveDates(f as Record<string, unknown>, FRAME_DATE_COLS);
+    reviveDates(f as unknown as Record<string, unknown>, FRAME_DATE_COLS);
   return raw;
 }
 

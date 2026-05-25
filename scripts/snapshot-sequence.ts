@@ -36,11 +36,12 @@ import { frames, sequences } from '@/lib/db/schema';
 
 const OUT_FILE = path.resolve('e2e/fixtures/marketing-demo-sequence.json');
 
-const sequenceId = process.argv[2];
-if (!sequenceId) {
+const rawSequenceId = process.argv[2];
+if (!rawSequenceId) {
   console.error('Usage: bun --bun scripts/snapshot-sequence.ts <sequenceId>');
   process.exit(1);
 }
+const sequenceId: string = rawSequenceId;
 
 async function main() {
   const db = drizzle({ client: createClient({ url: 'file:test.db' }) });
@@ -48,7 +49,7 @@ async function main() {
   const seq = await db
     .select()
     .from(sequences)
-    .where(eq(sequences.id, sequenceId!))
+    .where(eq(sequences.id, sequenceId))
     .get();
   if (!seq) {
     throw new Error(`Sequence ${sequenceId} not found in test.db`);
@@ -57,7 +58,7 @@ async function main() {
   const frameRows = await db
     .select()
     .from(frames)
-    .where(eq(frames.sequenceId, sequenceId!));
+    .where(eq(frames.sequenceId, sequenceId));
 
   if (frameRows.length === 0) {
     console.warn(
