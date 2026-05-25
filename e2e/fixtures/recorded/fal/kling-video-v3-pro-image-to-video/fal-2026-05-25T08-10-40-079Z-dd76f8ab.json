@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Handheld eye-level camera holds on Scarlett standing barefoot at the shoreline as a gentle wave rushes over her feet. She laughs softly with subtle body sway and head tilt while the lipstick tube settles into the embossed sand mark beside her toes. Camera then tilts down smoothly into a macro detail on coral pigment and clinging grains before rising back to eye-level and locking off on the open horizon. A second wave rolls in and smooths the sand flat.\n\n[SCARLETT, soft reflective]: \"Coral. Fresh. Yours.\"\n\nAmbient sounds: gentle ocean waves lapping shoreline with light coastal breeze. wave washing over bare feet, soft female laugh, sand smoothing under water.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9b99ff/CmicVF5nCCe2lCVTstH30_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 42229613
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

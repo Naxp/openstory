@@ -1,0 +1,21 @@
+{
+  "fingerprint": {
+    "bucket": "videos",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/coral-a-summer-launch_shoreline-product-reveal_<HASH>_openstory.mp4",
+    "contentType": "video/mp4"
+  },
+  "entries": [
+    {
+      "request": {
+        "key": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/coral-a-summer-launch_shoreline-product-reveal_ferz12_openstory.mp4",
+        "bodyHash": "5be03cc536ae0492f1c4a5f64845ceee2103af6f22c55a3b37af98dffac2a1df",
+        "bodySize": 42229613
+      },
+      "response": {
+        "path": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/coral-a-summer-launch_shoreline-product-reveal_ferz12_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/coral-a-summer-launch_shoreline-product-reveal_ferz12_openstory.mp4",
+        "fullPath": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/coral-a-summer-launch_shoreline-product-reveal_ferz12_openstory.mp4"
+      }
+    }
+  ]
+}

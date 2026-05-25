@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Instrumental light electronic ambient track with serene uplifting pads and gentle flowing melodies that evoke a fresh breezy coastal morning.",
+        "model": "fal-ai/elevenlabs/music",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "audio": {
+            "url": "https://v3b.fal.media/files/b/0a9b99ea/06qlvEOqWGDpRiXGK9k2a_music_generated.mp3",
+            "content_type": "audio/mpeg",
+            "file_name": "music_generated.mp3",
+            "file_size": 560110
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

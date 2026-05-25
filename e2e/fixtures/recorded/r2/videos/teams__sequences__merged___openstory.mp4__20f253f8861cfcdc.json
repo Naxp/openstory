@@ -7,26 +7,14 @@
   "entries": [
     {
       "request": {
-        "key": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/2KEEFQ9W_openstory.mp4",
-        "bodyHash": "30ef5e9a560396e475f2b58873e7f9aeaae9a3e315930e59c45ab8024771070b",
-        "bodySize": 12107914
+        "key": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/merged/M73FJ5B0_openstory.mp4",
+        "bodyHash": "3a2d2d4e283275921a83393d5f8fd33353bb7645fbbe8836d32c1f8f613a0c87",
+        "bodySize": 18401262
       },
       "response": {
-        "path": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/2KEEFQ9W_openstory.mp4",
-        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/2KEEFQ9W_openstory.mp4",
-        "fullPath": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/2KEEFQ9W_openstory.mp4"
-      }
-    },
-    {
-      "request": {
-        "key": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/60BQ4W4C_openstory.mp4",
-        "bodyHash": "d908ce4bd2d57185761dbd3915e2b1dd4aefc77dea4c33c464e2070dfa49e0e6",
-        "bodySize": 10995884
-      },
-      "response": {
-        "path": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/60BQ4W4C_openstory.mp4",
-        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/60BQ4W4C_openstory.mp4",
-        "fullPath": "videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/merged/60BQ4W4C_openstory.mp4"
+        "path": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/merged/M73FJ5B0_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/merged/M73FJ5B0_openstory.mp4",
+        "fullPath": "videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/merged/M73FJ5B0_openstory.mp4"
       }
     }
   ]

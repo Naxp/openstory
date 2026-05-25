@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Handheld camera trails Scarlett at eye level as she steps onto the wide oceanfront promenade, body in fluid mid-stride forward motion. Wind lifts her hair while she glances back over her shoulder, coral lips vivid against the bright morning sea. Surfers carve white lines across the deep blue water in the background.\n\nShe delivers the line with soft reflective calm, subtle shoulder turn and natural breath as the camera maintains smooth trailing distance.\n\nPale sand stretches beneath her feet with soft directional shadows, light ocean haze drifting across the frame under bright natural daylight.\n\n[SCARLETT, soft reflective]: \"Made for the water. Wear it everywhere.\"\n\nAmbient sounds: ocean waves breaking, light wind across promenade.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9b99f8/PKDOHAJl1TI_VJOjXDD_Z_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 12510493
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

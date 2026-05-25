@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Handheld eye-level camera holds steady at the white vanity with subtle natural micro-movement. Scarlett leans in, lifts the slim coral lipstick from its box, glides the color smoothly across her lips, blots once with a tissue, then offers a soft closed-mouth smile as sunlight catches the fresh tone.\n\nScarlett delivers the line with gentle lip movement and a slight head tilt, gaze directed forward.\n\nBright window light shifts faintly across matte surfaces while faint dust motes drift through the beam.\n\n[SCARLETT, soft reflective]: \"One shade. One summer.\"\n\nAmbient sounds: quiet studio with soft natural room tone and distant waves. lipstick tube click, soft blotting sound, light lipstick cap close.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9b99fb/966Rg4PBmbV4rzyNi2gew_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 17399616
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

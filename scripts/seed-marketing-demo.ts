@@ -7,11 +7,18 @@
  * deterministic demo sequence to that user's team so the recording specs
  * have something realistic to drive.
  *
+ * Loads its sequence + frame rows from e2e/fixtures/marketing-demo-sequence.json,
+ * which is a snapshot of a real sequence produced by the full pipeline. See
+ * scripts/snapshot-sequence.ts for how to (re-)generate that fixture. This
+ * "snapshot once, replay forever" approach avoids fighting the editor's data
+ * expectations — the snapshot IS exactly what the app produces, so the UI
+ * renders it as a real completed sequence rather than a skeleton.
+ *
  * Idempotent: find-or-create on (teamId, title). Re-running just returns
  * the existing sequence id.
  *
  * Writes the sequence id to e2e/.auth/marketing-demo.json so the recording
- * spec can locate it without re-querying the database.
+ * specs can locate it without re-querying the database.
  *
  * Usage (from this repo):
  *   E2E_TEST=true bun --bun scripts/seed-marketing-demo.ts
@@ -22,35 +29,41 @@ import path from 'node:path';
 import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { and, eq } from 'drizzle-orm';
-import { frames, sequences, styles, teams } from '@/lib/db/schema';
+import {
+  frames,
+  sequences,
+  styles,
+  teams,
+  type Frame,
+  type Sequence,
+} from '@/lib/db/schema';
 import { generateId } from '@/lib/db/id';
-import type { Scene } from '@/lib/ai/scene-analysis.schema';
 
 const AUTH_DIR = path.resolve('e2e/.auth');
 const USER_INFO_FILE = path.join(AUTH_DIR, 'user-info.json');
 const DEMO_INFO_FILE = path.join(AUTH_DIR, 'marketing-demo.json');
+const SNAPSHOT_FILE = path.resolve('e2e/fixtures/marketing-demo-sequence.json');
 
 const DEMO_TITLE = 'Marketing Demo — Scene Editing';
 
-// Pre-rendered media from the existing recorded r2 fixtures. These URLs
-// point at real persisted CDN objects, so the frame loads in the editor
-// exactly like a freshly-generated scene would.
-//
-// If these specific fixtures get pruned upstream, swap in any other
-// publicUrl from e2e/fixtures/recorded/r2/{thumbnails,videos}/*.json.
-const DEMO_THUMBNAIL_URL =
-  'https://storage-dev.openstory.so/thumbnails/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/frames/01KRMKVZG8SGSBAKZPPF01Q8AY/01KRMKYX4M2A19VFF5VTQ04YEA.png';
-const DEMO_VIDEO_URL =
-  'https://storage-dev.openstory.so/videos/teams/01KRMKS88ZRXB9Z8RAX8MSZKJ5/sequences/01KRMKTJ3HZZBFMFJEC5H25FVH/frames/01KRMKVZG8SGSBAKZPPF01Q8AY/coral-a-summer-launch_promenade-walk_h0vz41_openstory.mp4';
-
-// Sentinel hash — different from anything the app will compute from the
-// frame's current state, so editing the prompt in the recording immediately
-// triggers the staleness indicator. The app's isStale check is a plain
-// string compare (see src/lib/db/scoped/frames.ts), so any non-matching
-// value works; using a sentinel makes intent obvious in the DB.
-const SENTINEL_HASH = 'sha256:marketing-demo-baseline';
-
 type TestUser = { id: string; email: string; name: string; teamId: string };
+
+type Snapshot = {
+  capturedAt: string;
+  sourceSequenceId: string;
+  // Sequence row with the runtime-bound ids stripped by snapshot-sequence.ts.
+  sequence: Omit<
+    Sequence,
+    | 'id'
+    | 'teamId'
+    | 'createdBy'
+    | 'updatedBy'
+    | 'styleId'
+    | 'createdAt'
+    | 'updatedAt'
+  >;
+  frames: Omit<Frame, 'id' | 'sequenceId' | 'createdAt' | 'updatedAt'>[];
+};
 
 function readTestUser(): TestUser {
   if (!fs.existsSync(USER_INFO_FILE)) {
@@ -62,20 +75,54 @@ function readTestUser(): TestUser {
   return JSON.parse(fs.readFileSync(USER_INFO_FILE, 'utf-8'));
 }
 
-function buildSceneMetadata(): Scene {
-  return {
-    sceneId: 'demo-scene-1',
-    sceneNumber: 1,
-    originalScript: {
-      extract:
-        'A founder steps out onto the promenade at golden hour. The product launch poster glows behind her.',
-      dialogue: [],
-    },
-  };
+// Columns drizzle exposes as Date on select but that JSON.stringify flattens
+// to ISO strings. We revive them so drizzle's insert (which calls .getTime())
+// doesn't throw. Listed explicitly — silently coercing every string-shaped
+// field would mask real schema drift.
+const SEQUENCE_DATE_COLS = [
+  'mergedVideoGeneratedAt',
+  'musicGeneratedAt',
+] as const;
+const FRAME_DATE_COLS = [
+  'thumbnailGeneratedAt',
+  'variantImageGeneratedAt',
+  'videoGeneratedAt',
+  'audioGeneratedAt',
+] as const;
+
+function reviveDates<T extends Record<string, unknown>>(
+  row: T,
+  cols: readonly string[]
+): T {
+  for (const c of cols) {
+    const v = row[c];
+    if (typeof v === 'string') {
+      (row as Record<string, unknown>)[c] = new Date(v);
+    }
+  }
+  return row;
+}
+
+function readSnapshot(): Snapshot {
+  if (!fs.existsSync(SNAPSHOT_FILE)) {
+    throw new Error(
+      `Missing snapshot at ${SNAPSHOT_FILE}.\n\n` +
+        `Bootstrap by running the full pipeline once, then snapshotting the\n` +
+        `resulting sequence:\n` +
+        `  PLAYWRIGHT_FULL_PIPELINE=true bun test:e2e:full\n` +
+        `  bun --bun scripts/snapshot-sequence.ts <sequenceId>\n`
+    );
+  }
+  const raw = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, 'utf-8')) as Snapshot;
+  reviveDates(raw.sequence as Record<string, unknown>, SEQUENCE_DATE_COLS);
+  for (const f of raw.frames)
+    reviveDates(f as Record<string, unknown>, FRAME_DATE_COLS);
+  return raw;
 }
 
 async function main() {
   const testUser = readTestUser();
+  const snapshot = readSnapshot();
   const db = drizzle({ client: createClient({ url: 'file:test.db' }) });
 
   // Sanity: the test user's team must exist (auth setup creates it).
@@ -88,8 +135,8 @@ async function main() {
     throw new Error(`Team ${testUser.teamId} not found in test.db`);
   }
 
-  // Pick the first available style — seeded system templates are the
-  // realistic fallback when the user's own team has no custom styles yet.
+  // Pick the first available style — system templates are the realistic
+  // fallback when the user's team has no custom styles yet.
   const style = await db.select().from(styles).limit(1).get();
   if (!style) {
     throw new Error(
@@ -98,7 +145,8 @@ async function main() {
     );
   }
 
-  // Find-or-create the demo sequence.
+  // Find-or-create the demo sequence by (teamId, title). The title is the
+  // stable handle — sequence ids regenerate on every replay.
   let sequence = await db
     .select()
     .from(sequences)
@@ -113,15 +161,13 @@ async function main() {
   if (!sequence) {
     const sequenceId = generateId();
     await db.insert(sequences).values({
+      ...snapshot.sequence,
       id: sequenceId,
-      teamId: testUser.teamId,
       title: DEMO_TITLE,
-      script:
-        'INT. STUDIO - DAY\n\nThe founder reviews the campaign poster.\n\nEXT. PROMENADE - GOLDEN HOUR\n\nShe walks past it, glancing back once.',
-      status: 'completed',
-      styleId: style.id,
+      teamId: testUser.teamId,
       createdBy: testUser.id,
       updatedBy: testUser.id,
+      styleId: style.id,
     });
     sequence = await db
       .select()
@@ -131,50 +177,44 @@ async function main() {
     if (!sequence) {
       throw new Error('Insert succeeded but sequence not found on re-read');
     }
-    console.log(`[seed-marketing-demo] created sequence ${sequenceId}`);
+    console.log(
+      `[seed-marketing-demo] created sequence ${sequenceId} ` +
+        `from snapshot of ${snapshot.sourceSequenceId}`
+    );
   } else {
     console.log(
       `[seed-marketing-demo] reusing existing sequence ${sequence.id}`
     );
   }
 
-  // Find-or-create the first frame. The walkthrough drives this frame —
-  // edits its prompt, expects the stale badge, picks a video model.
-  const existingFrame = await db
+  // Find-or-create frames. We use orderIndex as the natural key — if the
+  // sequence exists with the right frame count, assume it's already seeded
+  // from a prior run and skip.
+  const existingFrames = await db
     .select()
     .from(frames)
-    .where(and(eq(frames.sequenceId, sequence.id), eq(frames.orderIndex, 0)))
-    .get();
+    .where(eq(frames.sequenceId, sequence.id));
 
-  if (!existingFrame) {
-    await db.insert(frames).values({
-      sequenceId: sequence.id,
-      orderIndex: 0,
-      description: 'Founder walking the promenade at golden hour',
-      durationMs: 4000,
-      imagePrompt:
-        'medium shot, founder walking past launch poster, soft afternoon light',
-      motionPrompt: 'slow dolly forward as she glances back over her shoulder',
-      // Pre-rendered media — points at real fixture CDN URLs so the editor
-      // displays the frame as "already generated".
-      thumbnailUrl: DEMO_THUMBNAIL_URL,
-      previewThumbnailUrl: DEMO_THUMBNAIL_URL,
-      thumbnailStatus: 'completed',
-      thumbnailGeneratedAt: new Date(),
-      variantImageStatus: 'completed',
-      videoUrl: DEMO_VIDEO_URL,
-      videoStatus: 'completed',
-      videoGeneratedAt: new Date(),
-      // Sentinel hashes — see comment at top of file.
-      variantImageInputHash: SENTINEL_HASH,
-      videoInputHash: SENTINEL_HASH,
-      visualPromptInputHash: SENTINEL_HASH,
-      motionPromptInputHash: SENTINEL_HASH,
-      metadata: buildSceneMetadata(),
-    });
-    console.log('[seed-marketing-demo] created demo frame');
+  if (existingFrames.length === snapshot.frames.length) {
+    console.log(
+      `[seed-marketing-demo] reusing ${existingFrames.length} existing frames`
+    );
   } else {
-    console.log('[seed-marketing-demo] reusing existing demo frame');
+    if (existingFrames.length > 0) {
+      await db.delete(frames).where(eq(frames.sequenceId, sequence.id));
+      console.log(
+        `[seed-marketing-demo] cleared ${existingFrames.length} stale frames before re-seeding`
+      );
+    }
+    for (const f of snapshot.frames) {
+      await db.insert(frames).values({
+        ...f,
+        sequenceId: sequence.id,
+      });
+    }
+    console.log(
+      `[seed-marketing-demo] inserted ${snapshot.frames.length} frames`
+    );
   }
 
   fs.mkdirSync(AUTH_DIR, { recursive: true });

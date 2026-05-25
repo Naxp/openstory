@@ -1,0 +1,417 @@
+{
+  "capturedAt": "2026-05-25T08:15:49.038Z",
+  "sourceSequenceId": "01KSF34B7CW7GRMYKDQQ4WQ3F0",
+  "sequence": {
+    "title": "CORAL — A SUMMER LAUNCH",
+    "script": "CORAL — A SUMMER LAUNCH\n\nINT. BONDI STUDIO - MORNING\n\nBright window light pours across a crisp white vanity. SCARLETT, 19, sun-kissed with loose blonde waves, leans toward her microphone in a clean white tank. She lifts a slim coral lipstick from its minimal box, fingers tracing the matte finish. The tube catches the light, a single pop of #D4536D against the neutral palette.\n\nSCARLETT (V.O.)\nOne shade. One summer.\n\nCLOSE ON LIPS — She glides the color across her mouth, blots once, then smiles. Sunlight hits the fresh coral directly.\n\nEXT. BONDI BEACH PROMENADE - CONTINUOUS\n\nHandheld camera trails Scarlett as she steps onto the wide promenade. Wind lifts her hair. Behind her, surfers carve white lines across the blue. She glances back, coral lips vivid against the #F0E6D3 sand and sea.\n\nSCARLETT (V.O.)\nMade for the water. Wear it everywhere.\n\nEXT. BONDI BEACH - SHORELINE - CONTINUOUS\n\nA wave rushes over her bare feet. Scarlett laughs, the sound carried by the breeze. The lipstick tube settles beside the embossed brand mark pressed into the wet sand. Golden-hour warmth kisses the scene while cool shadows define every edge.\n\nMACRO DETAIL — Coral pigment on skin, tiny grains of sand clinging to the tube. Overhead flat lay: lipstick, shell, linen scrap, all arranged on pale board.\n\nSCARLETT (V.O.)\nCoral. Fresh. Yours.\n\nSUPER: CORAL. OUT NOW.\n\nThe frame holds on the shoreline as another wave smooths the sand, leaving only the bright mark and the open horizon.",
+    "status": "completed",
+    "statusError": null,
+    "aspectRatio": "16:9",
+    "analysisModel": "x-ai/grok-4.3",
+    "analysisDurationMs": 13425,
+    "imageModel": "nano_banana_2",
+    "videoModel": "kling_v3_pro",
+    "workflow": "analyze-script-shorter-prompts-batch-size-1",
+    "mergedVideoUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/merged/M73FJ5B0_openstory.mp4",
+    "mergedVideoPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/merged/HG6GDHP4_openstory.mp4",
+    "mergedVideoStatus": "merging",
+    "mergedVideoGeneratedAt": "2026-05-25T08:13:51.000Z",
+    "mergedVideoError": null,
+    "musicUrl": "https://storage-dev.openstory.so/audio/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/music/sequence_music_kjrx9d_openstory.mp3",
+    "musicPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/music/sequence_music_bawvkw_openstory.mp3",
+    "musicStatus": "completed",
+    "musicGeneratedAt": "2026-05-25T08:13:48.000Z",
+    "musicError": null,
+    "musicModel": "elevenlabs_music",
+    "musicPrompt": "Instrumental light electronic ambient track with serene uplifting pads and gentle flowing melodies that evoke a fresh breezy coastal morning.",
+    "musicTags": "instrumental, ambient, electronic, uplifting, serene, flowing, spacious, minimal",
+    "musicPromptInputHash": "1604b62e97d698a909d22396bb0e81ca69d32d3358d74156ccdd244d8801c4a5",
+    "posterUrl": "https://v3b.fal.media/files/b/0a9a3f05/bkUg39MChcMF1L8eOrYB7_CrjK6uqF.png",
+    "autoGenerateMotion": false,
+    "autoGenerateMusic": false,
+    "suggestedTalentIds": ["01KRMKES6TWAEC44S2S8PXZBM8"],
+    "suggestedLocationIds": ["01KRMKES6TX2WRRR7QDVHEVF1Q"]
+  },
+  "frames": [
+    {
+      "orderIndex": 0,
+      "description": "INT. BONDI STUDIO - MORNING\n\nBright window light pours across a crisp white vanity. SCARLETT, 19, sun-kissed with loose blonde waves, leans toward her microphone in a clean white tank. She lifts a slim coral lipstick from its minimal box, fingers tracing the matte finish. The tube catches the light, a single pop of #D4536D against the neutral palette.\n\nSCARLETT (V.O.)\nOne shade. One summer.\n\nCLOSE ON LIPS — She glides the color across her mouth, blots once, then smiles. Sunlight hits the fresh coral directly.",
+      "durationMs": 12000,
+      "thumbnailUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NJBN6B8M1YE848HV50C1/01KSF2R6MA9TAZXVR3BM77MNTM.png",
+      "previewThumbnailUrl": "https://v3b.fal.media/files/b/0a9a3f07/pvH4PurxzfVrb9eo6CI3C_CyBao6gb.png",
+      "thumbnailPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34DTKAQPN4HJDYR16KA05/01KSF34QF0FPPME2SZFN7NWRZ4.png",
+      "variantImageUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NJBN6B8M1YE848HV50C1/01KSF2SBG8G9A5F7DH5NVRHVP3.png",
+      "variantImageStatus": "completed",
+      "variantWorkflowRunId": "wfr_1CxyAmMozggne9bmLPmAu",
+      "variantImageGeneratedAt": null,
+      "variantImageError": null,
+      "videoUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NJBN6B8M1YE848HV50C1/coral-a-summer-launch_studio-vanity-application_15pt4m_openstory.mp4",
+      "videoPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34DTKAQPN4HJDYR16KA05/coral-a-summer-launch_studio-vanity-application_p88bd0_openstory.mp4",
+      "thumbnailStatus": "completed",
+      "thumbnailWorkflowRunId": "wfr_lPf7GkhkN-DF2O2YMFBPN",
+      "thumbnailGeneratedAt": "2026-05-25T08:13:41.000Z",
+      "thumbnailError": null,
+      "imageModel": "nano_banana_2",
+      "imagePrompt": "Cinematic still frame using bright natural window light and modern social-first product photography style with clean editorial energy, SCARLETT wearing clean white tank top leans forward at a crisp white vanity, right hand lifting a slim coral lipstick from its minimal box with poised fingers mid-motion and focused gaze toward the microphone, potential energy in her posture and breath, bright directional sunlight flooding across the neutral white studio interior with minimal background, clean sharp shadows and crisp highlights on matte surfaces, shallow depth of field emphasizing the foreground action against a softly blurred vanity backdrop, eye-level camera angle with subtle handheld energy and true-to-life color grading.",
+      "videoStatus": "completed",
+      "videoWorkflowRunId": "wfr_PWmUBTsIde5rUxdGnKaLF",
+      "videoGeneratedAt": "2026-05-25T08:13:48.000Z",
+      "videoError": null,
+      "motionPrompt": "Handheld eye-level camera holds steady at the white vanity with subtle natural micro-movement. Scarlett leans in, lifts the slim coral lipstick from its box, glides the color smoothly across her lips, blots once with a tissue, then offers a soft closed-mouth smile as sunlight catches the fresh tone.\n\nScarlett delivers the line with gentle lip movement and a slight head tilt, gaze directed forward.\n\nBright window light shifts faintly across matte surfaces while faint dust motes drift through the beam.",
+      "motionModel": "kling_v3_pro",
+      "audioUrl": null,
+      "audioPath": null,
+      "audioStatus": "pending",
+      "audioWorkflowRunId": null,
+      "audioGeneratedAt": null,
+      "audioError": null,
+      "audioModel": null,
+      "thumbnailInputHash": "c6c7c9701f3a24f5a4e116fa9b87498a9f02346372248fffb3adf0f903b2d894",
+      "variantImageInputHash": null,
+      "videoInputHash": null,
+      "audioInputHash": null,
+      "visualPromptInputHash": "6f8d183b1cde1401cdd9805f51c90c07e779bb979446604114970eaab88f7b87",
+      "motionPromptInputHash": "6e650f874bf21e85ec402e2df656c6ada2b034753c7e2329bb83bbd181499679",
+      "metadata": {
+        "sceneId": "scene_001",
+        "sceneNumber": 1,
+        "originalScript": {
+          "extract": "INT. BONDI STUDIO - MORNING\n\nBright window light pours across a crisp white vanity. SCARLETT, 19, sun-kissed with loose blonde waves, leans toward her microphone in a clean white tank. She lifts a slim coral lipstick from its minimal box, fingers tracing the matte finish. The tube catches the light, a single pop of #D4536D against the neutral palette.\n\nSCARLETT (V.O.)\nOne shade. One summer.\n\nCLOSE ON LIPS — She glides the color across her mouth, blots once, then smiles. Sunlight hits the fresh coral directly.",
+          "dialogue": [
+            {
+              "character": "SCARLETT",
+              "line": "One shade. One summer.",
+              "tone": "soft reflective"
+            }
+          ]
+        },
+        "metadata": {
+          "title": "Studio Vanity Application",
+          "durationSeconds": 12,
+          "location": "INT. BONDI STUDIO - MORNING",
+          "timeOfDay": "morning",
+          "storyBeat": "Introduction to the product and Scarlett applying the lipstick in the studio"
+        },
+        "prompts": {
+          "visual": {
+            "fullPrompt": "Cinematic still frame using bright natural window light and modern social-first product photography style with clean editorial energy, SCARLETT wearing clean white tank top leans forward at a crisp white vanity, right hand lifting a slim coral lipstick from its minimal box with poised fingers mid-motion and focused gaze toward the microphone, potential energy in her posture and breath, bright directional sunlight flooding across the neutral white studio interior with minimal background, clean sharp shadows and crisp highlights on matte surfaces, shallow depth of field emphasizing the foreground action against a softly blurred vanity backdrop, eye-level camera angle with subtle handheld energy and true-to-life color grading.",
+            "negativePrompt": "holographic elements, floating screens, text overlays, signs, subtitles, heavy diffusion, artificial lighting, cluttered background",
+            "components": {
+              "sceneDescription": "SCARLETT at a white vanity lifting coral lipstick from box toward microphone in poised starting pose",
+              "subject": "SCARLETT in clean white tank top interacting with lipstick at vanity",
+              "environment": "Crisp white vanity inside bright modern Bondi studio with neutral palette and window light",
+              "lighting": "Bright directional natural window light with clean shadows and crisp highlights",
+              "camera": "Eye-level angle with subtle handheld energy and shallow depth of field",
+              "composition": "Foreground focus on hand and lipstick action against softly blurred vanity backdrop",
+              "style": "Modern social-first product photography with tactile editorial energy and true-to-life color",
+              "technical": "16:9 aspect ratio, high resolution, natural color grading with minimal processing",
+              "atmosphere": "Fresh, clean morning ambiance with sensory and effortlessly cool mood"
+            }
+          },
+          "motion": {
+            "fullPrompt": "Handheld eye-level camera holds steady at the white vanity with subtle natural micro-movement. Scarlett leans in, lifts the slim coral lipstick from its box, glides the color smoothly across her lips, blots once with a tissue, then offers a soft closed-mouth smile as sunlight catches the fresh tone.\n\nScarlett delivers the line with gentle lip movement and a slight head tilt, gaze directed forward.\n\nBright window light shifts faintly across matte surfaces while faint dust motes drift through the beam.",
+            "components": {
+              "cameraMovement": "subtle handheld",
+              "startPosition": "eye-level medium close-up on vanity and hands",
+              "endPosition": "eye-level medium close-up holding on lips and smile",
+              "durationSeconds": 12,
+              "speed": "slow",
+              "smoothness": "natural",
+              "subjectTracking": "gentle lock on hands and mouth",
+              "equipment": "handheld"
+            },
+            "parameters": {
+              "durationSeconds": 12,
+              "fps": 30,
+              "motionAmount": "low",
+              "cameraControl": {
+                "pan": 0,
+                "tilt": 0,
+                "zoom": 0,
+                "movement": "subtle handheld micro-movement"
+              }
+            },
+            "dialogue": {
+              "presence": true,
+              "lines": [
+                {
+                  "character": "SCARLETT",
+                  "line": "One shade. One summer.",
+                  "tone": "soft reflective"
+                }
+              ]
+            },
+            "audio": {
+              "ambientSound": "quiet studio with soft natural room tone and distant waves",
+              "soundEffects": [
+                "lipstick tube click",
+                "soft blotting sound",
+                "light lipstick cap close"
+              ]
+            }
+          }
+        },
+        "continuity": {
+          "characterTags": ["scarlett"],
+          "environmentTag": "bondi_studio_white_vanity",
+          "elementTags": [],
+          "colorPalette": "#FFFFFF #F0E6D3 #D4536D #1A1A1A",
+          "lightingSetup": "bright window light",
+          "styleTag": "modern social-first product photography"
+        }
+      }
+    },
+    {
+      "orderIndex": 1,
+      "description": "EXT. BONDI BEACH PROMENADE - CONTINUOUS\n\nHandheld camera trails Scarlett as she steps onto the wide promenade. Wind lifts her hair. Behind her, surfers carve white lines across the blue. She glances back, coral lips vivid against the #F0E6D3 sand and sea.\n\nSCARLETT (V.O.)\nMade for the water. Wear it everywhere.",
+      "durationMs": 8000,
+      "thumbnailUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NM36HWV2ZVZ57Z7T4KEP/01KSF2R6XQYH8J8X4GQTT7SHM7.png",
+      "previewThumbnailUrl": "https://v3b.fal.media/files/b/0a9a3f07/ZDn-QDCQFTm6vagiGfU_u_MfxbVeQc.png",
+      "thumbnailPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34E539RYTPVY1W9ECR6H5/01KSF34Q3HXH3DKWHM4S3VSCEY.png",
+      "variantImageUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NM36HWV2ZVZ57Z7T4KEP/01KSF2SB8ZZ1DNEF8YRW4W7QEV.png",
+      "variantImageStatus": "completed",
+      "variantWorkflowRunId": "wfr_Y6jlH3aanJPSXU2S-8tdJ",
+      "variantImageGeneratedAt": null,
+      "variantImageError": null,
+      "videoUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NM36HWV2ZVZ57Z7T4KEP/coral-a-summer-launch_promenade-walk_kyyfke_openstory.mp4",
+      "videoPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34E539RYTPVY1W9ECR6H5/coral-a-summer-launch_promenade-walk_t6jhwh_openstory.mp4",
+      "thumbnailStatus": "completed",
+      "thumbnailWorkflowRunId": "wfr_VsRFHDzQIP6YclV0D6hjE",
+      "thumbnailGeneratedAt": "2026-05-25T08:13:41.000Z",
+      "thumbnailError": null,
+      "imageModel": "nano_banana_2",
+      "imagePrompt": "Handheld cinematic shot in the style of modern social-first product photography, SCARLETT wearing clean white tank top steps onto the wide oceanfront promenade with wind lifting her hair and body mid-stride in potential energy as she glances back over her shoulder with coral lips vivid, surfers carving white lines across the deep blue water behind her on the expansive beach, pale sand stretching underfoot with soft morning haze and distant waves, bright natural daylight with crisp directional shadows and airy high-key atmosphere, dynamic trailing camera angle at eye level with shallow depth of field on the figure against the ocean backdrop, fresh sensory editorial energy, 16:9",
+      "videoStatus": "completed",
+      "videoWorkflowRunId": "wfr_Gv30lpNhs_MQyRAFH9cEZ",
+      "videoGeneratedAt": "2026-05-25T08:13:48.000Z",
+      "videoError": null,
+      "motionPrompt": "Handheld camera trails Scarlett at eye level as she steps onto the wide oceanfront promenade, body in fluid mid-stride forward motion. Wind lifts her hair while she glances back over her shoulder, coral lips vivid against the bright morning sea. Surfers carve white lines across the deep blue water in the background.\n\nShe delivers the line with soft reflective calm, subtle shoulder turn and natural breath as the camera maintains smooth trailing distance.\n\nPale sand stretches beneath her feet with soft directional shadows, light ocean haze drifting across the frame under bright natural daylight.",
+      "motionModel": "kling_v3_pro",
+      "audioUrl": null,
+      "audioPath": null,
+      "audioStatus": "pending",
+      "audioWorkflowRunId": null,
+      "audioGeneratedAt": null,
+      "audioError": null,
+      "audioModel": null,
+      "thumbnailInputHash": "dde39dcb1ef62eee9581cb908d596c308796a5255ef3a5cd55cfea4890b89e43",
+      "variantImageInputHash": null,
+      "videoInputHash": null,
+      "audioInputHash": null,
+      "visualPromptInputHash": "dee5ac4a37c7251ae91e467d6c874b6a0a3d9afd04dd09815e2d976cab46ca63",
+      "motionPromptInputHash": "bcb54fb2a1feb30dee9a86d6fe26a161b862426b6450f346bd4c71c7924811cf",
+      "metadata": {
+        "sceneId": "scene_002",
+        "sceneNumber": 2,
+        "originalScript": {
+          "extract": "EXT. BONDI BEACH PROMENADE - CONTINUOUS\n\nHandheld camera trails Scarlett as she steps onto the wide promenade. Wind lifts her hair. Behind her, surfers carve white lines across the blue. She glances back, coral lips vivid against the #F0E6D3 sand and sea.\n\nSCARLETT (V.O.)\nMade for the water. Wear it everywhere.",
+          "dialogue": [
+            {
+              "character": "SCARLETT",
+              "line": "Made for the water. Wear it everywhere.",
+              "tone": "soft reflective"
+            }
+          ]
+        },
+        "metadata": {
+          "title": "Promenade Walk",
+          "durationSeconds": 8,
+          "location": "EXT. BONDI BEACH PROMENADE - CONTINUOUS",
+          "timeOfDay": "morning",
+          "storyBeat": "Scarlett walking the promenade showing the product in motion"
+        },
+        "prompts": {
+          "visual": {
+            "fullPrompt": "Handheld cinematic shot in the style of modern social-first product photography, SCARLETT wearing clean white tank top steps onto the wide oceanfront promenade with wind lifting her hair and body mid-stride in potential energy as she glances back over her shoulder with coral lips vivid, surfers carving white lines across the deep blue water behind her on the expansive beach, pale sand stretching underfoot with soft morning haze and distant waves, bright natural daylight with crisp directional shadows and airy high-key atmosphere, dynamic trailing camera angle at eye level with shallow depth of field on the figure against the ocean backdrop, fresh sensory editorial energy, 16:9",
+            "negativePrompt": "text, signs, holograms, floating screens, artificial lighting, heavy diffusion, overexposed highlights, cluttered background, static pose, full body from behind",
+            "components": {
+              "sceneDescription": "SCARLETT stepping onto the promenade while glancing back mid-stride with wind in her hair and surfers visible behind",
+              "subject": "SCARLETT in clean white tank top mid-motion on the promenade",
+              "environment": "wide Bondi Beach promenade with ocean view, pale sand, and surfers carving lines in the blue water",
+              "lighting": "bright natural morning daylight with clean directional shadows and high-key airy quality",
+              "camera": "handheld trailing eye-level angle with shallow depth of field, dynamic micro-movement",
+              "composition": "figure positioned slightly off-center with ocean and surfers filling the background layers",
+              "style": "modern social-first product photography with tactile editorial energy and true-to-life color grading",
+              "technical": "16:9 aspect ratio, crisp focus on subject against softly blurred background, high resolution",
+              "atmosphere": "fresh, breezy coastal morning with sensory effortless cool"
+            }
+          },
+          "motion": {
+            "fullPrompt": "Handheld camera trails Scarlett at eye level as she steps onto the wide oceanfront promenade, body in fluid mid-stride forward motion. Wind lifts her hair while she glances back over her shoulder, coral lips vivid against the bright morning sea. Surfers carve white lines across the deep blue water in the background.\n\nShe delivers the line with soft reflective calm, subtle shoulder turn and natural breath as the camera maintains smooth trailing distance.\n\nPale sand stretches beneath her feet with soft directional shadows, light ocean haze drifting across the frame under bright natural daylight.",
+            "components": {
+              "cameraMovement": "handheld tracking",
+              "startPosition": "eye-level medium wide behind subject stepping onto promenade",
+              "endPosition": "eye-level medium wide trailing subject mid-promenade with surfers visible",
+              "durationSeconds": 8,
+              "speed": "medium",
+              "smoothness": "smooth",
+              "subjectTracking": "gentle following with natural micro-movement",
+              "equipment": "handheld"
+            },
+            "parameters": {
+              "durationSeconds": 8,
+              "fps": 30,
+              "motionAmount": "medium",
+              "cameraControl": {
+                "pan": 0,
+                "tilt": 0,
+                "zoom": 0.95,
+                "movement": "forward tracking"
+              }
+            },
+            "dialogue": {
+              "presence": true,
+              "lines": [
+                {
+                  "character": "SCARLETT",
+                  "line": "Made for the water. Wear it everywhere.",
+                  "tone": "soft reflective"
+                }
+              ]
+            },
+            "audio": {
+              "ambientSound": "ocean waves breaking, light wind across promenade",
+              "soundEffects": []
+            }
+          }
+        },
+        "continuity": {
+          "characterTags": ["scarlett"],
+          "environmentTag": "bondi_promenade_ocean",
+          "elementTags": [],
+          "colorPalette": "#F0E6D3 #D4536D #1A1A1A #E8F4E8",
+          "lightingSetup": "natural daylight with clean directional shadows",
+          "styleTag": "modern editorial product photography"
+        }
+      }
+    },
+    {
+      "orderIndex": 2,
+      "description": "EXT. BONDI BEACH - SHORELINE - CONTINUOUS\n\nA wave rushes over her bare feet. Scarlett laughs, the sound carried by the breeze. The lipstick tube settles beside the embossed brand mark pressed into the wet sand. Golden-hour warmth kisses the scene while cool shadows define every edge.\n\nMACRO DETAIL — Coral pigment on skin, tiny grains of sand clinging to the tube. Overhead flat lay: lipstick, shell, linen scrap, all arranged on pale board.\n\nSCARLETT (V.O.)\nCoral. Fresh. Yours.\n\nSUPER: CORAL. OUT NOW.\n\nThe frame holds on the shoreline as another wave smooths the sand, leaving only the bright mark and the open horizon.",
+      "durationMs": 15000,
+      "thumbnailUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/01KSF2R7ACVDHSGRYXQJ62PTQM.png",
+      "previewThumbnailUrl": "https://v3b.fal.media/files/b/0a9a3f08/KCt5_lNz1WS7RAQri189p_hKbEXhG5.png",
+      "thumbnailPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34EA4Q88VAMAEZEZB7W3G/01KSF34Q0DPQ98E74NW2326N6D.png",
+      "variantImageUrl": "https://storage-dev.openstory.so/thumbnails/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/01KSF2S5MXGH0BXHEZ37BR1D33.png",
+      "variantImageStatus": "completed",
+      "variantWorkflowRunId": "wfr_kj0268kasjHrifkcwH0aT",
+      "variantImageGeneratedAt": null,
+      "variantImageError": null,
+      "videoUrl": "https://storage-dev.openstory.so/videos/teams/01KSF2MK3V7J234W8M00HWBD2Q/sequences/01KSF2N3JQNBMGXEX2X2TPG29W/frames/01KSF2NPA2MPNH09N1FYX1PWWG/coral-a-summer-launch_shoreline-product-reveal_ferz12_openstory.mp4",
+      "videoPath": "teams/01KSF3397QD3D6RFDKN8XSQ85A/sequences/01KSF34B7CW7GRMYKDQQ4WQ3F0/frames/01KSF34EA4Q88VAMAEZEZB7W3G/coral-a-summer-launch_shoreline-product-reveal_nww9d0_openstory.mp4",
+      "thumbnailStatus": "completed",
+      "thumbnailWorkflowRunId": "wfr_qQMaDua7mDT0QzF2W6CB2",
+      "thumbnailGeneratedAt": "2026-05-25T08:13:41.000Z",
+      "thumbnailError": null,
+      "imageModel": "nano_banana_2",
+      "imagePrompt": "Modern social-first product photography with tactile editorial energy captures SCARLETT wearing clean white tank top standing barefoot on the wet shoreline of Bondi Beach as a gentle wave rushes over her feet, posture mid-laugh with subtle kinetic tension and gaze directed off-camera, the pale sand marked by an embossed imprint near her toes with rolling ocean waves visible behind under an open horizon, bathed in golden-hour warmth that kisses the scene while cool shadows carve every edge and texture, bright natural coastal light creating high-key airy atmosphere with slight directional punch, eye-level angle with shallow depth of field emphasizing tactile foreground details and immersive coastal framing.",
+      "videoStatus": "completed",
+      "videoWorkflowRunId": "wfr_GOMahJcXLAAhUB_RKqYpK",
+      "videoGeneratedAt": "2026-05-25T08:13:48.000Z",
+      "videoError": null,
+      "motionPrompt": "Handheld eye-level camera holds on Scarlett standing barefoot at the shoreline as a gentle wave rushes over her feet. She laughs softly with subtle body sway and head tilt while the lipstick tube settles into the embossed sand mark beside her toes. Camera then tilts down smoothly into a macro detail on coral pigment and clinging grains before rising back to eye-level and locking off on the open horizon. A second wave rolls in and smooths the sand flat.",
+      "motionModel": "kling_v3_pro",
+      "audioUrl": null,
+      "audioPath": null,
+      "audioStatus": "pending",
+      "audioWorkflowRunId": null,
+      "audioGeneratedAt": null,
+      "audioError": null,
+      "audioModel": null,
+      "thumbnailInputHash": "b87f701477507686274475493e3d40c0133e635d7031ca58270b9de22bf515a2",
+      "variantImageInputHash": null,
+      "videoInputHash": null,
+      "audioInputHash": null,
+      "visualPromptInputHash": "6846a1fc18f7d9ceb55a440111c9d96d062dd299d6212375a642b91c7d660455",
+      "motionPromptInputHash": "8a9b7503c15d22a875b89f6dfefdb095dd53604f0f494728f84a3b3dcb59f9da",
+      "metadata": {
+        "sceneId": "scene_003",
+        "sceneNumber": 3,
+        "originalScript": {
+          "extract": "EXT. BONDI BEACH - SHORELINE - CONTINUOUS\n\nA wave rushes over her bare feet. Scarlett laughs, the sound carried by the breeze. The lipstick tube settles beside the embossed brand mark pressed into the wet sand. Golden-hour warmth kisses the scene while cool shadows define every edge.\n\nMACRO DETAIL — Coral pigment on skin, tiny grains of sand clinging to the tube. Overhead flat lay: lipstick, shell, linen scrap, all arranged on pale board.\n\nSCARLETT (V.O.)\nCoral. Fresh. Yours.\n\nSUPER: CORAL. OUT NOW.\n\nThe frame holds on the shoreline as another wave smooths the sand, leaving only the bright mark and the open horizon.",
+          "dialogue": [
+            {
+              "character": "SCARLETT",
+              "line": "Coral. Fresh. Yours.",
+              "tone": "soft reflective"
+            }
+          ]
+        },
+        "metadata": {
+          "title": "Shoreline Product Reveal",
+          "durationSeconds": 15,
+          "location": "EXT. BONDI BEACH - SHORELINE - CONTINUOUS",
+          "timeOfDay": "morning",
+          "storyBeat": "Climactic product placement and final tagline on the beach"
+        },
+        "prompts": {
+          "visual": {
+            "fullPrompt": "Modern social-first product photography with tactile editorial energy captures SCARLETT wearing clean white tank top standing barefoot on the wet shoreline of Bondi Beach as a gentle wave rushes over her feet, posture mid-laugh with subtle kinetic tension and gaze directed off-camera, the pale sand marked by an embossed imprint near her toes with rolling ocean waves visible behind under an open horizon, bathed in golden-hour warmth that kisses the scene while cool shadows carve every edge and texture, bright natural coastal light creating high-key airy atmosphere with slight directional punch, eye-level angle with shallow depth of field emphasizing tactile foreground details and immersive coastal framing.",
+            "negativePrompt": "text, logos, holograms, floating UI, subtitles, signs, overly posed static stance, heavy diffusion, dark shadows, artificial lighting",
+            "components": {
+              "sceneDescription": "SCARLETT at shoreline with wave rushing over bare feet, mid-laugh potential energy pose",
+              "subject": "SCARLETT in clean white tank top interacting with incoming wave",
+              "environment": "Wet Bondi Beach shoreline, pale sand with embossed mark, rolling ocean waves, open horizon",
+              "lighting": "Golden-hour warmth kissing the scene with cool directional shadows defining edges",
+              "camera": "Eye-level angle with slight overhead tilt, shallow depth of field, natural handheld micro-movement",
+              "composition": "Foreground focus on feet and sand transition to expansive ocean background",
+              "style": "Modern editorial product photography with fresh coastal tactile energy",
+              "technical": "16:9 aspect, high-key airy quality, true-to-life coastal color rendering",
+              "atmosphere": "Fresh, sensory, effortlessly cool morning beach moment"
+            }
+          },
+          "motion": {
+            "fullPrompt": "Handheld eye-level camera holds on Scarlett standing barefoot at the shoreline as a gentle wave rushes over her feet. She laughs softly with subtle body sway and head tilt while the lipstick tube settles into the embossed sand mark beside her toes. Camera then tilts down smoothly into a macro detail on coral pigment and clinging grains before rising back to eye-level and locking off on the open horizon. A second wave rolls in and smooths the sand flat.",
+            "components": {
+              "cameraMovement": "handheld micro-movement then smooth downward tilt to macro and return to locked eye-level",
+              "startPosition": "eye-level framing on feet and lower body at shoreline",
+              "endPosition": "locked eye-level wide on open ocean horizon",
+              "durationSeconds": 15,
+              "speed": "slow",
+              "smoothness": "smooth",
+              "subjectTracking": "gentle micro-follow on feet and tube during tilt, then static lock-off",
+              "equipment": "handheld with gimbal assist"
+            },
+            "parameters": {
+              "durationSeconds": 15,
+              "fps": 30,
+              "motionAmount": "medium",
+              "cameraControl": {
+                "pan": 0,
+                "tilt": -25,
+                "zoom": 1,
+                "movement": "tilt down then up then static"
+              }
+            },
+            "dialogue": {
+              "presence": true,
+              "lines": [
+                {
+                  "character": "SCARLETT",
+                  "line": "Coral. Fresh. Yours.",
+                  "tone": "soft reflective"
+                }
+              ]
+            },
+            "audio": {
+              "ambientSound": "gentle ocean waves lapping shoreline with light coastal breeze",
+              "soundEffects": [
+                "wave washing over bare feet",
+                "soft female laugh",
+                "sand smoothing under water"
+              ]
+            }
+          }
+        },
+        "continuity": {
+          "characterTags": ["scarlett"],
+          "environmentTag": "bondi_shoreline_sand_waves",
+          "elementTags": [],
+          "colorPalette": "#F0E6D3 #D4536D #FFFFFF #E8F4E8",
+          "lightingSetup": "golden-hour warmth with cool shadows",
+          "styleTag": "modern social-first product photography"
+        }
+      }
+    }
+  ]
+}

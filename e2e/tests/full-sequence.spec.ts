@@ -97,8 +97,15 @@ testWithUser.describe('Full Sequence Pipeline', () => {
   });
 
   testWithUser.afterEach(async () => {
-    if (createdSequenceId && styleId) {
+    // E2E_KEEP_DATA=1 leaves the produced sequence intact in test.db —
+    // useful for snapshotting the result (see scripts/snapshot-sequence.ts).
+    if (createdSequenceId && styleId && process.env.E2E_KEEP_DATA !== '1') {
       await cleanupSequenceById(createdSequenceId, styleId);
+    }
+    if (process.env.E2E_KEEP_DATA === '1' && createdSequenceId) {
+      console.log(
+        `[full-sequence] E2E_KEEP_DATA=1 — kept sequence ${createdSequenceId}`
+      );
     }
     // System talent and locations are shared and seeded — never delete them.
     testTalents = [];
