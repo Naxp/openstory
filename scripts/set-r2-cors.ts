@@ -49,14 +49,18 @@ function parseFlag(name: string): string | undefined {
   return arg?.slice(prefix.length);
 }
 
-function main(): void {
-  const envFlag = parseFlag('env') as EnvKey | undefined;
-  const targets = envFlag ? CONFIG[envFlag] : Object.values(CONFIG).flat();
+function isEnvKey(value: string): value is EnvKey {
+  return value === 'prd' || value === 'dev';
+}
 
-  if (!targets || targets.length === 0) {
-    console.error(`Unknown --env=${envFlag}. Use prd, stg, or dev.`);
+function main(): void {
+  const envFlag = parseFlag('env');
+  if (envFlag !== undefined && !isEnvKey(envFlag)) {
+    console.error(`Unknown --env=${envFlag}. Use prd or dev.`);
     process.exit(1);
   }
+
+  const targets = envFlag ? CONFIG[envFlag] : Object.values(CONFIG).flat();
 
   for (const { bucket, origins, includeWrites } of targets) {
     console.log(
