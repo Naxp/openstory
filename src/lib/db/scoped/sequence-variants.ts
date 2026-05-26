@@ -23,7 +23,7 @@ import type {
   SequenceMusicVariant,
   SequenceVideoVariant,
 } from '@/lib/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { insertDivergentRaceTolerant } from './divergent-insert';
 
 export type WriteVariantResult<T> = { variant: T; divergent: boolean };
@@ -206,28 +206,36 @@ export function createSequenceVariantsMethods(db: Database) {
      * `inputHash` is always the trigger-time snapshot (idempotent on retry of
      * the same workflow run). Callers should skip live `sequences.mergedVideo*`
      * updates when `divergent` is true.
+     *
+     * When `replacePrimary` is true, both drift checks are bypassed and the
+     * new row replaces the primary unconditionally. Used by motion-batch's
+     * auto-merge — the new render is the user's intent (e.g. they just added
+     * frames) and shouldn't surface as "inputs changed". Issue #741.
      */
     writeVideoVariant: async (
       data: NewSequenceVideoVariant & {
         inputHash: string;
         currentHash?: string;
+        replacePrimary?: boolean;
       }
     ): Promise<WriteVariantResult<SequenceVideoVariant>> => {
-      const { currentHash, ...rest } = data;
-      const withinRunDrift =
-        currentHash !== undefined && currentHash !== rest.inputHash;
-      const existing = await getVideoPrimary(rest.sequenceId, rest.workflow);
-      const acrossRunDrift =
-        existing !== null &&
-        existing.status === 'completed' &&
-        existing.inputHash !== null &&
-        existing.inputHash !== rest.inputHash;
-      if (withinRunDrift || acrossRunDrift) {
-        const variant = await insertDivergentVideo({
-          ...rest,
-          divergedAt: new Date(),
-        });
-        return { variant, divergent: true };
+      const { currentHash, replacePrimary, ...rest } = data;
+      if (replacePrimary !== true) {
+        const withinRunDrift =
+          currentHash !== undefined && currentHash !== rest.inputHash;
+        const existing = await getVideoPrimary(rest.sequenceId, rest.workflow);
+        const acrossRunDrift =
+          existing !== null &&
+          existing.status === 'completed' &&
+          existing.inputHash !== null &&
+          existing.inputHash !== rest.inputHash;
+        if (withinRunDrift || acrossRunDrift) {
+          const variant = await insertDivergentVideo({
+            ...rest,
+            divergedAt: new Date(),
+          });
+          return { variant, divergent: true };
+        }
       }
       const variant = await upsertVideoPrimary(rest);
       return { variant, divergent: false };
@@ -241,6 +249,22 @@ export function createSequenceVariantsMethods(db: Database) {
         .from(sequenceVideoVariants)
         .where(eq(sequenceVideoVariants.id, variantId));
       return result.at(0) ?? null;
+    },
+
+    /**
+     * Full merged-video variant history for a sequence (history sheet read).
+     * Returns every row — primary + divergent + discarded — newest first by
+     * `generatedAt`. The sheet UI badges the row matching the live primary
+     * and chips discarded/divergent rows. Issue #741.
+     */
+    listVideoVariantsBySequence: async (
+      sequenceId: string
+    ): Promise<SequenceVideoVariant[]> => {
+      return db
+        .select()
+        .from(sequenceVideoVariants)
+        .where(eq(sequenceVideoVariants.sequenceId, sequenceId))
+        .orderBy(desc(sequenceVideoVariants.generatedAt));
     },
 
     /**
@@ -302,9 +326,17 @@ export function createSequenceVariantsMethods(db: Database) {
      * (`discardedAt = now()`) in a single libSQL batch so a partial failure
      * cannot leave the live primary updated with the variant still appearing
      * in the divergent list. Mirrors `frameVariants.promoteAtomically`.
+     *
+     * When `pendingAudioMux` is true (the caller will fire merge-audio-video
+     * to re-mux this bare merge against the current music primary), only
+     * `mergedVideoStatus = 'merging'` is written to `sequences.*` — the
+     * existing muxed URL stays as the live primary across the mux window so
+     * the user doesn't briefly see a soundless final. Variant soft-delete
+     * still happens in the same batch. See issue #741.
      */
     promoteVideoVariant: async (
-      variantId: string
+      variantId: string,
+      options?: { pendingAudioMux?: boolean }
     ): Promise<{ sequence: Sequence; discardedAt: Date }> => {
       const variantRows = await db
         .select()
@@ -323,16 +355,25 @@ export function createSequenceVariantsMethods(db: Database) {
       }
 
       const now = new Date();
+      const pendingAudioMux = options?.pendingAudioMux === true;
       const updateSequence = db
         .update(sequences)
-        .set({
-          mergedVideoUrl: variant.url,
-          mergedVideoPath: variant.storagePath,
-          mergedVideoStatus: 'completed',
-          mergedVideoGeneratedAt: variant.generatedAt ?? now,
-          mergedVideoError: null,
-          updatedAt: now,
-        })
+        .set(
+          pendingAudioMux
+            ? {
+                mergedVideoStatus: 'merging',
+                mergedVideoError: null,
+                updatedAt: now,
+              }
+            : {
+                mergedVideoUrl: variant.url,
+                mergedVideoPath: variant.storagePath,
+                mergedVideoStatus: 'completed',
+                mergedVideoGeneratedAt: variant.generatedAt ?? now,
+                mergedVideoError: null,
+                updatedAt: now,
+              }
+        )
         .where(eq(sequences.id, variant.sequenceId))
         .returning();
       const discardVariant = db
@@ -473,6 +514,21 @@ export function createSequenceVariantsMethods(db: Database) {
         }
       }
       return [...byId.values()];
+    },
+
+    /**
+     * Full music variant history for a sequence (history sheet read). Returns
+     * every row — primary + divergent + discarded — newest first by
+     * `generatedAt`. Issue #741.
+     */
+    listMusicVariantsBySequence: async (
+      sequenceId: string
+    ): Promise<SequenceMusicVariant[]> => {
+      return db
+        .select()
+        .from(sequenceMusicVariants)
+        .where(eq(sequenceMusicVariants.sequenceId, sequenceId))
+        .orderBy(desc(sequenceMusicVariants.generatedAt));
     },
 
     listDivergentMusic: async (

@@ -116,7 +116,12 @@ export const motionBatchWorkflow =
         );
       }
 
-      // Step 3: Merge all frame videos into one
+      // Step 3: Merge all frame videos into one. `replacePrimary: true` means
+      // the new render unconditionally becomes the primary — motion-batch only
+      // fires when frames just finished generating, so the new merge is the
+      // user's intent (e.g. they added frames and the system completed them).
+      // Without this, adding frames surfaces as an "inputs changed" divergent
+      // alternate that the user has to manually promote. Issue #741.
       await context.invoke(MERGE_VIDEO_WORKFLOW_NAME, {
         workflow: mergeVideoWorkflow,
         label,
@@ -126,6 +131,7 @@ export const motionBatchWorkflow =
           sequenceId,
           videoUrls,
           sourceFrameVideoHashes,
+          replacePrimary: true,
         } satisfies MergeVideoWorkflowInput,
       });
 

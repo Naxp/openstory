@@ -17,6 +17,10 @@ type DivergentAlternateBannerProps = {
   onPromote?: () => void;
   /** Inline-only: discard button is rendered only when this is provided. */
   onDiscard?: () => void;
+  /** Label for the primary CTA. Defaults to "Compare". Sequence-level
+   *  surfaces (theatre/music) override to "View history" since the action
+   *  opens the full variant history sheet, not a 2-up compare. */
+  compareLabel?: string;
   density?: StalenessIndicatorDensity;
   className?: string;
 };
@@ -42,6 +46,7 @@ export const DivergentAlternateBanner: React.FC<
   onCompare,
   onPromote,
   onDiscard,
+  compareLabel = 'Compare',
   density = 'inline',
   className,
 }) => {
@@ -90,7 +95,7 @@ export const DivergentAlternateBanner: React.FC<
       </AlertDescription>
       <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" onClick={onCompare}>
-          Compare
+          {compareLabel}
         </Button>
         {onPromote && (
           <Button type="button" size="sm" onClick={onPromote}>

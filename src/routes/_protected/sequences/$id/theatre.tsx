@@ -1,11 +1,12 @@
 import { TheatreView } from '@/components/theatre/theatre-view';
-import { SequenceVariantCompareDialog } from '@/components/sequence/sequence-variant-compare-dialog';
+import { SequenceVariantHistorySheet } from '@/components/sequence/sequence-variant-history-sheet';
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useDiscardSequenceVideoVariant,
   usePromoteSequenceVideoVariant,
   useSequenceDivergentVideoVariants,
+  useSequenceVideoVariantHistory,
   useUndiscardSequenceVideoVariant,
 } from '@/hooks/use-sequence-variants';
 import { useSequence } from '@/hooks/use-sequences';
@@ -13,7 +14,7 @@ import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { useSequenceStaleDetected } from '@/lib/realtime/use-sequence-stale-detected';
 import type { SequenceVideoVariant } from '@/lib/db/schema';
 import { createFileRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_protected/sequences/$id/theatre')({
@@ -53,24 +54,17 @@ function TheatrePage() {
   const discardVariant = useDiscardSequenceVideoVariant();
   const undiscardVariant = useUndiscardSequenceVideoVariant();
 
-  const [compareVariant, setCompareVariant] =
-    useState<SequenceVideoVariant | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: historyVariants } = useSequenceVideoVariantHistory(
+    sequenceId,
+    historyOpen
+  );
 
-  // If the variant disappears (e.g. concurrent promote from another tab),
-  // close the dialog explicitly rather than silently null-rendering it.
-  useEffect(() => {
-    if (!compareVariant || !divergentVideoVariants) return;
-    const stillExists = divergentVideoVariants.some(
-      (v) => v.id === compareVariant.id
-    );
-    if (!stillExists) setCompareVariant(null);
-  }, [compareVariant, divergentVideoVariants]);
-
-  const handleDiscardWithUndo = useCallback(
-    (variant: SequenceVideoVariant) => {
+  const discardWithUndo = useCallback(
+    (variantId: string) => {
       const restore = () => {
         undiscardVariant.mutate(
-          { sequenceId, variantId: variant.id },
+          { sequenceId, variantId },
           {
             onError: (error) => {
               toast.error('Failed to restore alternate', {
@@ -82,10 +76,9 @@ function TheatrePage() {
         );
       };
       discardVariant.mutate(
-        { sequenceId, variantId: variant.id },
+        { sequenceId, variantId },
         {
           onSuccess: () => {
-            setCompareVariant(null);
             toast('Alternate discarded', {
               action: { label: 'Undo', onClick: restore },
             });
@@ -103,12 +96,11 @@ function TheatrePage() {
   );
 
   const handlePromote = useCallback(
-    (variant: SequenceVideoVariant) => {
+    (variantId: string) => {
       promoteVariant.mutate(
-        { sequenceId, variantId: variant.id },
+        { sequenceId, variantId },
         {
           onSuccess: () => {
-            setCompareVariant(null);
             toast.success('Alternate promoted');
           },
           onError: (error) => {
@@ -123,17 +115,36 @@ function TheatrePage() {
     [sequenceId, promoteVariant]
   );
 
+  const handleUndiscard = useCallback(
+    (variantId: string) => {
+      undiscardVariant.mutate(
+        { sequenceId, variantId },
+        {
+          onError: (error) => {
+            toast.error('Failed to restore alternate', {
+              description:
+                error instanceof Error ? error.message : 'Unknown error',
+            });
+          },
+        }
+      );
+    },
+    [sequenceId, undiscardVariant]
+  );
+
   // Reader orders by divergedAt asc — first row is the oldest pending.
-  const latestDivergent = divergentVideoVariants?.[0];
+  const latestDivergent: SequenceVideoVariant | undefined =
+    divergentVideoVariants?.[0];
 
   const divergentBanner = latestDivergent ? (
     <DivergentAlternateBanner
       variantId={latestDivergent.id}
       artifact="merged-video"
       entityType="sequence"
-      onCompare={() => setCompareVariant(latestDivergent)}
-      onPromote={() => handlePromote(latestDivergent)}
-      onDiscard={() => handleDiscardWithUndo(latestDivergent)}
+      compareLabel="View history"
+      onCompare={() => setHistoryOpen(true)}
+      onPromote={() => handlePromote(latestDivergent.id)}
+      onDiscard={() => discardWithUndo(latestDivergent.id)}
     />
   ) : null;
 
@@ -150,21 +161,19 @@ function TheatrePage() {
       <div className={THEATRE_MAX_CLASS_BY_RATIO[sequence.aspectRatio]}>
         <TheatreView sequence={sequence} divergentBanner={divergentBanner} />
       </div>
-      {compareVariant && (
-        <SequenceVariantCompareDialog
-          kind="video"
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setCompareVariant(null);
-          }}
-          sequence={sequence}
-          variant={compareVariant}
-          onPromote={() => handlePromote(compareVariant)}
-          onDiscard={() => handleDiscardWithUndo(compareVariant)}
-          isPromoting={promoteVariant.isPending}
-          isDiscarding={discardVariant.isPending}
-        />
-      )}
+      <SequenceVariantHistorySheet
+        kind="video"
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        sequence={sequence}
+        variants={historyVariants}
+        onPromote={handlePromote}
+        onDiscard={discardWithUndo}
+        onUndiscard={handleUndiscard}
+        isPromoting={promoteVariant.isPending}
+        isDiscarding={discardVariant.isPending}
+        promotingVariantId={promoteVariant.variables?.variantId ?? null}
+      />
     </div>
   );
 }

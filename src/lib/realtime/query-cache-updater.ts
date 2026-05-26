@@ -304,11 +304,21 @@ export function updateQueryCacheFromEvent(
               ['sequence-divergent-video', sequenceId],
               `sequence-divergent-video:${sequenceId}`
             );
+            debouncedInvalidate(
+              queryClient,
+              ['sequence-video-history', sequenceId],
+              `sequence-video-history:${sequenceId}`
+            );
           } else if (artifact === 'music') {
             debouncedInvalidate(
               queryClient,
               ['sequence-divergent-music', sequenceId],
               `sequence-divergent-music:${sequenceId}`
+            );
+            debouncedInvalidate(
+              queryClient,
+              ['sequence-music-history', sequenceId],
+              `sequence-music-history:${sequenceId}`
             );
           }
           debouncedInvalidate(

@@ -470,6 +470,10 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
           sequenceId: input.sequenceId,
           videoUrls,
           sourceFrameVideoHashes,
+          // Auto-trigger from frame-completion: replace the primary instead of
+          // forking. The previous primary (if any) was an interim render that
+          // didn't include this frame yet. Issue #741.
+          replacePrimary: true,
         };
 
         const inputHash = await computeSequenceVideoHashFromDto(mergeInput);

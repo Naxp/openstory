@@ -385,6 +385,76 @@ describe('createSequenceVariantsMethods — video', () => {
     }
     expect(error?.message).toMatch(/not found/);
   });
+
+  it('writeVideoVariant with replacePrimary=true replaces the primary even on hash mismatch — issue #741', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    await methods.upsertVideoPrimary({
+      sequenceId,
+      url: 'https://example.com/interim.mp4',
+      storagePath: null,
+      workflow: 'merge-video',
+      status: 'completed',
+      generatedAt: new Date('2026-05-01T00:00:00Z'),
+      error: null,
+      inputHash: '4-frame-hash',
+    });
+    const result = await methods.writeVideoVariant({
+      sequenceId,
+      url: 'https://example.com/final.mp4',
+      storagePath: null,
+      workflow: 'merge-video',
+      status: 'completed',
+      generatedAt: new Date('2026-05-01T00:05:00Z'),
+      error: null,
+      inputHash: '6-frame-hash',
+      replacePrimary: true,
+    });
+    expect(result.divergent).toBe(false);
+    expect(result.variant.url).toBe('https://example.com/final.mp4');
+    expect(result.variant.inputHash).toBe('6-frame-hash');
+    expect(result.variant.divergedAt).toBeNull();
+    const divergent = await methods.listDivergentVideos(sequenceId);
+    expect(divergent).toHaveLength(0);
+  });
+
+  it('promoteVideoVariant with pendingAudioMux holds status="merging" and preserves the existing muxed URL — issue #741', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    // Seed sequence with a previous muxed final URL.
+    await db
+      .update(sequences)
+      .set({
+        mergedVideoUrl: 'https://example.com/old-muxed.mp4',
+        mergedVideoPath: '/p/old-muxed.mp4',
+        mergedVideoStatus: 'completed',
+      })
+      .where(eq(sequences.id, sequenceId));
+
+    const divergent = await methods.insertDivergentVideo({
+      sequenceId,
+      url: 'https://example.com/new-bare.mp4',
+      storagePath: '/p/new-bare.mp4',
+      workflow: 'merge-video',
+      status: 'completed',
+      generatedAt: new Date('2026-05-01T00:00:00Z'),
+      error: null,
+      inputHash: 'new-hash',
+      divergedAt: new Date('2026-05-01T00:00:00Z'),
+    });
+
+    await methods.promoteVideoVariant(divergent.id, { pendingAudioMux: true });
+
+    const rows = await db.select().from(sequences);
+    const updated = rows.find((s) => s.id === sequenceId);
+    expect(updated?.mergedVideoStatus).toBe('merging');
+    // URL must NOT be replaced with the bare merge — the existing muxed URL
+    // stays as the live primary across the mux window.
+    expect(updated?.mergedVideoUrl).toBe('https://example.com/old-muxed.mp4');
+    expect(updated?.mergedVideoPath).toBe('/p/old-muxed.mp4');
+
+    // Variant row is still soft-deleted in the same batch.
+    const variantRow = await methods.getVideoById(divergent.id);
+    expect(variantRow?.discardedAt).not.toBeNull();
+  });
 });
 
 describe('createSequenceVariantsMethods — music', () => {

@@ -10,6 +10,9 @@
 
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { getGenerationChannel } from '@/lib/realtime';
+import { triggerWorkflow } from '@/lib/workflow/client';
+import { buildWorkflowLabel } from '@/lib/workflow/labels';
+import type { MergeAudioVideoWorkflowInput } from '@/lib/workflow/types';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
@@ -74,6 +77,34 @@ export const getDivergentSequenceMusicVariantsFn = createServerFn({
     );
   });
 
+// ── Read: full variant history (issue #741) ────────────────────────────────
+
+/**
+ * Full merged-video variant history for the sequence, newest first. Feeds the
+ * variant history sheet — the consumer pairs the primary variant (matching
+ * `sequences.mergedVideoUrl`) with the divergent + discarded rows so the user
+ * can preview/promote/discard from one place.
+ */
+export const listSequenceVideoVariantHistoryFn = createServerFn({
+  method: 'GET',
+})
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.sequenceVariants.listVideoVariantsBySequence(
+      context.sequence.id
+    );
+  });
+
+export const listSequenceMusicVariantHistoryFn = createServerFn({
+  method: 'GET',
+})
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.sequenceVariants.listMusicVariantsBySequence(
+      context.sequence.id
+    );
+  });
+
 /**
  * Aggregate read for the team's sequences-list dashboard. Returns one row per
  * sequence that has at least one live divergent alternate, with separate
@@ -103,25 +134,58 @@ export const promoteSequenceVideoVariantFn = createServerFn({ method: 'POST' })
   .middleware([sequenceAccessMiddleware])
   .inputValidator(zodValidator(variantInputSchema))
   .handler(async ({ data, context }) => {
-    const { sequence, scopedDb } = context;
+    const { sequence, scopedDb, user, teamId } = context;
     const variant = await scopedDb.sequenceVariants.getVideoById(
       data.variantId
     );
     assertSequenceVariantPromotable(variant, sequence.id);
 
+    // Variant rows hold the bare merged URL (merge-audio-video doesn't write
+    // variants). If music is ready, re-mux it before publishing — otherwise
+    // promote would replace a muxed final with a silent one. See issue #741.
+    const musicPrimary =
+      sequence.musicStatus === 'completed' && sequence.musicModel
+        ? await scopedDb.sequenceVariants.getMusicPrimary(
+            sequence.id,
+            sequence.musicModel
+          )
+        : null;
+    const pendingAudioMux =
+      musicPrimary !== null &&
+      musicPrimary.status === 'completed' &&
+      musicPrimary.url !== null;
+
     const { sequence: updatedSequence } =
-      await scopedDb.sequenceVariants.promoteVideoVariant(variant.id);
+      await scopedDb.sequenceVariants.promoteVideoVariant(variant.id, {
+        pendingAudioMux,
+      });
+
+    if (pendingAudioMux && musicPrimary) {
+      await triggerWorkflow(
+        '/merge-audio-video',
+        {
+          userId: user.id,
+          teamId,
+          sequenceId: sequence.id,
+          mergedVideoVariantId: variant.id,
+          musicVariantId: musicPrimary.id,
+        } satisfies MergeAudioVideoWorkflowInput,
+        { label: buildWorkflowLabel(sequence.id) }
+      );
+    }
 
     try {
       await getGenerationChannel(sequence.id).emit(
         'generation.merge:progress',
-        {
-          step: 'video',
-          status: 'completed',
-          ...(updatedSequence.mergedVideoUrl
-            ? { mergedVideoUrl: updatedSequence.mergedVideoUrl }
-            : {}),
-        }
+        pendingAudioMux
+          ? { step: 'video', status: 'merging' }
+          : {
+              step: 'video',
+              status: 'completed',
+              ...(updatedSequence.mergedVideoUrl
+                ? { mergedVideoUrl: updatedSequence.mergedVideoUrl }
+                : {}),
+            }
       );
     } catch (error) {
       console.error(

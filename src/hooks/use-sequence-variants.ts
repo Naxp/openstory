@@ -5,6 +5,8 @@ import {
   getDivergentSequenceMusicVariantsFn,
   getDivergentSequenceVideoVariantsFn,
   getTeamDivergentSequenceVariantsFn,
+  listSequenceMusicVariantHistoryFn,
+  listSequenceVideoVariantHistoryFn,
   promoteSequenceMusicVariantFn,
   promoteSequenceVideoVariantFn,
   undiscardSequenceMusicVariantFn,
@@ -30,6 +32,10 @@ export const sequenceVariantKeys = {
     ['sequence-divergent-music', sequenceId] as const,
   divergentByTeam: (teamId?: string) =>
     ['sequence-divergent-by-team', teamId ?? null] as const,
+  videoHistory: (sequenceId: string) =>
+    ['sequence-video-history', sequenceId] as const,
+  musicHistory: (sequenceId: string) =>
+    ['sequence-music-history', sequenceId] as const,
 };
 
 // ── Read hooks ─────────────────────────────────────────────────────────────
@@ -71,6 +77,34 @@ export function useSequenceDivergentMusicVariants(
 }
 
 /**
+ * Full merged-video variant history (primary + divergent + discarded), newest
+ * first. Feeds the variant history sheet. Issue #741.
+ */
+export function useSequenceVideoVariantHistory(
+  sequenceId: string,
+  enabled = true
+) {
+  return useQuery<SequenceVideoVariant[]>({
+    queryKey: sequenceVariantKeys.videoHistory(sequenceId),
+    queryFn: () => listSequenceVideoVariantHistoryFn({ data: { sequenceId } }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useSequenceMusicVariantHistory(
+  sequenceId: string,
+  enabled = true
+) {
+  return useQuery<SequenceMusicVariant[]>({
+    queryKey: sequenceVariantKeys.musicHistory(sequenceId),
+    queryFn: () => listSequenceMusicVariantHistoryFn({ data: { sequenceId } }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
  * Aggregate read for the team's sequences-list dashboard. Returns one row per
  * sequence that has at least one live divergent alternate, with separate
  * flags for video vs music. The `enabled` arg should be true once the team
@@ -106,6 +140,9 @@ export function usePromoteSequenceVideoVariant() {
           queryKey: sequenceVariantKeys.divergentVideo(sequenceId),
         }),
         queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.videoHistory(sequenceId),
+        }),
+        queryClient.invalidateQueries({
           queryKey: sequenceKeys.detail(sequenceId),
         }),
         queryClient.invalidateQueries({
@@ -130,6 +167,9 @@ export function useDiscardSequenceVideoVariant() {
           queryKey: sequenceVariantKeys.divergentVideo(sequenceId),
         }),
         queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.videoHistory(sequenceId),
+        }),
+        queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentByTeam(),
         }),
       ]);
@@ -146,6 +186,9 @@ export function useUndiscardSequenceVideoVariant() {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentVideo(sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.videoHistory(sequenceId),
         }),
         queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentByTeam(),
@@ -172,6 +215,9 @@ export function usePromoteSequenceMusicVariant() {
           queryKey: sequenceVariantKeys.divergentMusic(sequenceId),
         }),
         queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.musicHistory(sequenceId),
+        }),
+        queryClient.invalidateQueries({
           queryKey: sequenceKeys.detail(sequenceId),
         }),
         queryClient.invalidateQueries({
@@ -196,6 +242,9 @@ export function useDiscardSequenceMusicVariant() {
           queryKey: sequenceVariantKeys.divergentMusic(sequenceId),
         }),
         queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.musicHistory(sequenceId),
+        }),
+        queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentByTeam(),
         }),
       ]);
@@ -212,6 +261,9 @@ export function useUndiscardSequenceMusicVariant() {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentMusic(sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: sequenceVariantKeys.musicHistory(sequenceId),
         }),
         queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentByTeam(),

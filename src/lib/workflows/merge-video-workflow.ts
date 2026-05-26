@@ -34,35 +34,35 @@ import {
 export const MERGE_VIDEO_WORKFLOW_NAME = 'merge-video';
 
 /**
- * Chain to merge-audio-video if the sequence has a ready music track.
- * This keeps the UI "Merge with Video" CTA honest — it restitches frames
- * and also muxes the existing music onto the fresh output.
+ * Resolve the music-variant id to mux against, or `null` if the audio mux
+ * step should be skipped (no music ready, or `skipAudioMux=true`).
  *
- * Both the merged video and the music are sourced as variants — `merge-audio-video`
- * accepts variant ids so the final output is a function of `(video, music)`.
+ * The caller branches on the result *before* writing
+ * `sequences.merged*={completed, url}` so the UI never sees a transient
+ * "completed" merged video without its music. See issue #741.
  */
-async function chainAudioMux(
+async function resolveMuxMusicVariantId(
   context: WorkflowContext<MergeVideoWorkflowInput>,
   scopedDb: ScopedDb,
-  input: MergeVideoWorkflowInput & { sequenceId: string },
-  mergedVideoVariantId: string
-): Promise<void> {
+  input: MergeVideoWorkflowInput & { sequenceId: string }
+): Promise<string | null> {
   if (input.skipAudioMux) {
     console.log(
       `[MergeVideoWorkflow] skipAudioMux=true; bypassing audio mux for sequence ${input.sequenceId}`
     );
-    return;
+    return null;
   }
-
-  const musicVariantId = await context.run(
-    'fetch-music-variant-for-mux',
-    async () => resolveMusicVariantForMux(scopedDb, input.sequenceId)
+  return context.run('fetch-music-variant-for-mux', async () =>
+    resolveMusicVariantForMux(scopedDb, input.sequenceId)
   );
+}
 
-  if (!musicVariantId) {
-    return;
-  }
-
+async function chainAudioMux(
+  context: WorkflowContext<MergeVideoWorkflowInput>,
+  input: MergeVideoWorkflowInput & { sequenceId: string },
+  mergedVideoVariantId: string,
+  musicVariantId: string
+): Promise<void> {
   await context.invoke('merge-audio-video', {
     workflow: mergeAudioVideoWorkflow,
     label: buildWorkflowLabel(input.sequenceId),
@@ -120,6 +120,7 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
             error: null,
             inputHash,
             currentHash,
+            replacePrimary: input.replacePrimary,
           });
         }
       );
@@ -150,27 +151,49 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
         return { mergedVideoUrl: singleUrl, mergedVideoPath: null };
       }
 
+      const musicVariantIdSingle = await resolveMuxMusicVariantId(
+        context,
+        scopedDb,
+        narrowedInput
+      );
+      const willMuxSingle = musicVariantIdSingle !== null;
+
       await context.run('update-sequence-single', async () => {
-        await seq.updateMergedVideoFields({
-          mergedVideoUrl: singleUrl,
-          mergedVideoPath: null,
-          mergedVideoStatus: 'completed',
-          mergedVideoGeneratedAt: new Date(),
-          mergedVideoError: null,
-        });
+        // When mux will run, hold status at 'merging' across the QStash
+        // hop — merge-audio-video flips it to 'completed' with the muxed
+        // URL. Otherwise publish the bare merge as the final.
+        await seq.updateMergedVideoFields(
+          willMuxSingle
+            ? { mergedVideoStatus: 'merging', mergedVideoError: null }
+            : {
+                mergedVideoUrl: singleUrl,
+                mergedVideoPath: null,
+                mergedVideoStatus: 'completed',
+                mergedVideoGeneratedAt: new Date(),
+                mergedVideoError: null,
+              }
+        );
 
         await getGenerationChannel(input.sequenceId).emit(
           'generation.merge:progress',
-          { step: 'video', status: 'completed', mergedVideoUrl: singleUrl }
+          willMuxSingle
+            ? { step: 'video', status: 'completed' }
+            : {
+                step: 'video',
+                status: 'completed',
+                mergedVideoUrl: singleUrl,
+              }
         );
       });
 
-      await chainAudioMux(
-        context,
-        scopedDb,
-        narrowedInput,
-        writeResult.variant.id
-      );
+      if (musicVariantIdSingle !== null) {
+        await chainAudioMux(
+          context,
+          narrowedInput,
+          writeResult.variant.id,
+          musicVariantIdSingle
+        );
+      }
       return { mergedVideoUrl: singleUrl, mergedVideoPath: null };
     }
 
@@ -244,6 +267,7 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
         error: null,
         inputHash,
         currentHash,
+        replacePrimary: input.replacePrimary,
       });
     });
 
@@ -282,31 +306,47 @@ export const mergeVideoWorkflow = createScopedWorkflow<MergeVideoWorkflowInput>(
       };
     }
 
+    const musicVariantId = await resolveMuxMusicVariantId(
+      context,
+      scopedDb,
+      narrowedInput
+    );
+    const willMux = musicVariantId !== null;
+
     await context.run('update-sequence', async () => {
-      await seq.updateMergedVideoFields({
-        mergedVideoUrl: storageResult.url,
-        mergedVideoPath: storageResult.path,
-        mergedVideoStatus: 'completed',
-        mergedVideoGeneratedAt: new Date(),
-        mergedVideoError: null,
-      });
+      // When mux will run, keep `mergedVideoStatus = 'merging'` and don't
+      // publish the bare URL — merge-audio-video flips status to 'completed'
+      // once the muxed URL is ready. Otherwise the bare merge is the final.
+      if (!willMux) {
+        await seq.updateMergedVideoFields({
+          mergedVideoUrl: storageResult.url,
+          mergedVideoPath: storageResult.path,
+          mergedVideoStatus: 'completed',
+          mergedVideoGeneratedAt: new Date(),
+          mergedVideoError: null,
+        });
+      }
 
       await getGenerationChannel(input.sequenceId).emit(
         'generation.merge:progress',
-        {
-          step: 'video',
-          status: 'completed',
-          mergedVideoUrl: storageResult.url,
-        }
+        willMux
+          ? { step: 'video', status: 'completed' }
+          : {
+              step: 'video',
+              status: 'completed',
+              mergedVideoUrl: storageResult.url,
+            }
       );
     });
 
-    await chainAudioMux(
-      context,
-      scopedDb,
-      narrowedInput,
-      writeResult.variant.id
-    );
+    if (musicVariantId !== null) {
+      await chainAudioMux(
+        context,
+        narrowedInput,
+        writeResult.variant.id,
+        musicVariantId
+      );
+    }
 
     return {
       mergedVideoUrl: storageResult.url,

@@ -546,6 +546,16 @@ export interface MergeVideoWorkflowInput extends SequenceWorkflowContext {
    * user has unchecked "Include music".
    */
   skipAudioMux?: boolean;
+  /**
+   * When `true`, replace the existing primary even if the input hash differs
+   * — bypasses the divergence routing. Set by motion-batch when the merge is
+   * an auto-trigger after frame-completion: the new render is unambiguously
+   * the user's intent (e.g. adding frames extends the sequence) and parking
+   * it as a divergent alternate just creates confusing "inputs changed"
+   * banners. Manual user re-triggers leave this unset so divergence still
+   * surfaces when the user actually changes inputs mid-flight.
+   */
+  replacePrimary?: boolean;
 }
 
 export interface MergeVideoWorkflowResult {
