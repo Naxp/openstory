@@ -216,6 +216,18 @@ async function main() {
       await db.insert(frames).values({
         ...f,
         sequenceId: sequence.id,
+        // Null out the prompt hashes so the frame loads as "not stale".
+        // The snapshot's hashes were computed under the original team's
+        // context and won't match what the app re-computes here.
+        //
+        // The app's updateFrameFn (see src/functions/frames.ts) has a
+        // bootstrap path: when the frame has a prompt but no stored
+        // hash, the first edit computes the pre-edit hash, stores it,
+        // THEN applies the edit. That produces the exact divergence we
+        // want for the cascade demo — one edit, and the visual prompt
+        // (and any downstream artifacts) become stale.
+        visualPromptInputHash: null,
+        motionPromptInputHash: null,
       });
     }
     console.log(
