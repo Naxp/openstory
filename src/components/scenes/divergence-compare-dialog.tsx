@@ -90,8 +90,8 @@ const AssetPreview: React.FC<{
       />
     );
   }
-  // eslint-disable-next-line jsx-a11y/media-has-caption -- Compare-dialog renders user-supplied generated audio without captions.
   return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption -- Compare-dialog renders user-supplied generated audio without captions.
     <audio src={url} crossOrigin="anonymous" controls className="w-full" />
   );
 };
