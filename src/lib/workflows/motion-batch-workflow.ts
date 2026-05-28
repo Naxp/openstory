@@ -60,7 +60,6 @@ export const motionBatchWorkflow =
             aspectRatio: frame.aspectRatio,
             generateAudio: frame.generateAudio,
             userEditedPrompt: frame.userEditedPrompt,
-            triggerMergeOnComplete: false,
           } satisfies MotionWorkflowInput,
           retries: 3,
           retryDelay: 'pow(2, retried) * 1000',
