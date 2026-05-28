@@ -289,11 +289,13 @@ const MergedVideoCell: React.FC<MergedVideoCellProps> = ({
     'aria-label': `Open ${sequence.title || 'sequence'}`,
   } as const;
 
-  if (sequence.posterUrl) {
+  const previewUrl = sequence.frames[0]?.thumbnailUrl ?? sequence.posterUrl;
+
+  if (previewUrl) {
     return (
       <Link {...linkProps} className={baseClass} style={style}>
         <Image
-          src={sequence.posterUrl}
+          src={previewUrl}
           alt={`${sequence.title || 'Sequence'} poster`}
           className="w-full h-full object-cover"
           loading="lazy"
