@@ -58,12 +58,6 @@ export const createSequenceSchema = createInsertSchema(sequences, {
     musicModel: true,
     musicPrompt: true,
     musicTags: true,
-    // Merged-video columns linger until #759 drops them; never accept from user.
-    mergedVideoUrl: true,
-    mergedVideoPath: true,
-    mergedVideoStatus: true,
-    mergedVideoGeneratedAt: true,
-    mergedVideoError: true,
   })
   .extend({
     // Accept array of models for multi-model sequence creation
@@ -169,12 +163,6 @@ export const updateSequenceSchema = createUpdateSchema(sequences, {
   musicModel: true,
   musicPrompt: true,
   musicTags: true,
-  // Merged-video columns linger until #759 drops them; never accept from user.
-  mergedVideoUrl: true,
-  mergedVideoPath: true,
-  mergedVideoStatus: true,
-  mergedVideoGeneratedAt: true,
-  mergedVideoError: true,
 });
 
 export type CreateSequenceInput = z.infer<typeof createSequenceSchema>;

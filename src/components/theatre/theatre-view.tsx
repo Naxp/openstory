@@ -4,7 +4,7 @@
  * Plays a sequence live in the browser — stitches scene videos + music via
  * Mediabunny without producing a server-side merged-MP4 artifact. Exporting
  * an MP4 is an explicit user action (the Share menu's "Export as MP4"); the
- * blob lands in `sequence_exports` rather than `sequences.mergedVideo*`.
+ * blob lands in `sequence_exports`.
  */
 
 import { Button } from '@/components/ui/button';
