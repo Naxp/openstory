@@ -196,7 +196,7 @@ async function generateImageInternal(
     adapter,
     prompt,
     modelOptions,
-    debug: true,
+    debug: false,
   });
 
   logger.info('generateImage response', {

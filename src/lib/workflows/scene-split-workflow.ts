@@ -138,8 +138,17 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           const events = parser.feed(chunk.accumulated);
 
           if (chunkCount % 20 === 0) {
-            logger.info(
-              `[Stream:${logName}] chunk #${chunkCount} | ${finalText.length} chars | ${frameMapping.length} frames so far`
+            // Per-chunk progress is noisy in prod (hundreds of lines per
+            // request). Kept at debug so it's still grep-able locally but
+            // suppressed at info+. See PR #765 discussion.
+            logger.debug(
+              'chunk {chunkCount} | {chars} chars | {frames} frames so far',
+              {
+                stream: logName,
+                chunkCount,
+                chars: finalText.length,
+                frames: frameMapping.length,
+              }
             );
           }
 
@@ -169,9 +178,17 @@ export const sceneSplitWorkflow = createScopedWorkflow<
             }
 
             if (event.type === 'scene:updated') {
-              logger.info(
-                // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                `[Stream:${logName}] Scene ${event.index + 1} title updated: "${event.scene.metadata?.title}" (chunk #${chunkCount})`
+              // Fires repeatedly per scene as the streamed title gets refined
+              // token-by-token. Keep at debug to avoid the per-token spam.
+              logger.debug(
+                'scene {sceneIndex} title updated: {title} (chunk {chunkCount})',
+                {
+                  stream: logName,
+                  sceneIndex: event.index + 1,
+                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+                  title: event.scene.metadata?.title,
+                  chunkCount,
+                }
               );
 
               if (sequenceId) {
