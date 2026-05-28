@@ -225,6 +225,16 @@ bun db:migrate   # Apply migrations to local.db
 - **ULID** primary keys (not UUID).
 - **Typed JSONB:** `frame.metadata` typed as `Scene`.
 
+### `@cloudflare/vite-plugin` remoteBindings footgun — READ BEFORE TOUCHING wrangler.jsonc OR vite.config.ts
+
+The plugin defaults `remoteBindings: true`. That means every binding in `wrangler.jsonc` (including `DB`) routes to **real production Cloudflare** when local credentials are present — `bun dev` writes go straight to prod D1, prod R2, etc. No warning, no prompt.
+
+We opt out at the plugin level (`remoteBindings: false` in `vite.config.ts`'s `cloudflare()` call) and opt individual R2 bindings back in via `"remote": true` in `wrangler.jsonc`. **D1 must never be marked `remote: true`** — local dev uses Wrangler-managed Miniflare D1 at `.wrangler/state/v3/d1/`.
+
+**Local guardrail:** `bun dev` prints a wrangler-bindings banner on startup showing each binding's `local` / `REMOTE` status. If `DB` ever shows REMOTE, kill the server and fix the config before any write lands in prod.
+
+If you need to swap in real prod D1 for a one-off (e.g., reproducing a prod bug), add `"remote": true` to the D1 binding temporarily, restart `bun dev`, and remove it the moment you're done. **Never commit `remote: true` on D1.**
+
 ### D1 / Turso table-rebuild trap — READ BEFORE CHANGING SCHEMA
 
 drizzle-kit's HTTP migrators (`d1-http`, `turso`) join all migration statements into a single HTTP body. Both D1 and Turso libSQL wrap multi-statement bodies in an implicit transaction, and SQLite **silently** ignores `PRAGMA foreign_keys = OFF` inside a transaction. So when the standard SQLite "table rebuild" pattern (`CREATE __new_X` → `INSERT SELECT` → `DROP X` → `RENAME`) drops the parent table, every inbound `ON DELETE CASCADE` FK fires and child rows are deleted.

@@ -1,14 +1,81 @@
 // vite.config.ts
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cloudflare } from '@cloudflare/vite-plugin';
 import contentCollections from '@content-collections/vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 import tailwindcss from '@tailwindcss/vite';
 import { devtools } from '@tanstack/devtools-vite';
 import viteReact from '@vitejs/plugin-react';
 
 const isDev = process.env.NODE_ENV !== 'production';
+
+/**
+ * Prints which wrangler.jsonc bindings are local vs REMOTE on dev startup.
+ *
+ * @cloudflare/vite-plugin used to default `remoteBindings: true`, which would
+ * silently route D1 writes to the production database. We disable it at the
+ * plugin level (see cloudflare() call below); this banner is the runtime
+ * checkpoint — if anyone re-enables remote bindings or flips `remote: true`
+ * on D1, the next `bun dev` boot will show it in red on the first screen.
+ */
+function wranglerBindingsBanner(): Plugin {
+  return {
+    name: 'wrangler-bindings-banner',
+    apply: 'serve',
+    configureServer(server) {
+      server.httpServer?.once('listening', () => {
+        type Binding = { binding: string; remote?: boolean };
+        type WranglerConfig = {
+          d1_databases?: Binding[];
+          r2_buckets?: Binding[];
+          kv_namespaces?: Binding[];
+        };
+
+        const raw = readFileSync(
+          resolve(import.meta.dirname, 'wrangler.jsonc'),
+          'utf-8'
+        );
+        // Strip line + block comments + trailing commas so JSON.parse accepts it.
+        const stripped = raw
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '')
+          .replace(/,(\s*[}\]])/g, '$1');
+        const cfg: WranglerConfig = JSON.parse(stripped);
+
+        const rows: Array<[string, string, boolean]> = [];
+        for (const b of cfg.d1_databases ?? [])
+          rows.push(['D1', b.binding, !!b.remote]);
+        for (const b of cfg.r2_buckets ?? [])
+          rows.push(['R2', b.binding, !!b.remote]);
+        for (const b of cfg.kv_namespaces ?? [])
+          rows.push(['KV', b.binding, !!b.remote]);
+
+        const nameWidth = Math.max(...rows.map(([, n]) => n.length), 0);
+        const RED = '\x1b[31m';
+        const DIM = '\x1b[2m';
+        const RESET = '\x1b[0m';
+
+        console.log('\n  wrangler bindings (default env):');
+        for (const [kind, name, remote] of rows) {
+          const status = remote
+            ? `${RED}REMOTE${RESET}  (writes hit real Cloudflare)`
+            : `${DIM}local${RESET}   (Miniflare)`;
+          console.log(`    ${kind} ${name.padEnd(nameWidth)}  →  ${status}`);
+        }
+        if (rows.some(([, , r]) => r)) {
+          console.log(
+            `  ${DIM}↑ remote bindings opt-in per-entry in wrangler.jsonc; D1 should always be local in dev.${RESET}\n`
+          );
+        } else {
+          console.log('');
+        }
+      });
+    },
+  };
+}
 
 /**
  * Rolldown reorders CJS-to-ESM wrappers: tsyringe checks for
@@ -59,6 +126,7 @@ export default defineConfig({
   plugins: [
     contentCollections(),
     isDev && devtools(),
+    isDev && wranglerBindingsBanner(),
     reflectMetadataPolyfill(),
     tailwindcss(),
     cloudflare({
