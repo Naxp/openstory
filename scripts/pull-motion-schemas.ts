@@ -66,7 +66,7 @@ async function main() {
   }
 
   // Save in the same format fetch-openapi-models.ts uses
-  const jsonDir = join(import.meta.dir, '..', 'json');
+  const jsonDir = join(import.meta.dirname, '..', 'json');
   mkdirSync(jsonDir, { recursive: true });
 
   const outputPath = join(jsonDir, 'fal.models.motion.json');

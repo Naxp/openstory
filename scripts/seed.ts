@@ -93,8 +93,13 @@ async function seed() {
     console.log(
       `🗄️  Using Wrangler local D1 (${environment ?? 'default'} env)\n`
     );
+    // remoteBindings: false skips the remote-proxy session for any
+    // `remote: true` bindings (R2 buckets in [env.test]). Seeding only
+    // writes to local D1; the proxy session would otherwise demand
+    // CLOUDFLARE_API_TOKEN that CI's setup step doesn't need.
     platformProxy = await getPlatformProxy<{ DB?: D1Database }>({
       environment,
+      remoteBindings: false,
     });
     const d1Binding = platformProxy.env.DB;
     if (!d1Binding) {

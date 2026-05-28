@@ -14,8 +14,13 @@ import { drizzle } from 'drizzle-orm/d1';
 import { getPlatformProxy } from 'wrangler';
 import { relations } from '@/lib/db/schema/relations';
 
+// remoteBindings: false — fixtures only touch local D1; R2 traffic happens
+// through the worker (storage-cloudflare.ts → r2-mock sidecar), not via this
+// proxy. Avoiding the remote-proxy session means no CLOUDFLARE_API_TOKEN is
+// needed in the playwright process.
 const proxy = await getPlatformProxy<{ DB?: D1Database }>({
   environment: 'test',
+  remoteBindings: false,
 });
 
 const d1 = proxy.env.DB;

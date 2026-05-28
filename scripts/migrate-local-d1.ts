@@ -24,7 +24,14 @@ import { getPlatformProxy } from 'wrangler';
 const isTest = process.argv.includes('--test');
 const environment = isTest ? 'test' : undefined;
 
-const proxy = await getPlatformProxy<{ DB?: D1Database }>({ environment });
+// remoteBindings: false skips wrangler's remote-proxy session for any
+// `remote: true` bindings in wrangler.jsonc (R2 buckets in [env.test]).
+// We only touch local D1 here, so the proxy session would just demand a
+// CLOUDFLARE_API_TOKEN we don't need for migrations.
+const proxy = await getPlatformProxy<{ DB?: D1Database }>({
+  environment,
+  remoteBindings: false,
+});
 const d1 = proxy.env.DB;
 if (!d1) {
   throw new Error(
