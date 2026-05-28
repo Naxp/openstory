@@ -1,37 +1,35 @@
 /**
  * Test Database Client for E2E Tests
- * Drizzle ORM instance pointing to test.db
+ *
+ * Uses wrangler's `getPlatformProxy()` so fixtures read/write the same
+ * Miniflare-backed local D1 that the worker (running under cf-plugin) sees.
+ * No more separate `file:test.db` libsql connection — schema is applied via
+ * `scripts/migrate-local-d1.ts --test` against `wrangler.jsonc` [env.test].
+ *
+ * Top-level await runs once per process at module load. Fixtures don't need
+ * to remember to await an init promise.
  */
 
-import { createClient } from '@libsql/client';
-import { drizzle } from 'drizzle-orm/libsql';
+import { drizzle } from 'drizzle-orm/d1';
+import { getPlatformProxy } from 'wrangler';
 import { relations } from '@/lib/db/schema/relations';
 
-const client = createClient({ url: 'file:test.db' });
-
-// busy_timeout waits for locks instead of failing immediately during parallel tests
-// WAL mode is set by CI workflow and global-setup, not here (avoids SQLITE_BUSY_RECOVERY on stale WAL files)
-const initPromise = (async () => {
-  await client.execute('PRAGMA busy_timeout = 30000');
-})();
-
-/**
- * Drizzle database instance for e2e tests
- * Uses test.db (same as e2e dev server)
- */
-export const testDb = drizzle({
-  client,
-  relations,
+const proxy = await getPlatformProxy<{ DB?: D1Database }>({
+  environment: 'test',
 });
 
-/**
- * Ensure database is initialized before running queries
- * Call this at the start of test setup if needed
- */
-export const ensureDbInit = () => initPromise;
+const d1 = proxy.env.DB;
+if (!d1) {
+  throw new Error(
+    "[e2e/db-client] D1 binding 'DB' missing from wrangler.jsonc [env.test]"
+  );
+}
+
+export const testDb = drizzle(d1, { relations });
 
 /**
- * Get the raw libSQL client for operations that need it
- * (e.g., PRAGMA commands, dynamic table operations)
+ * No-op kept for backwards compatibility with callers that used to await an
+ * init promise. The top-level await above already ran by the time anything
+ * imports `ensureDbInit`.
  */
-export const getTestClient = () => client;
+export const ensureDbInit = (): Promise<void> => Promise.resolve();

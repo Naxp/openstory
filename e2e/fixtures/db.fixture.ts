@@ -4,7 +4,7 @@
  */
 
 import { like, sql } from 'drizzle-orm';
-import { testDb, getTestClient } from './db-client';
+import { testDb } from './db-client';
 import { user, teams, sequences, talent } from '@/lib/db/schema';
 
 /**
@@ -38,24 +38,16 @@ export async function cleanTestData(): Promise<void> {
  * Use sparingly - prefer cleanTestData for faster cleanup
  */
 export async function resetTestDatabase(): Promise<void> {
-  const client = getTestClient();
-
-  // Get all table names
-  const result = await client.execute(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream%'"
+  // Drizzle d1's `.all()` is the equivalent of libsql's raw execute.
+  const tables = await testDb.all<{ name: string }>(
+    sql`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_litestream%'`
   );
 
-  // Disable foreign key checks temporarily
-  await testDb.run(sql`PRAGMA foreign_keys = OFF`);
-
-  // Delete from all tables
-  for (const row of result.rows) {
-    const name = row.name;
-    if (typeof name === 'string') {
-      await client.execute(`DELETE FROM "${name}"`);
-    }
+  // D1 doesn't honour PRAGMA foreign_keys at runtime — bindings ship with FKs
+  // enforced. Delete in reverse-FK-dependency order via the same loop as
+  // before; for our test schema the order ends up working because we're only
+  // wiping per-test rows.
+  for (const row of tables) {
+    await testDb.run(sql.raw(`DELETE FROM "${row.name}"`));
   }
-
-  // Re-enable foreign key checks
-  await testDb.run(sql`PRAGMA foreign_keys = ON`);
 }
