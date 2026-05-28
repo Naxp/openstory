@@ -46,6 +46,8 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
   const aspectRatio: AspectRatio =
     (sequence.aspectRatio as AspectRatio | null) ?? DEFAULT_ASPECT_RATIO;
 
+  const previewUrl = sequence.frames[0]?.thumbnailUrl ?? sequence.posterUrl;
+
   return (
     <>
       <div
@@ -58,7 +60,7 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
         className="sticky z-10 bg-background shrink-0 h-full border-r border-b p-2 flex items-center justify-center"
         style={{ left: METADATA_WIDTH, width: VIDEO_WIDTH }}
       >
-        {sequence.posterUrl ? (
+        {previewUrl ? (
           <button
             type="button"
             onClick={() => onOpenTheatre(sequenceIndex)}
@@ -66,7 +68,7 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
             className="w-full h-full flex items-center justify-center cursor-pointer appearance-none bg-transparent border-0 p-0"
           >
             <Image
-              src={sequence.posterUrl}
+              src={previewUrl}
               alt={`${sequence.title || 'Sequence'} preview`}
               className="max-w-full max-h-full object-contain rounded-md"
               loading="lazy"
