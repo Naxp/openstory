@@ -26,7 +26,6 @@ import { framePromptVariants } from './frame-prompt-variants';
 
 import { sequenceMusicPromptVariants } from './sequence-music-prompt-variants';
 
-import { sequenceVideoVariants } from './sequence-video-variants';
 import { sequenceMusicVariants } from './sequence-music-variants';
 import { sequenceExports } from './sequence-exports';
 
@@ -155,14 +154,8 @@ export type {
   SequenceMusicPromptVariant,
 } from './sequence-music-prompt-variants';
 
-// Sequence-level variants (merged video + music)
-export { sequenceVideoVariants, sequenceMusicVariants };
-
-export type {
-  NewSequenceVideoVariant,
-  SequenceVideoVariantStatus,
-  SequenceVideoVariant,
-} from './sequence-video-variants';
+// Sequence-level variants (music)
+export { sequenceMusicVariants };
 
 export type {
   NewSequenceMusicVariant,
@@ -323,7 +316,6 @@ export const schema = {
   talentSheetVariants,
   framePromptVariants,
   sequenceMusicPromptVariants,
-  sequenceVideoVariants,
   sequenceMusicVariants,
   sequenceExports,
 
