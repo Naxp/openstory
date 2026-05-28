@@ -240,7 +240,6 @@ export const smartRetryFn = createServerFn({ method: 'POST' })
           model: videoModel,
           aspectRatio: sequence.aspectRatio,
           duration: frame.durationMs ? frame.durationMs / 1000 : undefined,
-          triggerMergeOnComplete: true,
         };
 
         await triggerWorkflow('/motion', workflowInput, {

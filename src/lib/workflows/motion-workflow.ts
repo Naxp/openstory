@@ -20,21 +20,12 @@ import {
 } from '@/lib/motion/motion-generation';
 import { uploadVideoToStorage } from '@/lib/motion/video-storage';
 import { getGenerationChannel } from '@/lib/realtime';
-import { triggerWorkflow } from '@/lib/workflow/client';
-import { buildWorkflowLabel } from '@/lib/workflow/labels';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
-import type {
-  MergeVideoWorkflowInput,
-  MotionWorkflowInput,
-} from '@/lib/workflow/types';
+import type { MotionWorkflowInput } from '@/lib/workflow/types';
 import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { WorkflowNonRetryableError } from '@upstash/workflow';
-import {
-  buildMergeVideoSourcesFromFrames,
-  computeSequenceVideoHashFromDto,
-} from './sequence-snapshots';
 import { shouldRecordUserEdit } from './user-edit-predicate';
 
 /** Each batch polls in a tight loop for ~30s, then checkpoints for durability */
@@ -433,51 +424,6 @@ export const generateMotionWorkflow = createScopedWorkflow<MotionWorkflowInput>(
             emitError
           );
         }
-      });
-
-      // Step 6: Opt-in merge auto-trigger for callers that fan out motion
-      // without their own subsequent merge invocation (e.g. smart-retry's
-      // motion-retry path). N parallel motion workflows can each reach this
-      // step near-simultaneously after the last frame lands; the content-
-      // derived dedup ID makes QStash collapse the duplicates into a single
-      // workflowRunId. Regenerating any frame's video changes the hash and
-      // re-arms a fresh merge. See issue #690.
-      await context.run('check-merge-trigger', async () => {
-        if (!input.triggerMergeOnComplete) return;
-        if (!input.sequenceId || !input.teamId || !input.userId) return;
-
-        const allFrames = await scopedDb.frames.listBySequence(
-          input.sequenceId
-        );
-        if (allFrames.length === 0) return;
-        if (!allFrames.every((f) => f.videoStatus === 'completed')) return;
-
-        const sorted = [...allFrames].sort(
-          (a, b) => a.orderIndex - b.orderIndex
-        );
-        const { videoUrls, sourceFrameVideoHashes } =
-          buildMergeVideoSourcesFromFrames(sorted);
-
-        if (videoUrls.length !== allFrames.length) return;
-
-        console.log(
-          `[MotionWorkflow] All ${allFrames.length} frames complete, triggering merge workflow`
-        );
-
-        const mergeInput: MergeVideoWorkflowInput = {
-          userId: input.userId,
-          teamId: input.teamId,
-          sequenceId: input.sequenceId,
-          videoUrls,
-          sourceFrameVideoHashes,
-        };
-
-        const inputHash = await computeSequenceVideoHashFromDto(mergeInput);
-
-        await triggerWorkflow('/merge-video', mergeInput, {
-          deduplicationId: `merge-${input.sequenceId}-${inputHash.slice(0, 16)}`,
-          label: buildWorkflowLabel(input.sequenceId),
-        });
       });
     }
 
