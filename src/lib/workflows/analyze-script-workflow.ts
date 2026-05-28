@@ -422,7 +422,7 @@ export const analyzeScriptWorkflow = createScopedWorkflow<
         });
       });
 
-      // Phase 5: single orchestrator for motion + optional music + merge
+      // Phase 5: single orchestrator for motion + optional music
       const motionBatchResult = await context.invoke('motion-batch', {
         workflow: motionBatchWorkflow,
         label,
