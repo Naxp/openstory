@@ -1,6 +1,6 @@
 /**
  * Motion Server Functions
- * Motion/video generation operations including frame motion and merged video
+ * Frame motion (image-to-video) generation operations.
  */
 
 import { createServerFn } from '@tanstack/react-start';

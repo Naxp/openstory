@@ -161,7 +161,7 @@ const MobileReelRow: React.FC<MobileReelRowProps> = ({
           className="flex gap-2 pl-3"
           style={{ height: STRIP_HEIGHT, minWidth: 'min-content' }}
         >
-          <MergedVideoCell
+          <SequencePosterCell
             sequence={sequence}
             width={cellWidth}
             height={STRIP_HEIGHT}
@@ -258,13 +258,13 @@ const CreatorIdentity: React.FC<{ sequence: SequenceWithFrames }> = ({
   );
 };
 
-type MergedVideoCellProps = {
+type SequencePosterCellProps = {
   sequence: SequenceWithFrames;
   width: number;
   height: number;
 };
 
-const MergedVideoCell: React.FC<MergedVideoCellProps> = ({
+const SequencePosterCell: React.FC<SequencePosterCellProps> = ({
   sequence,
   width,
   height,

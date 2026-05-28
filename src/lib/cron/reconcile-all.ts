@@ -223,7 +223,7 @@ type BlindFailPipeline = 'sequencesMusic' | 'sequenceElements';
  * Why 30min vs the 5min QStash-verified threshold: with no run id we can't
  * distinguish a slow-but-alive run from a dead one, so we wait long enough
  * that any reasonable workflow would have completed (the slowest current
- * workflows — large merged videos and music gen — finish well under 30min).
+ * workflows — music gen and element vision — finish well under 30min).
  * Note we can only flip to 'failed' here, never 'completed' — without a run
  * id, success requires the workflow's own update step to have persisted, and
  * if that didn't happen the artifact URL won't be there either.
