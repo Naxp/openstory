@@ -21,14 +21,13 @@
       // per-serverFn timing/outcome. The CF-emitted "fetch OK" / "GET OK"
       // lines flooded the dashboard with empty headlines.
       "invocation_logs": false,
-      // PostHog destination. Create the destination in the Cloudflare
-      // dashboard first (Workers & Pages -> openstory -> Observability ->
-      // Logs -> Destinations -> PostHog) and add its id below. The schema
-      // expects an array of strings, not objects. See
+      // PostHog destination. The destination must exist in the Cloudflare
+      // dashboard (Workers & Pages -> openstory -> Observability -> Logs ->
+      // Destinations -> PostHog). The schema expects an array of strings.
+      // Previews use 'posthog-openstory-stg' (patched in
+      // .github/workflows/deploy-cloudflare.yml). See
       // https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/posthog/
-      "destinations": [
-        // "posthog-prd"
-      ],
+      "destinations": ["posthog-openstory-prd"],
     },
     "traces": {
       "enabled": true,
