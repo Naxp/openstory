@@ -158,14 +158,14 @@ jobs:
           cp dist/server/.dev.vars .dev.vars
 
       - name: Prepare .wrangler/deploy/config.json for built e2e (vite preview + CF plugin)
-        # The @cloudflare/vite-plugin (during `vite preview` for a pre-built
-        # Workers output) expects this internal file, which is a side-effect
-        # of wrangler's config resolution.
-        #
-        # We deliberately do NOT use --outdir here. Using --outdir can prevent
-        # wrangler from writing the .wrangler/deploy/config.json sidecar that
-        # the Vite plugin later reads at the project root.
-        run: npx wrangler deploy --config dist/server/wrangler.json --dry-run
+        # The baked wrangler.json lives in dist/server/. When wrangler runs from
+        # that directory it writes its internal deploy config to dist/server/.wrangler/deploy/config.json.
+        # We then copy it to the project root so the @cloudflare/vite-plugin can find it
+        # when `vite preview` starts from the repo root.
+        run: |
+          (cd dist/server && npx wrangler deploy --dry-run)
+          mkdir -p .wrangler/deploy
+          cp -r dist/server/.wrangler/deploy/* .wrangler/deploy/ 2>/dev/null || true
 
       - name: Run E2E tests
         run: bun run test:e2e
@@ -327,8 +327,10 @@ jobs:
 
       - name: Prepare .wrangler/deploy/config.json for built e2e (vite preview + CF plugin)
         # Same as the regular e2e job.
-        # Intentionally no --outdir (see comment in the other job).
-        run: npx wrangler deploy --config dist/server/wrangler.json --dry-run
+        run: |
+          (cd dist/server && npx wrangler deploy --dry-run)
+          mkdir -p .wrangler/deploy
+          cp -r dist/server/.wrangler/deploy/* .wrangler/deploy/ 2>/dev/null || true
 
       - name: Run full-pipeline E2E test
         run: bun run test:e2e:full
