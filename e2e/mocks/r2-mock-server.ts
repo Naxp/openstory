@@ -122,12 +122,20 @@ export async function startR2MockServer(): Promise<void> {
   const next = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
       console.error('[r2-mock] handler error:', err);
-      if (!res.headersSent) send(res, 500, { error: String(err) });
+      if (!res.headersSent) {
+        // Do not leak full error details (including stack / internal paths)
+        // over the network, even to localhost callers.
+        send(res, 500, { error: 'internal error' });
+      }
     });
   });
   server = next;
   await new Promise<void>((resolve) => {
-    next.listen(R2_MOCK_PORT, () => {
+    // Bind explicitly to localhost. Binding only to the port (as was done
+    // previously) causes Node to listen on all interfaces (0.0.0.0 / ::),
+    // making the mock server (including the record endpoint when
+    // E2E_RECORD=1 is active) reachable from other machines on the network.
+    next.listen(R2_MOCK_PORT, '127.0.0.1', () => {
       console.log(
         `[e2e] r2-mock server started at http://localhost:${R2_MOCK_PORT}`
       );
