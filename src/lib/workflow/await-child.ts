@@ -28,9 +28,9 @@
  * See docs/investigations/cloudflare-workflows.md §4 Gap A.
  */
 
+import { getLogger } from '@/lib/observability/logger';
 import type { CloudflareEnv } from '@/lib/workflow/types';
 import type { WorkflowSleepDuration, WorkflowStep } from 'cloudflare:workers';
-import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'workflow', 'cf', 'await-child']);
 
@@ -198,15 +198,28 @@ function isWorkflowBinding(value: unknown): value is Workflow<unknown> {
 }
 
 /**
+ * Cloudflare validates event types against `^[a-zA-Z0-9_][a-zA-Z0-9-_]*$`
+ * (letters, digits, hyphen, underscore; max 100 chars). Periods and colons are
+ * rejected with `workflow.invalid_event_type`, which deterministically fails
+ * `sendEvent` (no retry can recover) and leaves the parent's `waitForEvent`
+ * hanging until timeout. Map any invalid char to `_`, guarantee a valid first
+ * char, and truncate.
+ */
+export function sanitizeEventType(raw: string): string {
+  const cleaned = raw.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 100);
+  return /^[a-zA-Z0-9_]/.test(cleaned) ? cleaned : `w_${cleaned}`.slice(0, 100);
+}
+
+/**
  * Build the unique event type for a parent→child wait. Including the child
  * ID guarantees two siblings (e.g. fan-out over N scenes) get distinct
  * events and the parent's `waitForEvent` cannot match the wrong sibling.
  */
 function buildEventType(binding: Workflow<unknown>, childId: string): string {
   // The binding has no name accessor; we use the constructor name as a
-  // best-effort qualifier and rely on `childId` for uniqueness.
+  // best-effort qualifier and rely on `childId` for uniqueness. Join with
+  // hyphens (not `:`) and sanitize — `binding.constructor.name` can be a
+  // minified identifier (e.g. containing `$`) and the colon is itself invalid.
   const qualifier = binding.constructor.name || 'workflow';
-  const candidate = `${qualifier}-done:${childId}`;
-  // CF event type names are capped at 100 chars.
-  return candidate.length > 100 ? candidate.slice(0, 100) : candidate;
+  return sanitizeEventType(`${qualifier}-done-${childId}`);
 }
