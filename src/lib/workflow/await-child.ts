@@ -28,11 +28,8 @@
  * See docs/investigations/cloudflare-workflows.md §4 Gap A.
  */
 
-import { getLogger } from '@/lib/observability/logger';
 import type { CloudflareEnv } from '@/lib/workflow/types';
 import type { WorkflowSleepDuration, WorkflowStep } from 'cloudflare:workers';
-
-const logger = getLogger(['openstory', 'workflow', 'cf', 'await-child']);
 
 const DEFAULT_TIMEOUT: WorkflowSleepDuration = '30 minutes';
 
@@ -149,30 +146,27 @@ export async function notifyParent<TOutput>(
 }
 
 /**
- * Notify the parent that this child failed. Called from the base class's
- * failure wrapper — does not throw on its own (cleanup must not mask the
- * original error).
+ * Notify the parent that this child failed. Mirrors {@link notifyParent}: the
+ * `sendEvent` runs inside a durable `step.do`, so a transient delivery blip is
+ * retried by the engine instead of silently stranding the parent on its
+ * `waitForEvent` timeout. Unlike the success path, this MAY throw once retries
+ * are exhausted — the base class catches that so a dead parent can't mask the
+ * original `runImpl` error.
  */
 export async function notifyParentOfFailure(
+  step: WorkflowStep,
   env: CloudflareEnv,
   hint: ParentNotifyHint | undefined,
   error: string
 ): Promise<void> {
   if (!hint) return;
-  try {
+  await step.do('notify-parent-failure', async () => {
     const parent = await resolveParentInstance(env, hint);
     await parent.sendEvent({
       type: hint.eventType,
       payload: { status: 'failed', error } satisfies ChildOutcome<never>,
     });
-  } catch (notifyError) {
-    logger.error(
-      `[notifyParentOfFailure] could not deliver failure event to ${hint.parentInstanceId}:`,
-      {
-        err: notifyError,
-      }
-    );
-  }
+  });
 }
 
 async function resolveParentInstance(

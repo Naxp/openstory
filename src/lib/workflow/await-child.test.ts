@@ -9,11 +9,44 @@
  * charset, so only a unit assert like this catches it before deploy.
  */
 
-import { describe, expect, test } from 'vitest';
-import { sanitizeEventType } from './await-child';
+import { describe, expect, test, vi } from 'vitest';
+import {
+  notifyParentOfFailure,
+  type ParentNotifyHint,
+  sanitizeEventType,
+} from './await-child';
+import type { CloudflareEnv } from '@/lib/workflow/types';
+import type { WorkflowStep } from 'cloudflare:workers';
 
 // Cloudflare's documented event-type rule.
 const CF_EVENT_TYPE = /^[a-zA-Z0-9_][a-zA-Z0-9-_]*$/;
+
+/** Minimal `step` stub that runs the durable callback once (one engine attempt). */
+function fakeStep(): { step: WorkflowStep; doSpy: ReturnType<typeof vi.fn> } {
+  const doSpy = vi.fn((_name: string, fn: () => Promise<unknown>) => fn());
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- minimal WorkflowStep stub: notifyParentOfFailure only uses `do`
+  const step = { do: doSpy } as unknown as WorkflowStep;
+  return { step, doSpy };
+}
+
+/** Env whose `get()` returns an instance exposing the given `sendEvent`. */
+function fakeEnv(sendEvent: ReturnType<typeof vi.fn>): {
+  env: CloudflareEnv;
+  get: ReturnType<typeof vi.fn>;
+} {
+  const get = vi.fn(() => ({ sendEvent }));
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- minimal CloudflareEnv stub exposing only the parent binding under test
+  const env = {
+    IMAGE_WORKFLOW: { get, create: vi.fn() },
+  } as unknown as CloudflareEnv;
+  return { env, get };
+}
+
+const HINT: ParentNotifyHint = {
+  bindingName: 'IMAGE_WORKFLOW',
+  parentInstanceId: 'parent_01ABC',
+  eventType: 'WorkflowImpl-done-child_01XYZ',
+};
 
 describe('sanitizeEventType', () => {
   test('replaces the colon that caused workflow.invalid_event_type', () => {
@@ -66,5 +99,46 @@ describe('sanitizeEventType', () => {
     const result = sanitizeEventType(`:${'y'.repeat(250)}`);
     expect(result.length).toBe(100);
     expect(result).toMatch(CF_EVENT_TYPE);
+  });
+});
+
+describe('notifyParentOfFailure', () => {
+  test('no-ops without a parent hint (top-level workflow)', async () => {
+    const sendEvent = vi.fn();
+    const { env } = fakeEnv(sendEvent);
+    const { step, doSpy } = fakeStep();
+
+    await notifyParentOfFailure(step, env, undefined, 'boom');
+
+    expect(doSpy).not.toHaveBeenCalled();
+    expect(sendEvent).not.toHaveBeenCalled();
+  });
+
+  test('sends a failed outcome through a durable step.do', async () => {
+    const sendEvent = vi.fn().mockResolvedValue(undefined);
+    const { env, get } = fakeEnv(sendEvent);
+    const { step, doSpy } = fakeStep();
+
+    await notifyParentOfFailure(step, env, HINT, 'edit timeout');
+
+    expect(doSpy).toHaveBeenCalledWith(
+      'notify-parent-failure',
+      expect.any(Function)
+    );
+    expect(get).toHaveBeenCalledWith(HINT.parentInstanceId);
+    expect(sendEvent).toHaveBeenCalledWith({
+      type: HINT.eventType,
+      payload: { status: 'failed', error: 'edit timeout' },
+    });
+  });
+
+  test('propagates (no longer swallows) so the engine retries a failed send', async () => {
+    const sendEvent = vi.fn().mockRejectedValue(new Error('transient blip'));
+    const { env } = fakeEnv(sendEvent);
+    const { step } = fakeStep();
+
+    await expect(
+      notifyParentOfFailure(step, env, HINT, 'edit timeout')
+    ).rejects.toThrow('transient blip');
   });
 });

@@ -141,10 +141,18 @@ export abstract class OpenStoryWorkflowEntrypoint<
       }
 
       // Notify the parent on failure too — otherwise a parent's
-      // `step.waitForEvent` would hang until its timeout. Errors from this
-      // notification are swallowed internally so they can't mask the original.
+      // `step.waitForEvent` would hang until its timeout. The send is durable
+      // (retried inside its own step.do); if delivery is still impossible after
+      // retries we swallow here so it can't mask the original error.
       if (parentHint) {
-        await notifyParentOfFailure(this.env, parentHint, sanitized);
+        try {
+          await notifyParentOfFailure(step, this.env, parentHint, sanitized);
+        } catch (notifyError) {
+          logger.error(
+            `[${this.constructor.name}] failure notification to parent exhausted retries`,
+            { err: notifyError }
+          );
+        }
       }
 
       // `WorkflowValidationError` is a plain Error subclass, which CF treats as
