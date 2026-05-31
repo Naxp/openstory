@@ -77,8 +77,8 @@ export default defineConfig({
   ],
 
   webServer: (() => {
-    const useBuiltServer = process.env.E2E_BUILT === 'true';
     const fullPipeline = process.env.PLAYWRIGHT_FULL_PIPELINE === 'true';
+    const useBuiltServer = process.env.E2E_BUILT === 'true';
     const envPrefix = [
       'E2E_TEST=true',
       // CLOUDFLARE_ENV activates wrangler.jsonc's [env.test] block under both

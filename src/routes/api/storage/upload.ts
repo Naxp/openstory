@@ -1,13 +1,8 @@
 import { uploadFile } from '#storage';
 import { authRequestMiddleware } from '@/functions/middleware';
-import { resolveUserTeam } from '@/lib/db/scoped';
 import { handleApiError } from '@/lib/errors';
-import { STORAGE_BUCKETS, type StorageBucket } from '@/lib/storage/buckets';
+import { resolveUploadTarget } from '@/lib/storage/upload-target';
 import { createFileRoute } from '@tanstack/react-router';
-
-const bucketByName = new Map<string, StorageBucket>(
-  Object.values(STORAGE_BUCKETS).map((b) => [b, b])
-);
 
 export const Route = createFileRoute('/api/storage/upload')({
   server: {
@@ -15,44 +10,9 @@ export const Route = createFileRoute('/api/storage/upload')({
     handlers: {
       PUT: async ({ request, context }) => {
         try {
-          const team = await resolveUserTeam(context.user.id);
-          if (!team) {
-            return Response.json(
-              { success: false, error: 'No team found' },
-              { status: 403 }
-            );
-          }
-
-          const url = new URL(request.url);
-          const bucket = url.searchParams.get('bucket');
-          const path = url.searchParams.get('path');
-          const contentType = url.searchParams.get('contentType');
-
-          if (!bucket || !path || !contentType) {
-            return Response.json(
-              {
-                success: false,
-                error:
-                  'Missing required query params: bucket, path, contentType',
-              },
-              { status: 400 }
-            );
-          }
-
-          const validBucket = bucketByName.get(bucket);
-          if (!validBucket) {
-            return Response.json(
-              { success: false, error: `Invalid bucket: ${bucket}` },
-              { status: 400 }
-            );
-          }
-
-          if (!path.includes(team.teamId)) {
-            return Response.json(
-              { success: false, error: 'Path must contain your team ID' },
-              { status: 403 }
-            );
-          }
+          const resolved = await resolveUploadTarget(request, context.user.id);
+          if (!resolved.ok) return resolved.response;
+          const { bucket, path, contentType } = resolved.target;
 
           const body = request.body;
           if (!body) {
@@ -66,7 +26,12 @@ export const Route = createFileRoute('/api/storage/upload')({
           // length. The browser sends Content-Length (the body is a Blob),
           // but once `request.body` has been routed through TanStack Start
           // the length link is lost — so we re-establish it explicitly via
-          // FixedLengthStream. See issue #738.
+          // FixedLengthStream. See issue #738. Streaming (rather than
+          // buffering) keeps the route within the 128MB Worker memory limit.
+          //
+          // NOTE: a single request body is capped at ~100MB by Cloudflare.
+          // Larger uploads use the multipart route (/api/storage/multipart);
+          // the client (putToR2) routes to it automatically by size.
           const contentLengthHeader = request.headers.get('content-length');
           const contentLength = contentLengthHeader
             ? Number.parseInt(contentLengthHeader, 10)
@@ -89,7 +54,7 @@ export const Route = createFileRoute('/api/storage/upload')({
             // which the outer catch turns into a 5xx via handleApiError.
           });
 
-          await uploadFile(validBucket, path, fixedLength.readable, {
+          await uploadFile(bucket, path, fixedLength.readable, {
             contentType,
           });
 

@@ -1,16 +1,16 @@
 /**
  * Full Sequence Pipeline E2E Test
  *
- * Drives the complete sequence creation flow with real workflows running
- * against a local QStash, and AI traffic served by aimock (LLM via OpenRouter
- * passthrough, fal.ai via the mounted fal handler).
+ * Drives the complete sequence creation flow with real workflows running on
+ * Cloudflare Workflows (in-process in Workerd via the @cloudflare/vite-plugin),
+ * and AI traffic served by aimock (LLM via OpenRouter passthrough, fal.ai via
+ * the mounted fal handler).
  *
  * This spec only runs when `PLAYWRIGHT_FULL_PIPELINE=true` is set. Use
  * `bun test:e2e:full` to invoke it. CI runs it in the dedicated
  * `e2e-full-pipeline` job in `.github/workflows/test.yml`.
  *
  * Prerequisites:
- * - QStash docker container running on localhost:8080 (`bun qstash:dev`)
  * - Recorded fixtures in `e2e/fixtures/recorded/` (run
  *   `bun test:e2e:record:full` once with real FAL_KEY + OPENROUTER_API_KEY in
  *   .env.local to populate; new openrouter recordings sort into stage
@@ -253,9 +253,11 @@ SUPER:  CORAL.  OUT NOW.
       );
 
       // 8. Generate — should kick off the workflow chain and navigate.
+      // Vision analysis (analyzeDraftElementFn) is the long pole here; it can
+      // take ~15-20s when aimock falls back to upstream, so give it headroom.
       await expect(
         page.getByRole('button', { name: /^Generate$/i })
-      ).toBeEnabled({ timeout: 15_000 });
+      ).toBeEnabled({ timeout: t(30_000) });
       await page.getByRole('button', { name: /^Generate$/i }).click();
       // Generate kicks off the scene-split workflow before the redirect lands.
       await page.waitForURL(/\/sequences\/[^/]+\/scenes/, {

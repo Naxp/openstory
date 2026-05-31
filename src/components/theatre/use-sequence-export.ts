@@ -16,7 +16,7 @@ import {
   requestSequenceExportUploadUrlFn,
 } from '@/functions/sequence-exports';
 import { useFramesBySequence } from '@/hooks/use-frames';
-import { uploadMergedBlob } from '@/lib/browser-merge';
+import { putToR2 } from '@/lib/utils/upload';
 import {
   exportSequence,
   type ExportProgress,
@@ -30,6 +30,10 @@ import { toast } from 'sonner';
 export const sequenceExportKeys = {
   list: (sequenceId: string) => ['sequence-exports', sequenceId] as const,
 };
+
+// Cap the upload PUT so a stalled R2 proxy surfaces an error toast instead of
+// spinning forever. Generous enough for a 5-min export on a slow connection.
+const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
 export type SequenceExportState = {
   isRunning: boolean;
@@ -85,13 +89,23 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
         signal,
       });
 
-      await uploadMergedBlob({
+      // `upload` and `commit` run here, after the Mediabunny pipeline. Report
+      // them through the same progress channel so a stalled upload/commit
+      // doesn't masquerade as a stuck "Finalizing…" (finalize is the last
+      // phase exportSequence emits). putToR2 streams via XHR and, for exports
+      // over Cloudflare's ~100MB single-body limit, transparently switches to a
+      // chunked R2 multipart upload.
+      setProgress({ phase: 'upload', completed: 0, total: 100 });
+      await putToR2(
+        reservation.uploadUrl,
         blob,
-        uploadUrl: reservation.uploadUrl,
-        contentType: reservation.contentType,
-        signal,
-      });
+        reservation.contentType,
+        (percent) =>
+          setProgress({ phase: 'upload', completed: percent, total: 100 }),
+        { signal, timeoutMs: UPLOAD_TIMEOUT_MS }
+      );
 
+      setProgress({ phase: 'commit', completed: 0, total: 0 });
       return await commitSequenceExportFn({
         data: {
           sequenceId: sequence.id,
