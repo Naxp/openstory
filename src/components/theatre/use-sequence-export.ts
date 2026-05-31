@@ -16,6 +16,7 @@ import {
   requestSequenceExportUploadUrlFn,
 } from '@/functions/sequence-exports';
 import { useFramesBySequence } from '@/hooks/use-frames';
+import { getLogger } from '@/lib/observability/logger';
 import { putToR2 } from '@/lib/utils/upload';
 import {
   exportSequence,
@@ -34,6 +35,8 @@ export const sequenceExportKeys = {
 // Cap the upload PUT so a stalled R2 proxy surfaces an error toast instead of
 // spinning forever. Generous enough for a 5-min export on a slow connection.
 const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
+const exportLogger = getLogger(['openstory', 'theatre', 'export']);
 
 export type SequenceExportState = {
   isRunning: boolean;
@@ -96,12 +99,29 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
       // as talent/element media — because fetch() stalls large PUT bodies in
       // Chrome (the export previously hung here forever).
       setProgress({ phase: 'upload', completed: 0, total: 100 });
+      // DEBUG: surface the payload size + transfer curve so we can tell whether
+      // the upload stalls at a body-size ceiling (e.g. Worker's 100MB request
+      // limit) vs a transport issue. Remove once the upload is confirmed.
+      const blobMib = (blob.size / 1_048_576).toFixed(1);
+      exportLogger.info(`[export] uploading MP4: ${blobMib} MiB`, {
+        bytes: blob.size,
+        uploadUrl: reservation.uploadUrl,
+      });
+      let lastLoggedPct = -1;
       await putToR2(
         reservation.uploadUrl,
         blob,
         reservation.contentType,
-        (percent) =>
-          setProgress({ phase: 'upload', completed: percent, total: 100 }),
+        (percent) => {
+          setProgress({ phase: 'upload', completed: percent, total: 100 });
+          if (percent !== lastLoggedPct && percent % 5 === 0) {
+            lastLoggedPct = percent;
+            const sentMib = ((percent / 100) * blob.size) / 1_048_576;
+            exportLogger.info(
+              `[export] upload ${percent}% (~${sentMib.toFixed(1)}/${blobMib} MiB)`
+            );
+          }
+        },
         { signal, timeoutMs: UPLOAD_TIMEOUT_MS }
       );
 
