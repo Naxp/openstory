@@ -11,7 +11,12 @@
  * Signatures mirror `storage-cloudflare.ts` exactly.
  */
 
-import type { StorageBucket, StorageFileInfo, UploadResult } from './buckets';
+import type {
+  MultipartPart,
+  StorageBucket,
+  StorageFileInfo,
+  UploadResult,
+} from './buckets';
 
 const throwStub = (): never => {
   throw new Error(
@@ -29,6 +34,33 @@ export const uploadFile = (
     cacheControl?: string;
   }
 ): Promise<UploadResult> => throwStub();
+
+export const createMultipartUpload = (
+  _bucket: StorageBucket,
+  _path: string,
+  _contentType?: string
+): Promise<{ uploadId: string; key: string }> => throwStub();
+
+export const uploadPart = (
+  _bucket: StorageBucket,
+  _path: string,
+  _uploadId: string,
+  _partNumber: number,
+  _body: ReadableStream<Uint8Array> | ArrayBuffer | ArrayBufferView | Blob
+): Promise<MultipartPart> => throwStub();
+
+export const completeMultipartUpload = (
+  _bucket: StorageBucket,
+  _path: string,
+  _uploadId: string,
+  _parts: MultipartPart[]
+): Promise<UploadResult> => throwStub();
+
+export const abortMultipartUpload = (
+  _bucket: StorageBucket,
+  _path: string,
+  _uploadId: string
+): Promise<void> => throwStub();
 
 export const getSignedUrl = (
   _bucket: StorageBucket,

@@ -26,6 +26,15 @@ export type UploadResult = {
   fullPath: string;
 };
 
+/**
+ * One completed part of a multipart upload. Matches R2's `R2UploadedPart`
+ * shape so it can be passed straight to `multipartUpload.complete()`.
+ */
+export type MultipartPart = {
+  partNumber: number;
+  etag: string;
+};
+
 export type StorageFileInfo = {
   name: string;
   id: string;

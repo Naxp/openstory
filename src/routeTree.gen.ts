@@ -48,6 +48,7 @@ import { Route as ApiTestFrameRouteImport } from './routes/api/test/frame'
 import { Route as ApiTestCleanupRouteImport } from './routes/api/test/cleanup'
 import { Route as ApiTestCharacterRouteImport } from './routes/api/test/character'
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
+import { Route as ApiStorageMultipartRouteImport } from './routes/api/storage/multipart'
 import { Route as ApiOpenrouterCallbackRouteImport } from './routes/api/openrouter/callback'
 import { Route as ApiDevMemoryRouteImport } from './routes/api/dev/memory'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
@@ -261,6 +262,11 @@ const ApiStorageUploadRoute = ApiStorageUploadRouteImport.update({
   path: '/api/storage/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStorageMultipartRoute = ApiStorageMultipartRouteImport.update({
+  id: '/api/storage/multipart',
+  path: '/api/storage/multipart',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOpenrouterCallbackRoute = ApiOpenrouterCallbackRouteImport.update({
   id: '/api/openrouter/callback',
   path: '/api/openrouter/callback',
@@ -408,6 +414,7 @@ export interface FileRoutesByFullPath {
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
+  '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/test/character': typeof ApiTestCharacterRoute
   '/api/test/cleanup': typeof ApiTestCleanupRoute
@@ -464,6 +471,7 @@ export interface FileRoutesByTo {
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
+  '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/test/character': typeof ApiTestCharacterRoute
   '/api/test/cleanup': typeof ApiTestCleanupRoute
@@ -526,6 +534,7 @@ export interface FileRoutesById {
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
+  '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/test/character': typeof ApiTestCharacterRoute
   '/api/test/cleanup': typeof ApiTestCleanupRoute
@@ -586,6 +595,7 @@ export interface FileRouteTypes {
     | '/api/billing/webhook'
     | '/api/dev/memory'
     | '/api/openrouter/callback'
+    | '/api/storage/multipart'
     | '/api/storage/upload'
     | '/api/test/character'
     | '/api/test/cleanup'
@@ -642,6 +652,7 @@ export interface FileRouteTypes {
     | '/api/billing/webhook'
     | '/api/dev/memory'
     | '/api/openrouter/callback'
+    | '/api/storage/multipart'
     | '/api/storage/upload'
     | '/api/test/character'
     | '/api/test/cleanup'
@@ -703,6 +714,7 @@ export interface FileRouteTypes {
     | '/api/billing/webhook'
     | '/api/dev/memory'
     | '/api/openrouter/callback'
+    | '/api/storage/multipart'
     | '/api/storage/upload'
     | '/api/test/character'
     | '/api/test/cleanup'
@@ -747,6 +759,7 @@ export interface RootRouteChildren {
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
   ApiDevMemoryRoute: typeof ApiDevMemoryRoute
   ApiOpenrouterCallbackRoute: typeof ApiOpenrouterCallbackRoute
+  ApiStorageMultipartRoute: typeof ApiStorageMultipartRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
 }
 
@@ -1023,6 +1036,13 @@ declare module '@tanstack/react-router' {
       path: '/api/storage/upload'
       fullPath: '/api/storage/upload'
       preLoaderRoute: typeof ApiStorageUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/storage/multipart': {
+      id: '/api/storage/multipart'
+      path: '/api/storage/multipart'
+      fullPath: '/api/storage/multipart'
+      preLoaderRoute: typeof ApiStorageMultipartRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/openrouter/callback': {
@@ -1352,6 +1372,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
   ApiDevMemoryRoute: ApiDevMemoryRoute,
   ApiOpenrouterCallbackRoute: ApiOpenrouterCallbackRoute,
+  ApiStorageMultipartRoute: ApiStorageMultipartRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,
 }
 export const routeTree = rootRouteImport

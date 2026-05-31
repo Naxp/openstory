@@ -10,6 +10,7 @@ import { getEnv } from '#env';
 import {
   buildR2Key,
   getPublicUrl,
+  type MultipartPart,
   type StorageBucket,
   type StorageFileInfo,
   type UploadResult,
@@ -137,6 +138,70 @@ export async function uploadFile(
       `Failed to upload file to ${bucket}/${path}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Multipart uploads. Cloudflare Workers cap a single request body at ~100MB,
+// so large uploads (e.g. exported MP4s) are split client-side into parts and
+// streamed through the Worker via these helpers. Each helper is a distinct
+// Worker invocation, so we hold no upload object across requests — we
+// re-attach to the in-flight upload with `resumeMultipartUpload(key, uploadId)`
+// each time.
+// ───────────────────────────────────────────────────────────────────────────
+
+export async function createMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  contentType?: string
+): Promise<{ uploadId: string; key: string }> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = await r2.createMultipartUpload(key, {
+    httpMetadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000',
+    },
+  });
+  return { uploadId: upload.uploadId, key };
+}
+
+export async function uploadPart(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string,
+  partNumber: number,
+  body: ReadableStream<Uint8Array> | ArrayBuffer | ArrayBufferView | Blob
+): Promise<MultipartPart> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  const uploaded = await upload.uploadPart(partNumber, body);
+  return { partNumber: uploaded.partNumber, etag: uploaded.etag };
+}
+
+export async function completeMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string,
+  parts: MultipartPart[]
+): Promise<UploadResult> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  await upload.complete(parts);
+  const publicUrl = getPublicUrl(bucket, path);
+  return { path: key, publicUrl, fullPath: key };
+}
+
+export async function abortMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string
+): Promise<void> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  await upload.abort();
 }
 
 export async function getSignedUrl(
