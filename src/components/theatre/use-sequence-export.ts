@@ -105,7 +105,6 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
       const blobMib = (blob.size / 1_048_576).toFixed(1);
       exportLogger.info(`[export] uploading MP4: ${blobMib} MiB`, {
         bytes: blob.size,
-        uploadUrl: reservation.uploadUrl,
       });
       let lastLoggedPct = -1;
       await putToR2(
