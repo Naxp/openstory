@@ -91,10 +91,13 @@ export function estimateStoryboardCost(opts: {
   estimatedSceneCount?: number;
   autoGenerateMotion?: boolean;
   videoModel?: ImageToVideoModel;
+  /** Number of video models selected (multiplies per-frame motion cost) */
+  videoModelCount?: number;
   videoDurationSeconds?: number;
 }): Microdollars {
   const sceneCount = opts.estimatedSceneCount ?? DEFAULT_ESTIMATED_SCENE_COUNT;
   const imageModelCount = opts.imageModelCount ?? 1;
+  const videoModelCount = opts.videoModelCount ?? 1;
 
   // LLM calls: script analysis + character bible + location bible (~3 calls)
   const llmCost = estimateLLMCost(3);
@@ -116,13 +119,14 @@ export function estimateStoryboardCost(opts: {
     frameCost
   );
 
-  // Optional motion generation for all frames
+  // Optional motion generation for all frames (multiplied by the number of
+  // selected video models — each model produces its own video per frame).
   if (opts.autoGenerateMotion && opts.videoModel) {
     const duration = opts.videoDurationSeconds ?? 5;
     const perFrameMotion = estimateVideoCost(opts.videoModel, duration);
     totalCost = addMicros(
       totalCost,
-      multiplyMicros(perFrameMotion, sceneCount)
+      multiplyMicros(perFrameMotion, sceneCount * videoModelCount)
     );
   }
 

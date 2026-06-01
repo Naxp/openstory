@@ -192,6 +192,7 @@ export class StoryboardWorkflow extends OpenStoryWorkflowEntrypoint<StoryboardWo
         imageModel,
         imageModels: input.imageModels ?? [imageModel],
         videoModel,
+        videoModels: input.videoModels ?? [videoModel],
         autoGenerateMotion: input.autoGenerateMotion ?? false,
         autoGenerateMusic: input.autoGenerateMusic ?? false,
         musicModel: input.musicModel,

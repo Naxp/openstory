@@ -3,9 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   AUDIO_MODELS,
   IMAGE_MODELS,
-  IMAGE_TO_VIDEO_MODELS,
   isValidAudioModel,
-  isValidImageToVideoModel,
   isValidTextToImageModel,
 } from '@/lib/ai/models';
 import { getAnalysisModelById } from '@/lib/ai/models.config';
@@ -67,21 +65,6 @@ export const ImageModelBadge = ({
   return (
     <Badge variant="secondary" className="text-xs">
       {formatImageModels(allModels)}
-    </Badge>
-  );
-};
-
-export const VideoModelBadge = ({ model }: { model?: string }) => {
-  if (!model) {
-    return <Skeleton className="w-[100px] h-[20px]" />;
-  }
-
-  const modelConfig = isValidImageToVideoModel(model)
-    ? IMAGE_TO_VIDEO_MODELS[model]
-    : undefined;
-  return (
-    <Badge variant="secondary" className="text-xs">
-      {modelConfig?.name || model}
     </Badge>
   );
 };

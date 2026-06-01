@@ -50,6 +50,15 @@ export const getSequenceImageModelsFn = createServerFn({ method: 'GET' })
     );
   });
 
+export const getSequenceVideoModelsFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.frameVariants.listModelsForSequence(
+      context.sequence.id,
+      'video'
+    );
+  });
+
 export const getDivergentVariantsFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .handler(async ({ context }) => {
@@ -183,6 +192,7 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
                 frameId: frame.id,
                 status: 'completed',
                 videoUrl: url,
+                model: variant.model,
               }
             : {
                 frameId: frame.id,
@@ -260,6 +270,15 @@ export const getSequenceImageVariantsFn = createServerFn({ method: 'GET' })
     return context.scopedDb.frameVariants.listBySequence(
       context.sequence.id,
       'image'
+    );
+  });
+
+export const getSequenceVideoVariantsFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.frameVariants.listBySequence(
+      context.sequence.id,
+      'video'
     );
   });
 

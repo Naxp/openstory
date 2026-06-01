@@ -53,6 +53,7 @@ export class MotionMusicPromptsWorkflow extends OpenStoryWorkflowEntrypoint<Moti
       scenesWithVisualPrompts,
       analysisModelId,
       videoModel,
+      videoModels,
       sequenceId,
       userId,
       teamId,
@@ -64,7 +65,10 @@ export class MotionMusicPromptsWorkflow extends OpenStoryWorkflowEntrypoint<Moti
       frameMapping,
     } = input;
 
-    const modelKey = videoModel || DEFAULT_VIDEO_MODEL;
+    // Snap durations against the primary video model. The structured motion
+    // prompts produced here are model-independent; per-model assembly happens
+    // downstream in motion-batch (#545).
+    const modelKey = videoModels?.[0] ?? videoModel ?? DEFAULT_VIDEO_MODEL;
 
     // Snap durations upfront so both motion prompts and music design see
     // identical, model-accurate duration values.

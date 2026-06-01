@@ -86,13 +86,22 @@ export const createSequenceSchema = createInsertSchema(sequences, {
       )
       .min(1, 'At least one image model must be selected')
       .default([DEFAULT_IMAGE_MODEL]),
-    // Video model selection (model key, not full ID)
+    // Video model selection (model key, not full ID) — primary / first of videoModels
     videoModel: z
       .string()
       .refine((val) => validVideoModelKeys.includes(val), {
         message: 'Invalid video model',
       })
       .default(DEFAULT_VIDEO_MODEL),
+    // Multiple video models for variant generation (first is primary)
+    videoModels: z
+      .array(
+        z.string().refine((val) => validVideoModelKeys.includes(val), {
+          message: 'Invalid video model',
+        })
+      )
+      .min(1, 'At least one video model must be selected')
+      .default([DEFAULT_VIDEO_MODEL]),
     // Auto-generate motion flag (UI-only, not stored in DB)
     autoGenerateMotion: z.boolean().default(false).optional(),
     // Auto-generate music flag (UI-only, not stored in DB)

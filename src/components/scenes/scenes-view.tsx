@@ -19,8 +19,10 @@ import {
   useDivergentVariants,
   useFramesBySequence,
   usePromoteVariantToPrimary,
+  useSequenceVideoVariants,
   useUndiscardVariant,
 } from '@/hooks/use-frames';
+import { useActiveVideoModel } from '@/hooks/use-active-video-model';
 import { useStaleDetected } from '@/lib/realtime/use-stale-detected';
 import { DivergenceCompareDialog } from '@/components/scenes/divergence-compare-dialog';
 import { getDivergentVariantPromptDiffFn } from '@/functions/prompt-variants';
@@ -238,6 +240,25 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     enabled: !!sequenceId,
   });
 
+  // Video variants + viewer-local active video model (#545). When the viewer
+  // pins a model in the header dropdown, the player resolves every frame's
+  // video through that model's variant; "Mixed" (null) keeps each frame's own
+  // (legacy) video.
+  const { data: videoVariants } = useSequenceVideoVariants(sequenceId);
+  const { activeVideoModel } = useActiveVideoModel(sequenceId);
+
+  const videoVariantsByFrame = useMemo(() => {
+    const map = new Map<string, FrameVariant[]>();
+    if (!videoVariants) return map;
+    for (const v of videoVariants) {
+      if (v.variantType !== 'video') continue;
+      const list = map.get(v.frameId) ?? [];
+      list.push(v);
+      map.set(v.frameId, list);
+    }
+    return map;
+  }, [videoVariants]);
+
   // Divergent alternates + realtime stale:detected wiring (issue #625).
   // Mirror the frames-list polling fallback so the corner-dot still updates
   // when realtime is down.
@@ -390,6 +411,34 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     effectiveImageModel,
     variantForSelectedModel,
   ]);
+
+  // Frames as shown by the player: when a video model is pinned, swap each
+  // frame's video for that model's variant (or clear it when the model hasn't
+  // produced one for that frame). Only the player display is remapped — every
+  // other consumer keeps the raw `frames` (generation status, selection, etc.).
+  const playerFrames = useMemo(() => {
+    // Until the variants query resolves, keep the legacy videos rather than
+    // blanking every frame (the map would find no variant and clear them all).
+    if (!frames || !activeVideoModel || !videoVariants) return frames;
+    return frames.map((f) => {
+      const variant = videoVariantsByFrame
+        .get(f.id)
+        ?.find(
+          (v) =>
+            v.model === activeVideoModel &&
+            v.divergedAt === null &&
+            v.discardedAt === null
+        );
+      if (!variant) {
+        return { ...f, videoUrl: null, videoStatus: 'pending' as const };
+      }
+      return {
+        ...f,
+        videoUrl: variant.status === 'completed' ? variant.url : null,
+        videoStatus: variant.status,
+      };
+    });
+  }, [frames, activeVideoModel, videoVariants, videoVariantsByFrame]);
 
   const setterForType = useCallback((type: RegenerationType) => {
     switch (type) {
@@ -703,7 +752,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
         <ScrollArea className="flex-1 px-4 md:px-8 gap-8 flex flex-col pb-20 md:pb-0 pt-4">
           <div className="flex flex-1 min-h-0 justify-center pb-8">
             <ScenePlayer
-              frames={frames}
+              frames={playerFrames}
               selectedFrameId={curSelectedFrameId}
               aspectRatio={aspectRatio}
               onSelectFrame={setSelectedFrameId}

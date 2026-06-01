@@ -176,6 +176,23 @@ export function updateQueryCacheFromEvent(
             : f
         )
       );
+      // Refresh video variant data so the model switcher and per-model overlay
+      // stay current (#545). Unlike the image handler, refresh on `failed` too:
+      // motion-workflow.onFailure writes a `failed` variant row, and the
+      // switcher should reflect that terminal state without waiting for a
+      // background refetch.
+      if (status === 'completed' || status === 'failed') {
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-video-variants', sequenceId],
+          `video-variants:${sequenceId}`
+        );
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-video-models', sequenceId],
+          `video-models:${sequenceId}`
+        );
+      }
       break;
     }
 

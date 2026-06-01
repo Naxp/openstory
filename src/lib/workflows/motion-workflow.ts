@@ -30,6 +30,7 @@ import {
 import { uploadVideoToStorage } from '@/lib/motion/video-storage';
 import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { getGenerationChannel } from '@/lib/realtime';
+import { simpleHash } from '@/lib/utils/hash';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type { MotionWorkflowInput } from '@/lib/workflow/types';
@@ -194,10 +195,26 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
           });
         }
 
+        // Dual-write: stamp a `generating` frame_variants row for this model so
+        // the scenes-view video-model switcher (#545) shows it in flight. The
+        // legacy `frames.video*` columns above are a last-write-wins default
+        // across models (matching the image template — whichever model child
+        // finishes last lands there); per-model output lives in frame_variants.
+        if (input.sequenceId) {
+          await scopedDb.frameVariants.upsert({
+            frameId: input.frameId,
+            sequenceId: input.sequenceId,
+            variantType: 'video',
+            model,
+            status: 'generating',
+            workflowRunId,
+          });
+        }
+
         try {
           await getGenerationChannel(input.sequenceId).emit(
             'generation.video:progress',
-            { frameId: input.frameId, status: 'generating' }
+            { frameId: input.frameId, status: 'generating', model }
           );
         } catch (emitError) {
           logger.error(
@@ -429,10 +446,28 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
           return;
         }
 
+        // Dual-write the completed video into this model's frame_variants row.
+        if (input.sequenceId) {
+          await scopedDb.frameVariants.updateByFrameAndModel(
+            frameId,
+            'video',
+            model,
+            {
+              url: storageResult.url,
+              storagePath: storageResult.path,
+              status: 'completed',
+              generatedAt: new Date(),
+              error: null,
+              durationMs: duration * 1000,
+              promptHash: input.prompt ? simpleHash(input.prompt) : null,
+            }
+          );
+        }
+
         try {
           await getGenerationChannel(input.sequenceId).emit(
             'generation.video:progress',
-            { frameId, status: 'completed', videoUrl: storageResult.url }
+            { frameId, status: 'completed', videoUrl: storageResult.url, model }
           );
         } catch (emitError) {
           logger.error(
@@ -459,6 +494,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
     scopedDb: ScopedDb;
   }): Promise<void> {
     const input = event.payload;
+    const model = input.model || DEFAULT_VIDEO_MODEL;
 
     if (input.frameId && input.teamId) {
       await scopedDb.frames.update(
@@ -472,10 +508,25 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
     }
 
     if (input.sequenceId && input.frameId) {
+      // Upsert (not update) so a `failed` row is recorded even when the failure
+      // happened before `set-generating-status` ran (e.g. an insufficient-credit
+      // throw in `check-credits`, or the top-level imageUrl guard) — at that
+      // point no generating row exists yet, and a bare update would no-op,
+      // leaving this model's variant invisible in the scenes-view switcher.
+      await scopedDb.frameVariants.upsert({
+        frameId: input.frameId,
+        sequenceId: input.sequenceId,
+        variantType: 'video',
+        model,
+        status: 'failed',
+        error,
+        workflowRunId: event.instanceId,
+      });
+
       try {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.video:progress',
-          { frameId: input.frameId, status: 'failed' }
+          { frameId: input.frameId, status: 'failed', model }
         );
       } catch (emitError) {
         logger.error(
