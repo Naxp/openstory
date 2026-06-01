@@ -1,23 +1,32 @@
 /**
  * Generate style sample videos (issue #718).
  *
- * For each style template, renders a 15s CANONICAL sample from one fixed 3-beat
- * script (apples-to-apples across the catalogue). The ~10 hero styles also get
- * a BESPOKE sample from their curated script. Each beat is: generate a still
+ * CANONICAL sample (every style): a per-category one-liner brief is run through
+ * the app's script-enhancer (`getPrompt('script/enhance')` + the same
+ * createUserPrompt path the UI uses) and split into 2-3 render-ready beats, so
+ * each style gets a style-appropriate ~15s script. BESPOKE sample (~10 hero
+ * styles): a curated script from BESPOKE_SCRIPTS. Each beat is: still
  * (recommended image model) → image-to-video (recommended video model) → the
  * clips are concatenated into one mp4 via the system `ffmpeg`.
  *
  * Output (local, for review before upload):
  *   sample-videos/{slug}/canonical.mp4
- *   sample-videos/{slug}/bespoke.mp4          (hero styles only)
- *   sample-videos/{slug}/_frames/*.webp/.mp4  (intermediate stills + clips)
+ *   sample-videos/{slug}/bespoke.mp4              (hero styles only)
+ *   sample-videos/{slug}/canonical.script.json    (enhanced script + beats, reviewable + reused)
+ *   sample-videos/{slug}/_frames/*.webp|.mp4      (intermediate stills + clips)
  *
- * Without FAL_KEY this runs as a dry-run: prints resolved models, prompts, and
- * an estimated fal.ai cost so you can see the bill before committing.
+ * Two-phase workflow:
+ *   1. --scripts-only  → just enhance + split + save canonical.script.json (needs OPENROUTER_KEY).
+ *      Review the scripts, then…
+ *   2. (default)       → render. Reuses any saved script.json; --force regenerates.
+ *
+ * Without FAL_KEY, the default run is a dry-run (prints resolved models + brief
+ * + estimated fal.ai spend so you see the bill first).
  *
  * Usage:
- *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts                 # all styles
+ *   bun scripts/generate-style-sample-videos.ts --scripts-only            # phase 1 (LLM only)
  *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts --filter "Product Ad"
+ *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts                 # all styles
  *   bun scripts/generate-style-sample-videos.ts --dry-run                 # cost preview
  *   …--canonical-only | --bespoke-only | --hero-only | --force
  */
@@ -36,26 +45,28 @@ import {
   aspectRatioToImageSize,
   type AspectRatio,
 } from '@/lib/constants/aspect-ratios';
+import type { StyleConfig } from '@/lib/db/schema/libraries';
 import { generateImageWithProvider } from '@/lib/image/image-generation';
 import {
   calculateMotionMetadata,
   pollMotionJob,
   submitMotionJob,
 } from '@/lib/motion/motion-generation';
+import { generateCanonicalScript } from '@/lib/style/sample-script';
 import {
   BESPOKE_SCRIPTS,
-  CANONICAL_SAMPLE_SCRIPT,
+  briefForStyle,
   NOMINAL_BEAT_SECONDS,
   type SampleBeat,
 } from '@/lib/style/sample-videos';
 import { styleSlug } from '@/lib/style/style-slug';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
-import type { StyleConfig } from '@/lib/db/schema/libraries';
 import { PhotonImage } from '@cf-wasm/photon';
 import { execFile } from 'node:child_process';
-import { access, mkdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { z } from 'zod';
 
 const execFileAsync = promisify(execFile);
 
@@ -63,6 +74,8 @@ const OUTPUT_DIR = path.join(process.cwd(), 'sample-videos');
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT ?? '3'); // videos are heavy
 const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000;
+/** Upper bound of the enhancer's 2-3 scene range — used for cost estimates. */
+const CANONICAL_PLANNED_SCENES = 3;
 
 const hasFalKey = !!process.env.FAL_KEY;
 
@@ -72,6 +85,7 @@ type Flags = {
   bespokeOnly: boolean;
   heroOnly: boolean;
   force: boolean;
+  scriptsOnly: boolean;
   dryRun: boolean;
 };
 
@@ -83,6 +97,7 @@ function parseFlags(argv: string[]): Flags {
     bespokeOnly: argv.includes('--bespoke-only'),
     heroOnly: argv.includes('--hero-only'),
     force: argv.includes('--force'),
+    scriptsOnly: argv.includes('--scripts-only'),
     dryRun: argv.includes('--dry-run') || !hasFalKey,
   };
 }
@@ -91,14 +106,34 @@ type RenderJob = {
   styleName: string;
   slug: string;
   kind: 'canonical' | 'bespoke';
-  beats: SampleBeat[];
   imageModel: TextToImageModel;
   videoModel: ImageToVideoModel;
   aspectRatio: AspectRatio;
   config: StyleConfig;
   outputPath: string;
   force: boolean;
+  /** Canonical only: enhanced from this per-category brief. */
+  brief?: string;
+  /** Bespoke only: curated beats (skip enhance). */
+  curatedBeats?: SampleBeat[];
+  /** Scene count used for cost estimates before enhance resolves real beats. */
+  plannedScenes: number;
 };
+
+const savedScriptSchema = z.object({
+  brief: z.string(),
+  enhancedScript: z.string(),
+  beats: z
+    .array(
+      z.object({
+        id: z.string(),
+        imagePrompt: z.string(),
+        motionPrompt: z.string(),
+      })
+    )
+    .min(1),
+});
+type SavedScript = z.infer<typeof savedScriptSchema>;
 
 const NEGATIVE =
   'No text, no words, no titles, no watermarks, no logos. No celebrities, no famous people, no real identifiable individuals. No grid, no collage, no split screen. Single continuous shot only';
@@ -155,7 +190,8 @@ function buildJobs(flags: Flags): RenderJob[] {
       jobs.push({
         ...common,
         kind: 'canonical',
-        beats: CANONICAL_SAMPLE_SCRIPT,
+        brief: briefForStyle(style),
+        plannedScenes: CANONICAL_PLANNED_SCENES,
         outputPath: path.join(styleDir, 'canonical.mp4'),
       });
     }
@@ -163,7 +199,8 @@ function buildJobs(flags: Flags): RenderJob[] {
       jobs.push({
         ...common,
         kind: 'bespoke',
-        beats: bespoke,
+        curatedBeats: bespoke,
+        plannedScenes: bespoke.length,
         outputPath: path.join(styleDir, 'bespoke.mp4'),
       });
     }
@@ -178,6 +215,38 @@ async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function scriptJsonPath(job: RenderJob): string {
+  return path.join(path.dirname(job.outputPath), `${job.kind}.script.json`);
+}
+
+/**
+ * Resolve a job's beats. Bespoke → curated. Canonical → reuse the saved
+ * script.json (unless --force), else enhance the brief + split into beats and
+ * persist it for review/reproducibility.
+ */
+async function prepareBeats(job: RenderJob): Promise<SampleBeat[]> {
+  if (job.curatedBeats) return job.curatedBeats;
+  if (!job.brief) throw new Error(`Canonical job ${job.slug} has no brief`);
+
+  const scriptPath = scriptJsonPath(job);
+  if (!job.force && (await fileExists(scriptPath))) {
+    const saved = savedScriptSchema.safeParse(
+      JSON.parse(await readFile(scriptPath, 'utf-8'))
+    );
+    if (saved.success) return saved.data.beats;
+  }
+
+  const { enhancedScript, beats } = await generateCanonicalScript({
+    brief: job.brief,
+    styleConfig: job.config,
+    aspectRatio: job.aspectRatio,
+  });
+  const saved: SavedScript = { brief: job.brief, enhancedScript, beats };
+  await mkdir(path.dirname(scriptPath), { recursive: true });
+  await writeFile(scriptPath, JSON.stringify(saved, null, 2));
+  return beats;
 }
 
 /** Generate a still for one beat and write it locally as webp; return its URL. */
@@ -294,6 +363,7 @@ async function renderJob(job: RenderJob): Promise<void> {
     console.log(`⏭️  ${job.slug}/${job.kind} exists — skipping (use --force)`);
     return;
   }
+  const beats = await prepareBeats(job);
   const framesDir = path.join(
     path.dirname(job.outputPath),
     '_frames',
@@ -303,7 +373,7 @@ async function renderJob(job: RenderJob): Promise<void> {
 
   // 1. Stills (parallel across beats — shared subject text keeps them consistent).
   const stills = await Promise.all(
-    job.beats.map(async (beat) => ({
+    beats.map(async (beat) => ({
       beat,
       imageUrl: await renderStill(job, beat, framesDir),
     }))
@@ -323,21 +393,19 @@ async function renderJob(job: RenderJob): Promise<void> {
   );
 }
 
-/** Estimate total fal.ai video cost for a set of jobs (excludes image cost). */
+/** Estimate total fal.ai video cost (excludes image cost; canonical uses planned scene count). */
 function estimateCost(jobs: RenderJob[]): number {
   let usd = 0;
   for (const job of jobs) {
-    for (const beat of job.beats) {
-      const { cost } = calculateMotionMetadata({
-        imageUrl: 'https://example.com/x.webp',
-        prompt: beat.motionPrompt,
-        model: job.videoModel,
-        duration: NOMINAL_BEAT_SECONDS,
-        aspectRatio: job.aspectRatio,
-        generateAudio: false,
-      });
-      usd += microsToUsd(cost);
-    }
+    const { cost } = calculateMotionMetadata({
+      imageUrl: 'https://example.com/x.webp',
+      prompt: 'sample',
+      model: job.videoModel,
+      duration: NOMINAL_BEAT_SECONDS,
+      aspectRatio: job.aspectRatio,
+      generateAudio: false,
+    });
+    usd += microsToUsd(cost) * job.plannedScenes;
   }
   return usd;
 }
@@ -356,19 +424,54 @@ function printDryRun(jobs: RenderJob[]) {
         `video:${IMAGE_TO_VIDEO_MODELS[first.videoModel].name}, ${first.aspectRatio}`
     );
     for (const job of styleJobs) {
-      console.log(
-        `    ${job.kind}: ${job.beats.length} beats × ${NOMINAL_BEAT_SECONDS}s`
-      );
+      const detail =
+        job.kind === 'canonical'
+          ? `brief: "${job.brief}" → ~${job.plannedScenes} scenes`
+          : `${job.plannedScenes} curated beats`;
+      console.log(`    ${job.kind}: ${detail} × ${NOMINAL_BEAT_SECONDS}s`);
     }
   }
-  const clips = jobs.reduce((n, j) => n + j.beats.length, 0);
+  const clips = jobs.reduce((n, j) => n + j.plannedScenes, 0);
   console.log(
-    `\nTotals: ${byStyle.size} styles, ${jobs.length} videos, ${clips} clips ` +
-      `(+${clips} image gens). Est. video spend ≈ $${estimateCost(jobs).toFixed(2)} ` +
-      `(image gen cost not included).`
+    `\nTotals: ${byStyle.size} styles, ${jobs.length} videos, ~${clips} clips ` +
+      `(+~${clips} image gens). Est. video spend ≈ $${estimateCost(jobs).toFixed(2)} ` +
+      `(image + LLM script cost not included).`
   );
   if (!hasFalKey)
     console.log('\n(FAL_KEY not set — set it to actually render.)');
+}
+
+/** Phase 1: enhance + split + save canonical.script.json (no rendering). */
+async function runScriptsOnly(jobs: RenderJob[]) {
+  const canonical = jobs.filter((j) => j.kind === 'canonical');
+  console.log(
+    `✍️  Generating ${canonical.length} canonical scripts (no render)…\n`
+  );
+  let index = 0;
+  const failures: string[] = [];
+  const worker = async () => {
+    while (index < canonical.length) {
+      const job = canonical[index++];
+      if (!job) break;
+      try {
+        const beats = await prepareBeats(job);
+        console.log(
+          `✅ ${job.slug}: ${beats.length} beats → ${path.relative(process.cwd(), scriptJsonPath(job))}`
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`❌ ${job.slug}: ${message}`);
+        failures.push(job.slug);
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(MAX_CONCURRENT, canonical.length) }, worker)
+  );
+  console.log(
+    `\nDone: ${canonical.length - failures.length}/${canonical.length} scripts.`
+  );
+  if (failures.length > 0) process.exit(1);
 }
 
 /** Run jobs with a fixed concurrency, collecting failures without aborting. */
@@ -401,6 +504,11 @@ async function main() {
   if (jobs.length === 0) {
     console.error('No matching styles. Check --filter / flags.');
     process.exit(1);
+  }
+
+  if (flags.scriptsOnly) {
+    await runScriptsOnly(jobs);
+    return;
   }
 
   if (flags.dryRun) {

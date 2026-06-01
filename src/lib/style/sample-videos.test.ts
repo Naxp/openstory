@@ -3,7 +3,9 @@ import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { describe, expect, it } from 'vitest';
 import {
   BESPOKE_SCRIPTS,
+  briefForStyle,
   buildSampleVideos,
+  CANONICAL_TARGET_SECONDS,
   heroStyleSlugs,
   isHeroStyle,
   sampleVideoUrl,
@@ -42,6 +44,14 @@ describe('buildSampleVideos', () => {
     expect(entries.map((e) => e.order)).toEqual([0, 1]);
   });
 
+  it('stamps the canonical target duration', () => {
+    const [canonical] = buildSampleVideos({
+      domain: DOMAIN,
+      styleName: 'White Background Studio',
+    });
+    expect(canonical?.durationSeconds).toBe(CANONICAL_TARGET_SECONDS);
+  });
+
   it('produces entries that satisfy the DB schema', () => {
     for (const style of DEFAULT_STYLE_TEMPLATES) {
       const entries = buildSampleVideos({
@@ -74,5 +84,18 @@ describe('hero styles', () => {
   it('isHeroStyle matches the bespoke map', () => {
     expect(isHeroStyle('Product Ad')).toBe(true);
     expect(isHeroStyle('White Background Studio')).toBe(false);
+  });
+});
+
+describe('briefForStyle', () => {
+  it('resolves a non-empty brief for every template category (no silent default)', () => {
+    for (const style of DEFAULT_STYLE_TEMPLATES) {
+      const brief = briefForStyle(style);
+      expect(brief, style.name).toBeTruthy();
+    }
+  });
+
+  it('throws on an unmapped category', () => {
+    expect(() => briefForStyle({ category: 'not-a-real-category' })).toThrow();
   });
 });

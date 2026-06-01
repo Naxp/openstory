@@ -4,11 +4,14 @@
  * Pure data + URL/entry builders shared by the render script
  * (`scripts/generate-style-sample-videos.ts`) and the seed
  * (`scripts/seed-style-sample-videos.ts`). Deliberately free of fal/photon/
- * ffmpeg imports so the seed and unit tests stay lightweight.
+ * ffmpeg/LLM imports so the seed and unit tests stay lightweight (the enhance +
+ * scene-split LLM logic lives in `sample-script.ts`).
  *
- * Every style gets a CANONICAL sample rendered from one fixed 3-beat script so
- * the catalogue compares apples-to-apples. The ~10 hero styles in
- * BESPOKE_SCRIPTS also get a bespoke sample tuned to show the style off.
+ * Every style gets a CANONICAL sample: a per-category one-liner brief (below) is
+ * run through the script-enhancer + a scene split, so each style gets a
+ * style-appropriate ~15s script (same brief within a category ⇒ comparable).
+ * The ~10 hero styles in BESPOKE_SCRIPTS also get a bespoke sample, from a
+ * curated script tuned to show the style off.
  */
 import {
   StyleSampleVideoSchema,
@@ -29,34 +32,53 @@ export type SampleBeat = {
 /** Nominal seconds per beat — the i2v duration we request per clip. */
 export const NOMINAL_BEAT_SECONDS = 5;
 
-/**
- * The fixed canonical script: person + product + environment, three beats
- * (wide → medium → close). A detailed shared subject is baked into every beat
- * so the person/object/room stay consistent across the three stills.
- */
-const CANONICAL_SUBJECT =
-  'the same young adult in a simple oatmeal linen outfit, a small ceramic cup, a bright minimalist room with a pale wooden table and sheer curtains by a large window';
+/** Target length of a canonical sample (drives enhance scene count + seed metadata). */
+export const CANONICAL_TARGET_SECONDS = 15;
 
-export const CANONICAL_SAMPLE_SCRIPT: SampleBeat[] = [
-  {
-    id: 'wide',
-    imagePrompt: `Wide establishing shot: ${CANONICAL_SUBJECT}. The person steps in through a doorway into the sunlit room, full body in frame.`,
-    motionPrompt:
-      'Slow steady push-in as the person walks forward into the room with a relaxed natural gait; soft drifting daylight, gentle settling motion.',
-  },
-  {
-    id: 'medium',
-    imagePrompt: `Medium shot at the table: ${CANONICAL_SUBJECT}. The person stands at the wooden table about to pick up the small ceramic cup.`,
-    motionPrompt:
-      'Locked medium shot; the person reaches out and lifts the cup from the table in one smooth motion; subtle hand and shoulder movement, shallow depth of field.',
-  },
-  {
-    id: 'close',
-    imagePrompt: `Close-up portrait: ${CANONICAL_SUBJECT}. The person holds the cup near chest height, looking down at it.`,
-    motionPrompt:
-      'Close-up; the person glances down at the cup then up toward the light as a warm, genuine smile spreads; a small head tilt, eyes catching the light.',
-  },
-];
+/**
+ * One-liner brief per style `category`, fed through the script-enhancer so each
+ * style gets a script that suits it. Every category present in
+ * `style-templates.ts` has an explicit entry (enforced by a unit test) — no
+ * silent default that would render an off-brief sample.
+ */
+export const CATEGORY_BRIEFS: Record<string, string> = {
+  commercial: 'a premium 15-second brand commercial',
+  ecommerce: 'a new product launch',
+  influencer: 'an honest product review spoken to camera',
+  animatic: 'a storyboard animatic for a new commercial',
+  animation: 'a playful animated brand story',
+  kids: "a fun, colorful kids' product ad",
+  corporate: 'a polished company brand film',
+  realestate: 'a luxury home tour',
+  cinematic: 'a teaser for a new feature film',
+  documentary: 'the opening of a short documentary',
+  action: 'an action-packed product teaser',
+  romance: 'a warm, romantic short moment',
+  noir: 'a moody neo-noir teaser',
+  artistic: 'an experimental art-film moment',
+  scifi: 'a sci-fi product reveal',
+  horror: 'an eerie horror teaser',
+  western: 'a cinematic western moment',
+  photography: 'a high-end photography showcase',
+  healthcare: 'a reassuring healthcare brand spot',
+  food: 'a signature dish at a new restaurant',
+  fitness: 'an energizing fitness brand spot',
+  edtech: 'an upbeat learning-app promo',
+  automotive: 'a new car reveal',
+  nonprofit: 'an inspiring nonprofit story',
+  travel: 'a dream getaway',
+};
+
+/** The brief used to enhance a style's canonical script. Throws on an unmapped category. */
+export function briefForStyle(style: { category: string | null }): string {
+  const brief = style.category ? CATEGORY_BRIEFS[style.category] : undefined;
+  if (!brief) {
+    throw new Error(
+      `No canonical brief for category "${style.category}". Add it to CATEGORY_BRIEFS.`
+    );
+  }
+  return brief;
+}
 
 /**
  * Bespoke hero scripts, keyed by style slug. Each is a curated ~15s, 3-beat
@@ -338,7 +360,7 @@ export function buildSampleVideos(args: {
       url: sampleVideoUrl(args.domain, slug, 'canonical'),
       kind: 'canonical',
       label: 'Sample',
-      durationSeconds: beatDurationSeconds(CANONICAL_SAMPLE_SCRIPT),
+      durationSeconds: CANONICAL_TARGET_SECONDS,
       order: 0,
     },
   ];
