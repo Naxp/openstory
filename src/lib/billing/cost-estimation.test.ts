@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { TextToImageModel, ImageToVideoModel } from '@/lib/ai/models';
+import {
+  DEFAULT_MUSIC_MODEL,
+  type AudioModel,
+  type ImageToVideoModel,
+  type TextToImageModel,
+} from '@/lib/ai/models';
 import {
   estimateImageCost,
   estimateStoryboardCost,
@@ -9,6 +14,7 @@ import {
 const IMAGE_MODEL: TextToImageModel = 'nano_banana_2';
 const VIDEO_A: ImageToVideoModel = 'kling_v3_pro';
 const VIDEO_B: ImageToVideoModel = 'veo3_1';
+const AUDIO_MODEL: AudioModel = DEFAULT_MUSIC_MODEL;
 const SCENE_COUNT = 8;
 const DURATION = 5;
 
@@ -80,6 +86,31 @@ describe('estimateStoryboardCost', () => {
     const flatMultiplierEstimate = motionContribution(VIDEO_A) * 2;
     expect(mixed - noMotion).toBe(trueSum);
     expect(mixed - noMotion).not.toBe(flatMultiplierEstimate);
+  });
+
+  it('multiplies the per-sequence music cost by audioModelCount', () => {
+    const noMusic = Number(
+      estimateStoryboardCost({ ...base, autoGenerateMusic: false })
+    );
+    const oneModel = Number(
+      estimateStoryboardCost({
+        ...base,
+        autoGenerateMusic: true,
+        audioModel: AUDIO_MODEL,
+        audioModelCount: 1,
+      })
+    );
+    const twoModels = Number(
+      estimateStoryboardCost({
+        ...base,
+        autoGenerateMusic: true,
+        audioModel: AUDIO_MODEL,
+        audioModelCount: 2,
+      })
+    );
+    const perModelMusicCost = oneModel - noMusic;
+    expect(twoModels - oneModel).toBe(perModelMusicCost);
+    expect(twoModels).toBeGreaterThanOrEqual(oneModel);
   });
 
   it('adds no motion cost when motion is off or no models are selected', () => {
