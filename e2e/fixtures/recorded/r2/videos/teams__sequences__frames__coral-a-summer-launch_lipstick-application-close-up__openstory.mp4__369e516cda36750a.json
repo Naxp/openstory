@@ -7,14 +7,14 @@
   "entries": [
     {
       "request": {
-        "key": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARP2SVPY5RPVZKG6RX9WP/coral-a-summer-launch_lipstick-application-close-up_vcahrd_openstory.mp4",
-        "bodyHash": "99854e992836b519391011c1e573cb7ea189b3c75f00751349eab07c64a54dd4",
-        "bodySize": 18788428
+        "key": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZZRE38YB7MS5QQNKWGE4/coral-a-summer-launch_lipstick-application-close-up_qhctpg_openstory.mp4",
+        "bodyHash": "8e2153d3ce80ba0624854f99112e836bb443ac46397e3cc5e588fa3e0c02733a",
+        "bodySize": 5696066
       },
       "response": {
-        "path": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARP2SVPY5RPVZKG6RX9WP/coral-a-summer-launch_lipstick-application-close-up_vcahrd_openstory.mp4",
-        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARP2SVPY5RPVZKG6RX9WP/coral-a-summer-launch_lipstick-application-close-up_vcahrd_openstory.mp4",
-        "fullPath": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARP2SVPY5RPVZKG6RX9WP/coral-a-summer-launch_lipstick-application-close-up_vcahrd_openstory.mp4"
+        "path": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZZRE38YB7MS5QQNKWGE4/coral-a-summer-launch_lipstick-application-close-up_qhctpg_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZZRE38YB7MS5QQNKWGE4/coral-a-summer-launch_lipstick-application-close-up_qhctpg_openstory.mp4",
+        "fullPath": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZZRE38YB7MS5QQNKWGE4/coral-a-summer-launch_lipstick-application-close-up_qhctpg_openstory.mp4"
       }
     }
   ]

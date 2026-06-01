@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Modern social-first product photography in bright natural window light with clean directional shadows, SCARLETT in loose linen shirt seated at a crisp white vanity, hand reaching into a minimal white box with fingers poised on the matte coral tube, the lipstick catching direct light and casting a clean shadow on the marble surface, pale tile shelves in background holding linen tissue, glass of water and single white flower, minimal modern interior with high-key airy atmosphere, shallow depth of field emphasizing tactile surfaces and crisp whites, eye-level angle with slight overhead tilt, fresh sensory mood with true-to-life color and subtle warmth in highlights.\n\n  <reference-images>\n    - Image 1 [CHARACTER REF]: SCARLETT - Match the real-world appearance of Sienna Blake exactly\n    - Image 2 [LOCATION REF]: INT. BONDI STUDIO - Crisp white vanity and pale tile bathroom shelf areas with marble surfaces\n    \n    IMPORTANT: Reference images CARRY the visual identity of their labeled objects. When the prompt names an UPPERCASE element token, render it faithfully from its ELEMENT REF image — do not generate a new version from the prose. When the prompt names a LOCATION REF, use that image for the environment, lighting, and architectural identity. Prose describes how things are framed, lit, and positioned in the shot — it does not redefine what the reference already shows.\n  </reference-images>",
+        "model": "fal-ai/nano-banana-2/edit",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "images": [
+            {
+              "url": "https://v3b.fal.media/files/b/0a9c7cf3/qOxqVkZ02o5CisYooN-PT_mXc7G8CL.png",
+              "content_type": "image/png",
+              "file_name": "qOxqVkZ02o5CisYooN-PT_mXc7G8CL.png",
+              "file_size": null,
+              "width": null,
+              "height": null
+            }
+          ],
+          "description": ""
+        },
+        "status": 200
+      }
+    }
+  ]
+}

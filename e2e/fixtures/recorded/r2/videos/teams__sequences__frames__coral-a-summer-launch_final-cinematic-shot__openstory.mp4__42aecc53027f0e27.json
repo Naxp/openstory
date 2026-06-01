@@ -1,0 +1,21 @@
+{
+  "fingerprint": {
+    "bucket": "videos",
+    "normalisedKey": "videos/teams/<ULID>/sequences/<ULID>/frames/<ULID>/coral-a-summer-launch_final-cinematic-shot_<HASH>_openstory.mp4",
+    "contentType": "video/mp4"
+  },
+  "entries": [
+    {
+      "request": {
+        "key": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D05Y6WNKVHZ9FKF4J86C1/coral-a-summer-launch_final-cinematic-shot_z5vsq0_openstory.mp4",
+        "bodyHash": "39eedf0c58400a90f1f52a103518cf58a714e0071a113b995956f84a4d40883a",
+        "bodySize": 18769936
+      },
+      "response": {
+        "path": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D05Y6WNKVHZ9FKF4J86C1/coral-a-summer-launch_final-cinematic-shot_z5vsq0_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D05Y6WNKVHZ9FKF4J86C1/coral-a-summer-launch_final-cinematic-shot_z5vsq0_openstory.mp4",
+        "fullPath": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D05Y6WNKVHZ9FKF4J86C1/coral-a-summer-launch_final-cinematic-shot_z5vsq0_openstory.mp4"
+      }
+    }
+  ]
+}

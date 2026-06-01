@@ -7,14 +7,14 @@
   "entries": [
     {
       "request": {
-        "key": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARWG8BHFQZ0GS08T3W2S2/coral-a-summer-launch_bathroom-shelf-macro_7wdew2_openstory.mp4",
-        "bodyHash": "5b9ca659f3f95a2a86ec2517e131ac123ececb51cec25ba3e75960fe01f243e3",
-        "bodySize": 1966458
+        "key": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D03WP99DV6VB7XJJ1ZDSB/coral-a-summer-launch_bathroom-shelf-macro_1rwa6r_openstory.mp4",
+        "bodyHash": "a9c602a224c9d695074d279c222ff373012b50f07a485b9d61de1ce8bf6a09c3",
+        "bodySize": 1481163
       },
       "response": {
-        "path": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARWG8BHFQZ0GS08T3W2S2/coral-a-summer-launch_bathroom-shelf-macro_7wdew2_openstory.mp4",
-        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARWG8BHFQZ0GS08T3W2S2/coral-a-summer-launch_bathroom-shelf-macro_7wdew2_openstory.mp4",
-        "fullPath": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARWG8BHFQZ0GS08T3W2S2/coral-a-summer-launch_bathroom-shelf-macro_7wdew2_openstory.mp4"
+        "path": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D03WP99DV6VB7XJJ1ZDSB/coral-a-summer-launch_bathroom-shelf-macro_1rwa6r_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D03WP99DV6VB7XJJ1ZDSB/coral-a-summer-launch_bathroom-shelf-macro_1rwa6r_openstory.mp4",
+        "fullPath": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0D03WP99DV6VB7XJJ1ZDSB/coral-a-summer-launch_bathroom-shelf-macro_1rwa6r_openstory.mp4"
       }
     }
   ]

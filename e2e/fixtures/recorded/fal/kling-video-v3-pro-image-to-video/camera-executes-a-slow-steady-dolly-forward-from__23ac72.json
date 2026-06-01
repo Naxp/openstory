@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Camera executes a slow, steady dolly forward from medium eye-level framing toward the vanity surface. Scarlett's hand reaches deliberately into the white box and presses the coral tube against the marble, creating a sharp directional shadow that holds under natural light. Subtle finger adjustments catch and release highlights on the matte finish.\n\nVoiceover delivery remains calm and reflective with minimal on-camera movement beyond the hand action.\n\nSoft fabric folds shift lightly on the sleeve as the arm extends, with faint dust motes drifting in the window beam.\n\n[SCARLETT, calm reflective]: \"One shade. One summer.\"\n\nAmbient sounds: quiet studio with faint distant waves. subtle finger contact with matte tube, light object placement on marble.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9c7d0f/zPARwOTgcouLLSxoCNi1m_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 15662962
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

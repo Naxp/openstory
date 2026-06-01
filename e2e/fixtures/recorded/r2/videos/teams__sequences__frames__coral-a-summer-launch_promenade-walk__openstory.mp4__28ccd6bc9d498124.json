@@ -7,14 +7,14 @@
   "entries": [
     {
       "request": {
-        "key": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARMSR6DYJDNXJPJJFSZXF/coral-a-summer-launch_promenade-walk_czyn0w_openstory.mp4",
-        "bodyHash": "370380d5a4a02bfd1daa5f7a5cb0864ac3d8e6679794eddfd46815b237e1bc6a",
-        "bodySize": 31384175
+        "key": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZYX0S4SGH63SB47TDPJK/coral-a-summer-launch_promenade-walk_gwat3f_openstory.mp4",
+        "bodyHash": "19b5eb064f186e13c5a4909d612162691bad1107ada28dab3877c9d9834ca0c8",
+        "bodySize": 17038747
       },
       "response": {
-        "path": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARMSR6DYJDNXJPJJFSZXF/coral-a-summer-launch_promenade-walk_czyn0w_openstory.mp4",
-        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARMSR6DYJDNXJPJJFSZXF/coral-a-summer-launch_promenade-walk_czyn0w_openstory.mp4",
-        "fullPath": "videos/teams/01KT0APZJMQY84WDMVZCE9A1XT/sequences/01KT0AR3AABM6T1EY5GVP10CS9/frames/01KT0ARMSR6DYJDNXJPJJFSZXF/coral-a-summer-launch_promenade-walk_czyn0w_openstory.mp4"
+        "path": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZYX0S4SGH63SB47TDPJK/coral-a-summer-launch_promenade-walk_gwat3f_openstory.mp4",
+        "publicUrl": "https://storage-dev.openstory.so/videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZYX0S4SGH63SB47TDPJK/coral-a-summer-launch_promenade-walk_gwat3f_openstory.mp4",
+        "fullPath": "videos/teams/01KT0CZ9VVGCXPFXJG1K14H9E0/sequences/01KT0CZN385MQ0DYFA2YXNJF8C/frames/01KT0CZYX0S4SGH63SB47TDPJK/coral-a-summer-launch_promenade-walk_gwat3f_openstory.mp4"
       }
     }
   ]

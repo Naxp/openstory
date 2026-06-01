@@ -1,0 +1,29 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Modern social-first product photography with tactile editorial energy and clean bright color grading, SCARLETT wearing loose linen shirt stepping into the shallow shoreline water with one foot forward and ankles submerged as a small wave breaks around her calves, water droplets catching the light while her head tilts back mid-laugh, Bondi Beach shoreline with soft beige sand meeting gentle ocean waves and pale horizon with distant surfers under golden hour warmth, natural daylight with golden hour warmth casting soft reflections and directional highlights across the water surface, shallow depth of field with airy bokeh on the background waves, eye-level handheld camera angle with natural micro-movement and slight overhead tilt.\n\n  <reference-images>\n    - Image 1 [CHARACTER REF]: SCARLETT - Match the real-world appearance of Sienna Blake exactly\n    - Image 2 [LOCATION REF]: EXT. BONDI BEACH - Wide promenade\n    \n    IMPORTANT: Reference images CARRY the visual identity of their labeled objects. When the prompt names an UPPERCASE element token, render it faithfully from its ELEMENT REF image — do not generate a new version from the prose. When the prompt names a LOCATION REF, use that image for the environment, lighting, and architectural identity. Prose describes how things are framed, lit, and positioned in the shot — it does not redefine what the reference already shows.\n  </reference-images>",
+        "model": "fal-ai/nano-banana-2/edit",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "images": [
+            {
+              "url": "https://v3b.fal.media/files/b/0a9c7cf2/fTLM24byO881XCUzea3WC_Ig7PcEZQ.png",
+              "content_type": "image/png",
+              "file_name": "fTLM24byO881XCUzea3WC_Ig7PcEZQ.png",
+              "file_size": null,
+              "width": null,
+              "height": null
+            }
+          ],
+          "description": ""
+        },
+        "status": 200
+      }
+    }
+  ]
+}

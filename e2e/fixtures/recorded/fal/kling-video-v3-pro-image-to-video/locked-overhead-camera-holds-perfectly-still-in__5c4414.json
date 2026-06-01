@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Locked overhead camera holds perfectly still in a top-down flat-lay framing. Coral lipstick tube rests motionless beside the embossed mark in the sand. Tiny grains shift almost imperceptibly across the matte surface in the breeze.\nNatural daylight creates soft, slow-moving directional shadows that drift across the beige sand.\nSubtle wind carries fine sand particles gently across the frame.\n\nAmbient sounds: gentle ocean waves and soft wind on sand. subtle sand grains shifting.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9c7d05/NrTVWWlo6iIX0f0vkJeoL_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 3567146
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

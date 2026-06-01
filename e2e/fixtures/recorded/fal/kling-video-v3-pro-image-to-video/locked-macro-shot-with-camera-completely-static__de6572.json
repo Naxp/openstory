@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Locked macro shot with camera completely static. Coral lipstick stands upright on pale tile shelf beside glass of water and single white flower. Direct flash creates punchy highlights and clean directional shadows against crisp white surfaces. Shallow depth of field holds sharp focus on the product and immediate surroundings with no subject movement.\n\nAmbient sounds: quiet bathroom interior with faint natural room tone.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9c7d04/8-LfMxtIsnY6Pntf3WmGP_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 1481163
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}

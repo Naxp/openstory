@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {
+        "endpoint": "fal",
+        "userMessage": "Eye-level handheld camera with natural micro-movement and slight overhead tilt tracks Scarlett stepping forward into shallow shoreline water, one foot leading as a small wave breaks across her ankles. Water droplets catch the light and spray upward along her calves. Her head tilts back in an open laugh with shoulders rising. Gentle ocean breeze flutters the hem of her loose shirt while foam swirls around her feet.\n\nAmbient sounds: gentle ocean waves lapping shoreline, distant seabirds. small wave breaking at ankles, water splashing and receding.",
+        "model": "fal-ai/kling-video/v3/pro/image-to-video",
+        "turnIndex": 0,
+        "hasToolResult": false
+      },
+      "response": {
+        "json": {
+          "video": {
+            "url": "https://v3b.fal.media/files/b/0a9c7d09/Ul9HQe5c4NWFax-HgxwqS_output.mp4",
+            "content_type": "video/mp4",
+            "file_name": "output.mp4",
+            "file_size": 24374650
+          }
+        },
+        "status": 200
+      }
+    }
+  ]
+}
