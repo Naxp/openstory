@@ -1493,12 +1493,12 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     config: {
       mood: 'Considered, conversational, broadcast-grade',
       artStyle:
-        'Two-host podcast setup at a wood-top table with broadcast mics on boom arms. Background features warm shelving, neon sign, plants, or acoustic panels. Hosts wear neutral wardrobe. Cuts intercut between host singles and a wide two-shot',
+        'Two-host podcast setup at a wood-top table with broadcast mics on boom arms. Background features warm shelving, a soft neon glow, plants, or acoustic panels. Hosts wear neutral wardrobe. A single wide two-shot of both hosts at the table',
       lighting:
         'Warm directional key from one side with cool ambient fill from the opposite. Mics catch a deliberate kicker. Background lit moodily but legibly',
       colorPalette: ['#1A1410', '#7F3F2C', '#E6C28C', '#3D2A1F', '#FFFFFF'],
       cameraWork:
-        'Locked broadcast framing on the hosts at the table. Slow lens-zoom punches in for emphasis. Captions burned in for vertical reframes',
+        'Locked broadcast framing on the hosts at the table. Slow lens-zoom punch-in for emphasis',
       referenceFilms: [
         'Joe Rogan Experience',
         'Diary of a CEO',
@@ -2170,7 +2170,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     config: {
       mood: 'Functional, schematic, in-progress',
       artStyle:
-        'Untextured 3D blockout. Characters and props rendered as simple grey primitive shapes. Environment built from box geometry with minimal detail. Visible polygon edges. No materials, no textures, no lighting beyond a flat ambient',
+        'Untextured 3D greybox blockout. Characters are featureless low-poly grey mannequins -- smooth blocky primitives with no faces, no fingers, no surface detail. Props and environment are simple box geometry with minimal detail. Visible polygon edges, flat ambient shading only. A few clearly-staged figures, never a dense crowd. No materials, no textures',
       lighting:
         'Flat ambient occlusion lighting only. No direct light source, no shadow drama. Functional visibility',
       colorPalette: ['#B0B0B0', '#7F7F7F', '#4F4F4F', '#3478F6', '#FFFFFF'],

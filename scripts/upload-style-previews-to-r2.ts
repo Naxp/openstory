@@ -15,12 +15,16 @@
  *                                                           # Non-interactive: one
  *                                                           # scene for all styles,
  *                                                           # no confirm prompt
+ *   bun scripts/upload-style-previews-to-r2.ts --thumbnail-map=preview/_thumbnails.json
+ *                                                           # Per-style best scene
+ *                                                           # (from score-style-previews.ts)
  */
 
 import * as p from '@clack/prompts';
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 import { promisify } from 'node:util';
 import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon';
 
@@ -35,6 +39,11 @@ const isDryRun = process.argv.includes('--dry-run');
 const skipConfirm = process.argv.includes('--yes');
 const thumbnailSceneArg = process.argv
   .find((a) => a.startsWith('--thumbnail-scene='))
+  ?.split('=')[1];
+// Per-style { slug: scene } map (e.g. preview/_thumbnails.json from
+// score-style-previews.ts) — auto-picks each style's best-scoring scene.
+const thumbnailMapArg = process.argv
+  .find((a) => a.startsWith('--thumbnail-map='))
   ?.split('=')[1];
 
 const R2_CONFIG = {
@@ -243,6 +252,31 @@ async function main() {
   p.log.info(
     `Found ${images.length} images across ${styleNames.length} styles`
   );
+
+  // Non-interactive: per-style best scene from a { slug: scene } map.
+  if (thumbnailMapArg) {
+    const raw = z
+      .record(z.string(), z.string())
+      .parse(JSON.parse(await readFile(thumbnailMapArg, 'utf-8')));
+    const thumbnailMap = new Map<string, string>(Object.entries(raw));
+    const missing = styleNames.filter((s) => !thumbnailMap.has(s));
+    if (missing.length > 0) {
+      p.log.warn(
+        `${missing.length} style(s) absent from the map — defaulting to "character": ${missing.join(', ')}`
+      );
+      for (const s of missing) thumbnailMap.set(s, 'character');
+    }
+    p.log.info(`Using per-style thumbnails from ${thumbnailMapArg}.`);
+    if (isDryRun) {
+      p.log.warn('Dry run — no uploads will be made.');
+      p.outro('Dry run complete.');
+      return;
+    }
+    await mkdir(TEMP_DIR, { recursive: true });
+    await uploadImages(images, thumbnailMap);
+    p.outro('Upload complete!');
+    return;
+  }
 
   // Non-interactive: one scene for every style (skips the selection prompt).
   if (thumbnailSceneArg) {
