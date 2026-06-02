@@ -24,9 +24,10 @@ import * as p from '@clack/prompts';
 import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { z } from 'zod';
 import { promisify } from 'node:util';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { PhotonImage, resize, SamplingFilter } from '@cf-wasm/photon';
+import { z } from 'zod';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,6 +35,28 @@ const PREVIEW_DIR = path.join(process.cwd(), 'preview');
 const TEMP_DIR = path.join(process.cwd(), '.tmp/r2-upload');
 const PREVIEW_SIZE = 512;
 const THUMBNAIL_SIZE = 256;
+// Parallel uploads. The S3 path (when R2 S3 creds are set) has no per-file
+// process spawn, so it can run wide; the wrangler fallback spawns a process per
+// file, so keep it lower to avoid thrashing.
+const UPLOAD_CONCURRENCY = Number(process.env.UPLOAD_CONCURRENCY ?? '12');
+
+/**
+ * R2 S3 client when credentials are present (same pattern as
+ * upload-e2e-report.ts) — direct HTTP PutObject, no `wrangler` process per
+ * file. Returns null to fall back to the wrangler CLI (which uses
+ * CLOUDFLARE_API_TOKEN auth instead).
+ */
+function createR2S3Client(): S3Client | null {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  if (!accountId || !accessKeyId || !secretAccessKey) return null;
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+}
 
 const isDryRun = process.argv.includes('--dry-run');
 const skipConfirm = process.argv.includes('--yes');
@@ -138,25 +161,36 @@ async function scanStyleImages(): Promise<ImageInfo[]> {
 }
 
 /**
- * Upload a buffer to R2 using wrangler CLI
+ * Upload one object to R2: direct S3 PutObject when creds are present (fast, no
+ * process spawn), else the wrangler CLI fallback (one process per file).
  */
-async function uploadToR2(
-  buffer: Buffer,
+async function uploadObject(
+  s3: S3Client | null,
   r2Key: string,
-  bucket: string
+  buffer: Buffer
 ): Promise<void> {
+  if (s3) {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: R2_CONFIG.bucket,
+        Key: r2Key,
+        Body: buffer,
+        ContentType: 'image/webp',
+        CacheControl: 'public, max-age=2592000',
+      })
+    );
+    return;
+  }
   const tempFile = path.join(TEMP_DIR, r2Key.replace(/\//g, '-'));
   await mkdir(path.dirname(tempFile), { recursive: true });
   await writeFile(tempFile, buffer);
-
-  const fullKey = `${bucket}/${r2Key}`;
   try {
     await execFileAsync('bunx', [
       'wrangler',
       'r2',
       'object',
       'put',
-      fullKey,
+      `${R2_CONFIG.bucket}/${r2Key}`,
       `--file=${tempFile}`,
       '--remote',
     ]);
@@ -174,62 +208,67 @@ async function uploadToR2(
 /**
  * Upload all images to R2
  */
+type UploadJob = { key: string; make: () => Promise<Buffer> };
+
 async function uploadImages(
   images: ImageInfo[],
   thumbnailMap: Map<string, string>
 ): Promise<{ success: number; failed: number }> {
+  const s3 = createR2S3Client();
+
+  // Build the full flat list of files to upload up front: per scene image, the
+  // original + a 512px preview, plus a 256px thumbnail for the chosen scene.
+  const jobs: UploadJob[] = [];
+  for (const img of images) {
+    const base = `styles/${img.sanitizedName}`;
+    jobs.push({
+      key: `${base}/${img.sceneName}.webp`,
+      make: () => readFile(img.localPath),
+    });
+    jobs.push({
+      key: `${base}/${img.sceneName}-preview.webp`,
+      make: () => processImage(img.localPath, PREVIEW_SIZE),
+    });
+    const thumbnailScene = thumbnailMap.get(img.sanitizedName) || 'character';
+    if (img.sceneName === thumbnailScene) {
+      jobs.push({
+        key: `${base}/thumbnail.webp`,
+        make: () => processImage(img.localPath, THUMBNAIL_SIZE),
+      });
+    }
+  }
+
+  // The S3 path is pure HTTP so it parallelizes wide; the wrangler fallback
+  // spawns a process per file, so cap it tighter.
+  const concurrency = s3 ? UPLOAD_CONCURRENCY : Math.min(UPLOAD_CONCURRENCY, 6);
+
   let success = 0;
   let failed = 0;
-
-  // Group images by style
-  const styleGroups = new Map<string, ImageInfo[]>();
-  for (const img of images) {
-    const group = styleGroups.get(img.sanitizedName) || [];
-    group.push(img);
-    styleGroups.set(img.sanitizedName, group);
-  }
-
+  let index = 0;
   const spinner = p.spinner();
-  spinner.start(`Uploading to ${R2_CONFIG.bucket}`);
+  spinner.start(
+    `Uploading ${jobs.length} files to ${R2_CONFIG.bucket} via ${s3 ? 'S3' : 'wrangler'} (${concurrency} concurrent)`
+  );
 
-  for (const [styleName, styleImages] of styleGroups) {
-    const thumbnailScene = thumbnailMap.get(styleName) || 'character';
-
-    for (const img of styleImages) {
+  const worker = async () => {
+    while (index < jobs.length) {
+      const job = jobs[index++];
+      if (!job) break;
       try {
-        // Upload original (full-resolution)
-        const originalBuffer = await readFile(img.localPath);
-        const originalKey = `styles/${img.sanitizedName}/${img.sceneName}.webp`;
-        await uploadToR2(
-          Buffer.from(originalBuffer),
-          originalKey,
-          R2_CONFIG.bucket
-        );
+        await uploadObject(s3, job.key, await job.make());
         success++;
-
-        // Upload 512px preview
-        const previewBuffer = await processImage(img.localPath, PREVIEW_SIZE);
-        const previewKey = `styles/${img.sanitizedName}/${img.sceneName}-preview.webp`;
-        await uploadToR2(previewBuffer, previewKey, R2_CONFIG.bucket);
-        success++;
-
-        // Upload 256px thumbnail if this is the chosen scene
-        if (img.sceneName === thumbnailScene) {
-          const thumbBuffer = await processImage(img.localPath, THUMBNAIL_SIZE);
-          const thumbKey = `styles/${img.sanitizedName}/thumbnail.webp`;
-          await uploadToR2(thumbBuffer, thumbKey, R2_CONFIG.bucket);
-          success++;
-        }
       } catch (error) {
-        p.log.error(
-          `Failed: ${img.sanitizedName}/${img.sceneName} — ${error instanceof Error ? error.message : String(error)}`
-        );
         failed++;
+        p.log.error(
+          `Failed: ${job.key} — ${error instanceof Error ? error.message : String(error)}`
+        );
       }
+      spinner.message(`${success + failed}/${jobs.length} uploaded`);
     }
-
-    spinner.message(`${styleName} done`);
-  }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, jobs.length) }, worker)
+  );
 
   spinner.stop(`Uploaded: ${success} files, ${failed} failed`);
   return { success, failed };

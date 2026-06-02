@@ -186,7 +186,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Award Season',
     description:
       'Deep, emotional storytelling with rich cinematography. Perfect for character-driven narratives.',
-    category: 'cinematic',
+    category: 'film',
     tags: ['drama', 'emotional', 'character-driven', 'cinematic'],
     config: {
       artStyle: 'Cinematic drama with deep shadows and warm tones',
@@ -208,7 +208,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Documentary',
     description:
       'Natural, observational style with authentic lighting and handheld movement.',
-    category: 'documentary',
+    category: 'film',
     tags: ['documentary', 'realistic', 'natural', 'authentic', 'observational'],
     config: {
       artStyle: 'Natural documentary style with authentic environments',
@@ -230,7 +230,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Action',
     description:
       'High-energy visuals with dynamic camera work and explosive color palette.',
-    category: 'action',
+    category: 'film',
     tags: ['action', 'blockbuster', 'explosive', 'dynamic', 'adventure'],
     config: {
       artStyle: 'High-octane action with dynamic compositions',
@@ -252,7 +252,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Rom-Com',
     description:
       'Bright, warm visuals with soft lighting and cheerful compositions.',
-    category: 'romance',
+    category: 'film',
     tags: ['romance', 'comedy', 'lighthearted', 'warm', 'feelgood'],
     config: {
       artStyle: 'Warm and inviting with soft, romantic lighting',
@@ -312,7 +312,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Neo-Noir Thriller',
     description:
       'Dark, stylized visuals with high contrast and urban settings. Ideal for mystery and crime stories.',
-    category: 'noir',
+    category: 'film',
     tags: ['noir', 'thriller', 'urban', 'mystery', 'crime'],
     config: {
       artStyle: 'Neo-noir with stark contrasts and neon accents',
@@ -334,7 +334,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Pastel',
     description:
       'Obsessively symmetrical live-action cinematography with candy-colored pastels, dollhouse interiors, and deadpan whimsy.',
-    category: 'artistic',
+    category: 'film',
     tags: ['whimsical', 'symmetrical', 'pastel', 'quirky', 'artistic'],
     config: {
       artStyle:
@@ -364,7 +364,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Sci-Fi Futuristic',
     description:
       'Clean, high-tech aesthetics with cool tones and sleek designs.',
-    category: 'scifi',
+    category: 'film',
     tags: ['scifi', 'futuristic', 'technology', 'space', 'cyberpunk'],
     config: {
       artStyle: 'Futuristic sci-fi with clean lines and holographic elements',
@@ -386,7 +386,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Horror Gothic',
     description:
       'Dark, atmospheric visuals with Gothic elements and unsettling compositions.',
-    category: 'horror',
+    category: 'film',
     tags: ['horror', 'gothic', 'dark', 'atmospheric', 'supernatural'],
     config: {
       artStyle: 'Gothic horror with dark shadows and eerie atmosphere',
@@ -408,7 +408,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     name: 'Western Epic',
     description:
       'Wide vistas with dusty, low-sun raking light and classic Western aesthetics.',
-    category: 'western',
+    category: 'film',
     tags: ['western', 'epic', 'frontier', 'classic', 'americana'],
     config: {
       artStyle: 'Classic Western with wide landscapes and raking sunset light',
