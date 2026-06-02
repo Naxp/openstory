@@ -41,7 +41,12 @@ function extractJson(text: string): string {
   const start = candidate.indexOf('{');
   const end = candidate.lastIndexOf('}');
   if (start === -1 || end === -1 || end < start) {
-    throw new Error('Scene split returned no JSON object');
+    const snippet = text.trim().slice(0, 300);
+    throw new Error(
+      `Scene split returned no JSON object — model reply (${text.length} chars): ${
+        snippet || '<empty completion>'
+      }`
+    );
   }
   return candidate.slice(start, end + 1);
 }
