@@ -5,7 +5,7 @@
 
 import type { TextModel } from '@/lib/ai/models';
 import type { ChatMessage } from '@/lib/prompts';
-import { chat } from '@tanstack/ai';
+import { chat, convertSchemaToJsonSchema } from '@tanstack/ai';
 import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
 import { createAdapter } from './create-adapter';
@@ -208,6 +208,79 @@ function baseChatOptions(params: LLMRequestParams) {
 }
 
 /**
+ * Anthropic's native structured output (`output_config`) compiles the schema
+ * into a grammar with a hard size cap that our large analysis schemas exceed
+ * ("compiled grammar is too large"). Every other provider handles native
+ * structured output fine, so only Anthropic needs a fallback: `json_object`
+ * mode with the schema described in the prompt (the pre-#785 lenient
+ * behaviour). Upstream tracking: https://github.com/TanStack/ai/issues/682
+ */
+export function isAnthropicModel(model: string): boolean {
+  return model.startsWith('anthropic/');
+}
+
+/**
+ * System-prompt instruction that pins a `json_object` response to `schema` —
+ * used for the Anthropic fallback, where we can't ship a strict JSON-Schema
+ * grammar.
+ */
+export function jsonSchemaInstruction(schema: z.ZodType): string {
+  const jsonSchema = convertSchemaToJsonSchema(schema, {
+    forStructuredOutput: true,
+  });
+  return (
+    'You must respond with ONLY a single JSON object that conforms to this ' +
+    'JSON Schema. No markdown, no code fences, no commentary:\n' +
+    JSON.stringify(jsonSchema)
+  );
+}
+
+/** Parse a `json_object` response, tolerating an accidental ```json fence. */
+export function parseJsonObjectResponse(text: string): unknown {
+  const unfenced = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
+  return JSON.parse(unfenced);
+}
+
+/**
+ * `{ systemPrompts, responseFormat }` for a workflow structured-output `chat()`
+ * call (the explicit `modelOptions.responseFormat` path): native strict
+ * `json_schema` for providers that support it, and the `json_object` +
+ * schema-in-prompt fallback for Anthropic (whose strict grammar can't fit large
+ * schemas). Mirrors the conditional in {@link callLLMStream}.
+ */
+export function structuredOutputConfig(
+  model: string,
+  responseSchema: z.ZodType,
+  baseSystemPrompts: readonly string[]
+) {
+  if (isAnthropicModel(model)) {
+    return {
+      systemPrompts: [
+        ...baseSystemPrompts,
+        jsonSchemaInstruction(responseSchema),
+      ],
+      responseFormat: { type: 'json_object' as const },
+    };
+  }
+  return {
+    systemPrompts: [...baseSystemPrompts],
+    responseFormat: {
+      type: 'json_schema' as const,
+      jsonSchema: {
+        name: 'structured_output',
+        schema: convertSchemaToJsonSchema(responseSchema, {
+          forStructuredOutput: true,
+        }),
+        strict: true,
+      },
+    },
+  };
+}
+
+/**
  * @tanstack/ai's chat orchestrator validates `outputSchema` upstream and surfaces
  * the parsed object through the terminal `structured-output.complete` event (stream)
  * or as the resolved value (non-stream) — but the return is typed `unknown` because
@@ -226,8 +299,26 @@ export async function callLLM<T>(
 ): Promise<T | string> {
   if (params.responseSchema) {
     validateStructuredOutputSupport(params.model);
+    const base = baseChatOptions(params);
+    if (isAnthropicModel(params.model)) {
+      const text = await chat({
+        ...base,
+        systemPrompts: [
+          ...base.systemPrompts,
+          jsonSchemaInstruction(params.responseSchema),
+        ],
+        stream: false,
+        metadata: buildChatMetadata(params),
+        modelOptions: {
+          ...base.modelOptions,
+          responseFormat: { type: 'json_object' as const },
+        },
+        outputSchema: undefined,
+      });
+      return params.responseSchema.parse(parseJsonObjectResponse(text));
+    }
     const result = await chat({
-      ...baseChatOptions(params),
+      ...base,
       stream: false,
       metadata: buildChatMetadata(params),
       outputSchema: params.responseSchema,
@@ -301,9 +392,63 @@ export function extractRunError(event: unknown): RunErrorDetail | null {
 }
 
 /**
+ * Dig the upstream provider's *actual* error out of a RUN_ERROR `rawEvent`.
+ * OpenRouter collapses provider failures to a generic "Provider returned
+ * error", stashing the real message in `rawEvent` — at the top level or under
+ * `metadata`, with the upstream body in `raw` (often a JSON string shaped like
+ * `{ error: { message } }`, e.g. an Anthropic schema-validation message).
+ * Returns a compact `provider=… <message>` string, or `undefined` when there's
+ * no usable detail. Read defensively: `rawEvent` is an arbitrary provider frame.
+ */
+export function extractProviderErrorDetail(
+  rawEvent: unknown
+): string | undefined {
+  if (!rawEvent || typeof rawEvent !== 'object') return undefined;
+  const meta =
+    'metadata' in rawEvent &&
+    rawEvent.metadata &&
+    typeof rawEvent.metadata === 'object'
+      ? rawEvent.metadata
+      : rawEvent;
+
+  const provider =
+    'provider_name' in meta && typeof meta.provider_name === 'string'
+      ? meta.provider_name
+      : undefined;
+
+  let deepMessage: string | undefined;
+  const raw = 'raw' in meta ? meta.raw : undefined;
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      deepMessage =
+        parsed &&
+        typeof parsed === 'object' &&
+        'error' in parsed &&
+        parsed.error &&
+        typeof parsed.error === 'object' &&
+        'message' in parsed.error &&
+        typeof parsed.error.message === 'string'
+          ? parsed.error.message
+          : raw;
+    } catch {
+      deepMessage = raw;
+    }
+  }
+
+  const parts = [
+    provider ? `provider=${provider}` : undefined,
+    deepMessage,
+  ].filter((part): part is string => part !== undefined);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+/**
  * Build the surfaced `Error.message` from a {@link RunErrorDetail}. `code` and
  * `model` (when present) ride along in a bracketed prefix so they survive in
- * the error string all the way up the call chain.
+ * the error string all the way up the call chain. The provider's real error
+ * (dug out of `rawEvent`) is appended so the string is actionable even though
+ * OpenRouter's top-level `message` is usually just "Provider returned error".
  */
 export function formatRunErrorMessage(detail: RunErrorDetail): string {
   const tags = [
@@ -311,17 +456,20 @@ export function formatRunErrorMessage(detail: RunErrorDetail): string {
     detail.model ? `model=${detail.model}` : undefined,
   ].filter((tag): tag is string => tag !== undefined);
   const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
-  return `LLM stream error${suffix}: ${detail.message}`;
+  const providerDetail = extractProviderErrorDetail(detail.rawEvent);
+  const detailSuffix = providerDetail ? ` — ${providerDetail}` : '';
+  return `LLM stream error${suffix}: ${detail.message}${detailSuffix}`;
 }
 
 function throwIfRunError(event: unknown): void {
   const detail = extractRunError(event);
   if (!detail) return;
-  logger.error('LLM stream RUN_ERROR', {
-    runError: detail.event,
-    rawEvent: detail.rawEvent,
-  });
-  throw new Error(formatRunErrorMessage(detail));
+  // Log the formatted string as the message (not as a `{ properties }` field)
+  // so the actual error is visible in the dev pretty sink, which omits the
+  // structured-field block. The full event still rides along for prod JSON.
+  const message = formatRunErrorMessage(detail);
+  logger.error(message, { runError: detail.event, rawEvent: detail.rawEvent });
+  throw new Error(message);
 }
 
 export function callLLMStream<T>(
@@ -347,7 +495,31 @@ export async function* callLLMStream<T>(
   };
 
   const responseSchema = params.responseSchema;
-  if (responseSchema) {
+  if (responseSchema && isAnthropicModel(params.model)) {
+    // Anthropic can't compile a strict grammar for large schemas, so stream
+    // plain JSON (`json_object`) with the schema pinned in the prompt, then
+    // validate the accumulated text at the end.
+    validateStructuredOutputSupport(params.model);
+    for await (const event of chat({
+      ...baseOptions,
+      systemPrompts: [
+        ...baseOptions.systemPrompts,
+        jsonSchemaInstruction(responseSchema),
+      ],
+      modelOptions: {
+        ...baseOptions.modelOptions,
+        responseFormat: { type: 'json_object' as const },
+      },
+    })) {
+      if (event.type === 'TEXT_MESSAGE_CONTENT') {
+        accumulated += event.delta;
+        yield { delta: event.delta, accumulated, done: false };
+        continue;
+      }
+      throwIfRunError(event);
+    }
+    parsed = responseSchema.parse(parseJsonObjectResponse(accumulated));
+  } else if (responseSchema) {
     validateStructuredOutputSupport(params.model);
     for await (const event of chat({
       ...baseOptions,
