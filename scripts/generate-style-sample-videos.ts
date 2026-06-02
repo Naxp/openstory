@@ -23,12 +23,18 @@
  * Without FAL_KEY, the default run is a dry-run (prints resolved models + brief
  * + estimated fal.ai spend so you see the bill first).
  *
+ * Still gate: when OPENROUTER_KEY is set, each generated still is scored and
+ * re-rolled (up to STILL_ATTEMPTS, default 3) on a clear failure — literal
+ * medium, multi-frame, or gross anatomy — BEFORE the expensive image-to-video
+ * step, since a sample video has no later pick-the-best safety net. Disable with
+ * --no-gate.
+ *
  * Usage:
  *   bun scripts/generate-style-sample-videos.ts --scripts-only            # phase 1 (LLM only)
  *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts --filter "Product Ad"
  *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts                 # all styles
  *   bun scripts/generate-style-sample-videos.ts --dry-run                 # cost preview
- *   …--canonical-only | --bespoke-only | --hero-only | --force
+ *   …--canonical-only | --bespoke-only | --hero-only | --force | --no-gate
  */
 import {
   DEFAULT_IMAGE_MODEL,
@@ -37,6 +43,7 @@ import {
   safeImageToVideoModel,
   safeTextToImageModel,
   type ImageToVideoModel,
+  type TextModel,
   type TextToImageModel,
 } from '@/lib/ai/models';
 import { microsToUsd } from '@/lib/billing/money';
@@ -53,6 +60,11 @@ import {
   submitMotionJob,
 } from '@/lib/motion/motion-generation';
 import { generateCanonicalScript } from '@/lib/style/sample-script';
+import {
+  scoreStill,
+  stillFlagLabels,
+  stillRejected,
+} from '@/lib/style/score-image';
 import { buildStyledImagePrompt } from '@/lib/style/style-image-prompt';
 import {
   BESPOKE_SCRIPTS,
@@ -77,6 +89,15 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 /** Upper bound of the enhancer's 2-3 scene range — used for cost estimates. */
 const CANONICAL_PLANNED_SCENES = 3;
+
+// Still-quality gate: score each generated still and re-roll bad ones BEFORE
+// the expensive image-to-video step (videos have no later pick-the-best safety
+// net like thumbnails do). Disabled with --no-gate or when OPENROUTER_KEY is
+// absent. The gate model just needs to be vision-capable + cheap.
+const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
+const STILL_ATTEMPTS = Number(process.env.STILL_ATTEMPTS ?? '3');
+const GATE_MODEL: TextModel = 'google/gemini-3-flash-preview';
+const gateEnabled = !process.argv.includes('--no-gate') && !!OPENROUTER_KEY;
 
 const hasFalKey = !!process.env.FAL_KEY;
 
@@ -229,12 +250,23 @@ async function prepareBeats(job: RenderJob): Promise<SampleBeat[]> {
   return beats;
 }
 
-/** Generate a still for one beat and write it locally as webp; return its URL. */
-async function renderStill(
+/** Re-encode downloaded image bytes to a webp (for review) + a base64 JPEG (for scoring). */
+function encodeStill(bytes: Uint8Array): { webp: Buffer; jpegBase64: string } {
+  const image = PhotonImage.new_from_byteslice(bytes);
+  try {
+    return {
+      webp: Buffer.from(image.get_bytes_webp()),
+      jpegBase64: Buffer.from(image.get_bytes_jpeg(85)).toString('base64'),
+    };
+  } finally {
+    image.free();
+  }
+}
+
+async function generateStillOnce(
   job: RenderJob,
-  beat: SampleBeat,
-  framesDir: string
-): Promise<string> {
+  beat: SampleBeat
+): Promise<{ url: string; bytes: Uint8Array }> {
   const result = await generateImageWithProvider({
     model: job.imageModel,
     prompt: buildStyledImagePrompt(beat.imagePrompt, job.config),
@@ -244,20 +276,60 @@ async function renderStill(
   });
   const url = result.imageUrls[0];
   if (!url) throw new Error(`No image returned for ${job.slug}/${beat.id}`);
-
-  // Save a local webp copy for review.
   const res = await fetch(url);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const image = PhotonImage.new_from_byteslice(bytes);
-  try {
-    await writeFile(
-      path.join(framesDir, `${beat.id}.webp`),
-      Buffer.from(image.get_bytes_webp())
-    );
-  } finally {
-    image.free();
+  return { url, bytes: new Uint8Array(await res.arrayBuffer()) };
+}
+
+/**
+ * Generate a still for one beat, write it locally as webp, return its URL. When
+ * the gate is enabled, score each still and re-roll on a clear failure
+ * (literal-medium / multi-frame / gross anatomy) up to STILL_ATTEMPTS, keeping
+ * the first clean one (or the best-scoring if none come back clean) — so we
+ * never animate a known-bad frame.
+ */
+async function renderStill(
+  job: RenderJob,
+  beat: SampleBeat,
+  framesDir: string
+): Promise<string> {
+  const webpPath = path.join(framesDir, `${beat.id}.webp`);
+
+  if (!gateEnabled || !OPENROUTER_KEY) {
+    const { url, bytes } = await generateStillOnce(job, beat);
+    await writeFile(webpPath, encodeStill(bytes).webp);
+    return url;
   }
-  return url;
+
+  let best: { url: string; webp: Buffer; adherence: number } | null = null;
+  for (let attempt = 1; attempt <= STILL_ATTEMPTS; attempt++) {
+    const { url, bytes } = await generateStillOnce(job, beat);
+    const { webp, jpegBase64 } = encodeStill(bytes);
+    const verdict = await scoreStill({
+      jpegBase64,
+      styleName: job.styleName,
+      sceneDescription: beat.imagePrompt,
+      config: job.config,
+      model: GATE_MODEL,
+      apiKey: OPENROUTER_KEY,
+    });
+    if (!best || verdict.styleAdherence > best.adherence) {
+      best = { url, webp, adherence: verdict.styleAdherence };
+    }
+    if (!stillRejected(verdict)) {
+      await writeFile(webpPath, webp);
+      return url;
+    }
+    console.log(
+      `   ↻ ${job.slug}/${beat.id} still re-roll ${attempt}/${STILL_ATTEMPTS} [${stillFlagLabels(verdict)}]`
+    );
+  }
+  // No clean still after all attempts — use the best one and warn.
+  if (!best) throw new Error(`No still produced for ${job.slug}/${beat.id}`);
+  console.warn(
+    `   ⚠️  ${job.slug}/${beat.id}: kept best-of-${STILL_ATTEMPTS} still (still flagged)`
+  );
+  await writeFile(webpPath, best.webp);
+  return best.url;
 }
 
 /** Submit + poll one i2v clip; download it locally; return the local path. */
