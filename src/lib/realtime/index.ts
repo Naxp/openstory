@@ -133,6 +133,10 @@ export const realtimeSchema = {
       frameId: z.string(),
       status: z.enum(['pending', 'generating', 'completed', 'failed']),
       videoUrl: z.string().optional(),
+      // Which video model produced this update. Optional for backward compat
+      // with emitters that predate multi-model video (#545); the model-aware
+      // cache invalidation and scenes-view variant switcher key off it.
+      model: z.string().optional(),
     }),
 
     // Audio/music generation progress (frameId optional for sequence-level music)

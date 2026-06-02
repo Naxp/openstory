@@ -3,7 +3,10 @@ import {
   ImageModelSelector,
 } from '@/components/model/image-model-selector';
 import { ModelSelector } from '@/components/model/model-selector';
-import { MotionModelSelector } from '@/components/model/motion-model-selector';
+import {
+  MotionModelMultiSelector,
+  MotionModelSelector,
+} from '@/components/model/motion-model-selector';
 import { MusicModelSelector } from '@/components/model/music-model-selector';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -15,6 +18,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import {
   DEFAULT_IMAGE_MODEL,
+  DEFAULT_VIDEO_MODEL,
   type AudioModel,
   type ImageToVideoModel,
   type TextToImageModel,
@@ -59,14 +63,14 @@ type GenerationSettingsProps = {
   aspectRatio: AspectRatio;
   analysisModels: AnalysisModelId[];
   imageModels: TextToImageModel[];
-  motionModel: ImageToVideoModel;
+  videoModels: ImageToVideoModel[];
   autoGenerateMotion?: boolean;
   musicModel?: AudioModel;
   autoGenerateMusic?: boolean;
   onAspectRatioChange: (value: AspectRatio) => void;
   onAnalysisModelsChange: (value: AnalysisModelId[]) => void;
   onImageModelsChange: (value: TextToImageModel[]) => void;
-  onMotionModelChange: (value: ImageToVideoModel) => void;
+  onVideoModelsChange: (value: ImageToVideoModel[]) => void;
   onAutoGenerateMotionChange?: (value: boolean) => void;
   onMusicModelChange?: (value: AudioModel) => void;
   onAutoGenerateMusicChange?: (value: boolean) => void;
@@ -74,6 +78,8 @@ type GenerationSettingsProps = {
   singleSelectAnalysis?: boolean;
   /** Use single-select for image model (e.g. in regeneration context) */
   singleSelectImage?: boolean;
+  /** Use single-select for motion model (e.g. in regeneration context) */
+  singleSelectMotion?: boolean;
   /** Current style category, used to show/hide style-restricted motion models */
   styleCategory?: string;
   /** Current style name, used in recommendation tooltips */
@@ -97,20 +103,21 @@ export const GenerationSettings: FC<GenerationSettingsProps> = ({
   aspectRatio,
   analysisModels,
   imageModels,
-  motionModel,
+  videoModels,
   autoGenerateMotion = false,
   musicModel,
   autoGenerateMusic = false,
   onAspectRatioChange,
   onAnalysisModelsChange,
   onImageModelsChange,
-  onMotionModelChange,
+  onVideoModelsChange,
   onAutoGenerateMotionChange,
   onMusicModelChange,
   onAutoGenerateMusicChange,
   disabled = false,
   singleSelectAnalysis = false,
   singleSelectImage = false,
+  singleSelectMotion = false,
   styleCategory,
   styleName,
   recommendedImageModel,
@@ -211,7 +218,7 @@ export const GenerationSettings: FC<GenerationSettingsProps> = ({
           {/* Motion Model Section */}
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-medium text-foreground">
-              Motion Model
+              Motion Model{!singleSelectMotion && 's'}
             </h3>
             {onAutoGenerateMotionChange && (
               <AutoToggle
@@ -222,15 +229,27 @@ export const GenerationSettings: FC<GenerationSettingsProps> = ({
                 disabled={disabled}
               />
             )}
-            <MotionModelSelector
-              selectedModel={motionModel}
-              onModelChange={onMotionModelChange}
-              disabled={disabled || !autoGenerateMotion}
-              aspectRatio={aspectRatio}
-              styleCategory={styleCategory}
-              recommendedVideoModel={recommendedVideoModel}
-              styleName={styleName}
-            />
+            {singleSelectMotion ? (
+              <MotionModelSelector
+                selectedModel={videoModels[0] ?? DEFAULT_VIDEO_MODEL}
+                onModelChange={(model) => onVideoModelsChange([model])}
+                disabled={disabled || !autoGenerateMotion}
+                aspectRatio={aspectRatio}
+                styleCategory={styleCategory}
+                recommendedVideoModel={recommendedVideoModel}
+                styleName={styleName}
+              />
+            ) : (
+              <MotionModelMultiSelector
+                selectedModels={videoModels}
+                onModelsChange={onVideoModelsChange}
+                disabled={disabled || !autoGenerateMotion}
+                aspectRatio={aspectRatio}
+                styleCategory={styleCategory}
+                recommendedVideoModel={recommendedVideoModel}
+                styleName={styleName}
+              />
+            )}
           </section>
 
           {onAutoGenerateMusicChange && onMusicModelChange && musicModel && (

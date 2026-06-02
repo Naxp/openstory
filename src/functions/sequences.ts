@@ -11,6 +11,7 @@ import {
   getAnalysisModelById,
 } from '@/lib/ai/models.config';
 import { resolveImageModels } from '@/lib/ai/resolve-image-models';
+import { resolveVideoModels } from '@/lib/ai/resolve-video-models';
 import { requireTeamMemberAccess } from '@/lib/auth/action-utils';
 import { estimateStoryboardCost } from '@/lib/billing/cost-estimation';
 import { requireCredits } from '@/lib/billing/preflight';
@@ -70,6 +71,7 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
       imageModel: imageModelLegacy,
       imageModels: imageModelsInput,
       videoModel,
+      videoModels: videoModelsInput,
       autoGenerateMotion = false,
       autoGenerateMusic = true,
       musicModel,
@@ -102,6 +104,23 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
       );
     }
 
+    // Validate and resolve video models (mirrors the image-model handling).
+    const validatedVideoModels = videoModelsInput.map((m) =>
+      safeImageToVideoModel(m, DEFAULT_VIDEO_MODEL)
+    );
+    const videoModels = resolveVideoModels(
+      validatedVideoModels,
+      videoModel
+        ? safeImageToVideoModel(videoModel, DEFAULT_VIDEO_MODEL)
+        : undefined
+    );
+    const [primaryVideoModel] = videoModels;
+    if (!primaryVideoModel) {
+      throw new Error(
+        'Expected resolveVideoModels to return at least one model'
+      );
+    }
+
     if (!styleId || !aspectRatio) {
       throw new Error('Style ID and aspect ratio are required');
     }
@@ -113,7 +132,7 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
         imageModelCount: imageModels.length,
         aspectRatio,
         autoGenerateMotion,
-        videoModel: safeImageToVideoModel(videoModel, DEFAULT_VIDEO_MODEL),
+        videoModels,
       }),
       {
         providers: ['fal', 'openrouter'],
@@ -142,7 +161,7 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
           analysisModel:
             getAnalysisModelById(modelId)?.id || DEFAULT_ANALYSIS_MODEL,
           imageModel: primaryImageModel,
-          videoModel: autoGenerateMotion ? videoModel : undefined,
+          videoModel: autoGenerateMotion ? primaryVideoModel : undefined,
           musicModel: persistedMusicModel,
           autoGenerateMotion,
           autoGenerateMusic,
@@ -186,6 +205,7 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
           teamId,
           sequenceId: sequence.id,
           imageModels,
+          videoModels,
           options: {
             framesPerScene: 3,
             generateThumbnails: true,
@@ -278,10 +298,9 @@ export const updateSequenceFn = createServerFn({ method: 'POST' })
             DEFAULT_IMAGE_MODEL
           ),
           aspectRatio: sequence.aspectRatio,
-          videoModel: safeImageToVideoModel(
-            sequence.videoModel,
-            DEFAULT_VIDEO_MODEL
-          ),
+          videoModels: [
+            safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL),
+          ],
         }),
         {
           providers: ['fal', 'openrouter'],
@@ -342,10 +361,9 @@ export const retryStoryboardFn = createServerFn({ method: 'POST' })
           DEFAULT_IMAGE_MODEL
         ),
         aspectRatio: sequence.aspectRatio,
-        videoModel: safeImageToVideoModel(
-          sequence.videoModel,
-          DEFAULT_VIDEO_MODEL
-        ),
+        videoModels: [
+          safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL),
+        ],
       }),
       {
         providers: ['fal', 'openrouter'],

@@ -136,7 +136,7 @@ export const ScriptView: FC<{
     analysisModels: AnalysisModelId[];
     aspectRatio: AspectRatio;
     imageModels: TextToImageModel[];
-    motionModel: ImageToVideoModel;
+    videoModels: ImageToVideoModel[];
     autoGenerateMotion: boolean;
     musicModel: AudioModel;
     autoGenerateMusic: boolean;
@@ -147,10 +147,10 @@ export const ScriptView: FC<{
       isEditing && sequence.imageModel
         ? [safeTextToImageModel(sequence.imageModel, DEFAULT_IMAGE_MODEL)]
         : savedSettings.imageModels,
-    motionModel:
+    videoModels:
       isEditing && sequence.videoModel
-        ? safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL)
-        : savedSettings.motionModel,
+        ? [safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL)]
+        : savedSettings.videoModels,
     autoGenerateMotion: isEditing ? false : savedSettings.autoGenerateMotion,
     musicModel:
       isEditing && sequence.musicModel
@@ -162,7 +162,7 @@ export const ScriptView: FC<{
     analysisModels,
     aspectRatio,
     imageModels,
-    motionModel,
+    videoModels,
     autoGenerateMotion,
     musicModel,
     autoGenerateMusic,
@@ -300,7 +300,7 @@ export const ScriptView: FC<{
         aspectRatio: savedSettings.aspectRatio,
         analysisModels: savedSettings.analysisModels,
         imageModels: savedSettings.imageModels,
-        motionModel: savedSettings.motionModel,
+        videoModels: savedSettings.videoModels,
         autoGenerateMotion: savedSettings.autoGenerateMotion,
         musicModel: savedSettings.musicModel,
         autoGenerateMusic: savedSettings.autoGenerateMusic,
@@ -339,16 +339,25 @@ export const ScriptView: FC<{
     saveDraft,
   ]);
 
-  // Auto-fallback motion model when style changes away from a required category
+  // Auto-fallback motion models when style changes away from a required
+  // category — any selected model whose requiredStyleCategory no longer matches
+  // is swapped for the default; the result is deduped.
   useEffect(() => {
-    const model = IMAGE_TO_VIDEO_MODELS[motionModel];
+    const coerced = videoModels.map((m) => {
+      const model = IMAGE_TO_VIDEO_MODELS[m];
+      return 'requiredStyleCategory' in model &&
+        model.requiredStyleCategory !== styleCategory
+        ? DEFAULT_VIDEO_MODEL
+        : m;
+    });
+    const deduped = [...new Set(coerced)];
     if (
-      'requiredStyleCategory' in model &&
-      model.requiredStyleCategory !== styleCategory
+      deduped.length !== videoModels.length ||
+      deduped.some((m, i) => m !== videoModels[i])
     ) {
-      updateGen('motionModel', DEFAULT_VIDEO_MODEL);
+      updateGen('videoModels', deduped);
     }
-  }, [styleCategory, motionModel]);
+  }, [styleCategory, videoModels]);
 
   // Auto-apply style recommendations on style change. Issue #716 originally
   // said "suggest, never auto-change", but in practice most users never open
@@ -365,7 +374,7 @@ export const ScriptView: FC<{
   const styleApplySnapshotRef = useRef<{
     aspectRatio: AspectRatio;
     imageModels: TextToImageModel[];
-    motionModel: ImageToVideoModel;
+    videoModels: ImageToVideoModel[];
   } | null>(null);
   const [appliedFromStyle, setAppliedFromStyle] = useState<{
     styleId: string;
@@ -416,14 +425,14 @@ export const ScriptView: FC<{
       const start = baseline ?? {
         aspectRatio: s.aspectRatio,
         imageModels: s.imageModels,
-        motionModel: s.motionModel,
+        videoModels: s.videoModels,
       };
       styleApplySnapshotRef.current = start;
       return {
         ...s,
         aspectRatio: validRatio ?? start.aspectRatio,
         imageModels: validImage ? [validImage] : start.imageModels,
-        motionModel: validVideo ?? start.motionModel,
+        videoModels: validVideo ? [validVideo] : start.videoModels,
       };
     });
     setAppliedFromStyle({
@@ -487,7 +496,7 @@ export const ScriptView: FC<{
       is_editing: isEditing,
       aspect_ratio: aspectRatio,
       image_models: imageModels,
-      motion_model: motionModel,
+      video_models: videoModels,
       auto_generate_motion: autoGenerateMotion,
       auto_generate_music: autoGenerateMusic,
       analysis_model_count: analysisModels.length,
@@ -502,7 +511,8 @@ export const ScriptView: FC<{
         aspectRatio,
         analysisModels,
         imageModels,
-        videoModel: motionModel,
+        videoModels,
+        videoModel: videoModels[0] ?? DEFAULT_VIDEO_MODEL,
         autoGenerateMotion,
         autoGenerateMusic,
         musicModel,
@@ -685,14 +695,14 @@ export const ScriptView: FC<{
             aspectRatio={aspectRatio}
             analysisModels={analysisModels}
             imageModels={imageModels}
-            motionModel={motionModel}
+            videoModels={videoModels}
             autoGenerateMotion={autoGenerateMotion}
             musicModel={musicModel}
             autoGenerateMusic={autoGenerateMusic}
             onAspectRatioChange={(v) => updateGen('aspectRatio', v)}
             onAnalysisModelsChange={(v) => updateGen('analysisModels', v)}
             onImageModelsChange={(v) => updateGen('imageModels', v)}
-            onMotionModelChange={(v) => updateGen('motionModel', v)}
+            onVideoModelsChange={(v) => updateGen('videoModels', v)}
             onAutoGenerateMotionChange={(v) =>
               updateGen('autoGenerateMotion', v)
             }

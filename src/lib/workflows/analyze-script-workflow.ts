@@ -26,6 +26,7 @@
 
 import { sanitizeScriptContent } from '@/lib/ai/prompt-validation';
 import { resolveImageModels } from '@/lib/ai/resolve-image-models';
+import { resolveVideoModels } from '@/lib/ai/resolve-video-models';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { assembleMotionPrompt } from '@/lib/motion/assemble-motion-prompt';
@@ -93,6 +94,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       imageModel,
       imageModels: imageModelsInput,
       videoModel,
+      videoModels: videoModelsInput,
       autoGenerateMotion = false,
       autoGenerateMusic = false,
       musicModel,
@@ -101,6 +103,10 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
     } = input;
 
     const imageModels = resolveImageModels(imageModelsInput, imageModel);
+    const videoModels = resolveVideoModels(videoModelsInput, videoModel);
+    // First selected model is primary: it drives the legacy `frames.video*`
+    // columns and the model-aware duration snapping; the rest are alternates.
+    const primaryVideoModel = videoModels[0] ?? videoModel;
 
     // Top-level validation — base class re-wraps as CF NonRetryableError.
     if (!script) {
@@ -522,6 +528,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           styleConfig,
           analysisModelId,
           videoModel,
+          videoModels,
         },
         spawnStepName: 'spawn-motion-music-prompts',
         awaitStepName: 'await-motion-music-prompts',
@@ -556,7 +563,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
     // PHASE 5: motion (+ optional music + merge) batch — single child
     // ----------------------------------------------------------------------
     const shouldGenerateMotion =
-      autoGenerateMotion && videoModel && imageUrls.length > 0;
+      autoGenerateMotion && primaryVideoModel && imageUrls.length > 0;
     const shouldGenerateMusic = Boolean(
       autoGenerateMusic &&
       sequenceId &&
@@ -593,11 +600,14 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         return {
           frameId: matchedFrame?.frameId ?? '',
           imageUrl,
+          // Primary-model prompt (fallback / single-model). `motion-batch`
+          // re-assembles per model from `motionPrompt` for the alternates.
           prompt: assembleMotionPrompt({
             motionPrompt: motionPromptData,
-            model: videoModel,
+            model: primaryVideoModel,
           }),
-          model: videoModel,
+          model: primaryVideoModel,
+          motionPrompt: motionPromptData,
           duration: scene.metadata?.durationSeconds || 3,
           aspectRatio,
         };
@@ -634,6 +644,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           sequenceId,
           includeMusic: shouldGenerateMusic,
           frames: batchFrames,
+          videoModels,
           music: shouldGenerateMusic
             ? {
                 prompt: musicPrompt,

@@ -3,8 +3,8 @@ import {
   ImageModelBadge,
   ModelBadge,
   MusicModelBadge,
-  VideoModelBadge,
 } from '@/components/model/model-badge';
+import { SequenceVideoModelSelector } from '@/components/model/sequence-video-model-selector';
 import { getSequenceImageModelsFn } from '@/functions/frames';
 import { frameKeys } from '@/hooks/use-frames';
 import { routeParams } from '@/components/layout/breadcrumbs';
@@ -94,7 +94,10 @@ function SequenceLayout() {
               models={imageModels}
               model={sequence?.imageModel}
             />
-            <VideoModelBadge model={sequence?.videoModel} />
+            <SequenceVideoModelSelector
+              sequenceId={sequenceId}
+              sequenceVideoModel={sequence?.videoModel}
+            />
             <MusicModelBadge model={sequence?.musicModel ?? undefined} />
           </div>
         </PageHeader>

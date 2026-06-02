@@ -14,6 +14,7 @@ import type {
   CharacterBibleEntry,
   ElementBibleEntry,
   LocationBibleEntry,
+  MotionPrompt,
   Scene,
 } from '@/lib/ai/scene-analysis.schema';
 import type { AspectRatio, ImageSize } from '@/lib/constants/aspect-ratios';
@@ -122,6 +123,8 @@ export interface StoryboardWorkflowInput extends SequenceWorkflowContext {
   };
   /** Multiple image models for variant generation (first is primary) */
   imageModels?: TextToImageModel[];
+  /** Multiple video models for variant generation (first is primary) */
+  videoModels?: ImageToVideoModel[];
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
@@ -144,6 +147,8 @@ export interface AnalyzeScriptWorkflowInput extends SequenceWorkflowContext {
   /** Multiple image models for variant generation (first is primary) */
   imageModels?: TextToImageModel[];
   videoModel?: ImageToVideoModel;
+  /** Multiple video models for variant generation (first is primary) */
+  videoModels?: ImageToVideoModel[];
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
@@ -714,8 +719,20 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
   frames: Array<{
     frameId: string;
     imageUrl: string;
+    /**
+     * Prompt assembled for the primary model. Used directly for single-model
+     * runs and as the fallback when `motionPrompt` is absent. For multi-model
+     * fan-out, `motion-batch` re-assembles per model from `motionPrompt`.
+     */
     prompt: string;
     model?: ImageToVideoModel;
+    /**
+     * Structured motion prompt (#545). When present, `motion-batch` assembles
+     * a model-specific prompt for each model in `videoModels` via
+     * `assembleMotionPrompt`. Absent on manual single-model paths, which pass
+     * a pre-assembled `prompt` instead.
+     */
+    motionPrompt?: MotionPrompt;
     duration?: number;
     fps?: number;
     motionBucket?: number;
@@ -725,6 +742,13 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
     /** See `MotionWorkflowInput.userEditedPrompt`. */
     userEditedPrompt?: boolean;
   }>;
+  /**
+   * Video models to generate for every frame (#545). First is primary (its
+   * output also lands in the legacy `frames.video*` columns); the rest are
+   * alternates stored only in `frame_variants`. When absent, each frame's own
+   * `model` is used (single-model behaviour).
+   */
+  videoModels?: ImageToVideoModel[];
   /** When true, generate music in parallel and mux into final video */
   includeMusic: boolean;
   /** Music config (required when includeMusic=true) */
@@ -793,6 +817,13 @@ export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   videoModel?: ImageToVideoModel;
+  /**
+   * Multiple video models for variant generation (first is primary). Only the
+   * primary is used here for model-aware duration snapping; the structured
+   * motion prompts produced are model-independent and assembled per-model
+   * downstream in `motion-batch`.
+   */
+  videoModels?: ImageToVideoModel[];
 }
 
 export interface MotionMusicPromptsWorkflowResult {

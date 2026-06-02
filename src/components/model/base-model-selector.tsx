@@ -15,8 +15,28 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ChevronDown } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  Loader2,
+} from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+
+/**
+ * Per-scene marker for a model in the dropdown (#545).
+ * - `set`: this model's output is the scene's live primary (what plays).
+ * - `completed`: a finished variant exists but isn't set — selectable, then
+ *   "Set Video/Image" promotes it.
+ * - `generating`/`failed`/`pending`: variant state, no promotion yet.
+ */
+export type ModelGenerationStatus =
+  | 'pending'
+  | 'generating'
+  | 'completed'
+  | 'failed'
+  | 'set';
 
 type ModelItem = {
   id: string;
@@ -25,7 +45,56 @@ type ModelItem = {
   badge?: 'open-source' | 'proprietary';
   /** Show a "Recommended" badge with the given tooltip text */
   recommendedFor?: string;
+  /**
+   * Renders a per-scene status marker for this model's variant (#545):
+   * ⊙ set (live primary) / ✓ completed / ⟳ generating / ! failed.
+   * `pending`/undefined render nothing.
+   */
+  generationStatus?: ModelGenerationStatus;
 };
+
+const STATUS_ICON: Record<
+  'generating' | 'completed' | 'failed' | 'set',
+  { Icon: typeof Check; className: string; label: string }
+> = {
+  set: {
+    Icon: CircleCheck,
+    className: 'text-emerald-500',
+    label: 'Currently set for this scene',
+  },
+  completed: {
+    Icon: Check,
+    className: 'text-muted-foreground',
+    label: 'Generated — select then click Set to use',
+  },
+  generating: {
+    Icon: Loader2,
+    className: 'text-muted-foreground animate-spin',
+    label: 'Generating…',
+  },
+  failed: {
+    Icon: CircleAlert,
+    className: 'text-destructive',
+    label: 'Generation failed',
+  },
+};
+
+function ModelStatusIcon({ status }: { status?: ModelGenerationStatus }) {
+  if (!status || status === 'pending') return null;
+  const { Icon, className, label } = STATUS_ICON[status];
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="shrink-0" aria-label={label}>
+            <Icon className={`size-3.5 ${className}`} />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 type BaseModelSelectorProps = {
   label: string;
@@ -191,6 +260,7 @@ export const BaseModelSelector: React.FC<BaseModelSelectorProps> = ({
                   >
                     <span className="flex items-center gap-2 text-sm">
                       <span className="truncate">{model.name}</span>
+                      <ModelStatusIcon status={model.generationStatus} />
                       {model.recommendedFor && (
                         <TooltipProvider>
                           <Tooltip>

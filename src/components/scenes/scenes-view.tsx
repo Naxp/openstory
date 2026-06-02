@@ -19,8 +19,11 @@ import {
   useDivergentVariants,
   useFramesBySequence,
   usePromoteVariantToPrimary,
+  useSequenceVideoVariants,
   useUndiscardVariant,
 } from '@/hooks/use-frames';
+import { useActiveVideoModel } from '@/hooks/use-active-video-model';
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { useStaleDetected } from '@/lib/realtime/use-stale-detected';
 import { DivergenceCompareDialog } from '@/components/scenes/divergence-compare-dialog';
 import { getDivergentVariantPromptDiffFn } from '@/functions/prompt-variants';
@@ -165,6 +168,12 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     null
   );
 
+  // Per-scene video-model preview (#545) — the motion mirror of
+  // imageModelOverride. Transient: resets on frame switch.
+  const [videoModelOverride, setVideoModelOverride] = useState<string | null>(
+    null
+  );
+
   // Poll sequence while a motion batch is in flight so per-frame statuses stay
   // fresh. The refetchInterval fn reads from the query cache each tick to
   // avoid a circular dependency between sequence state and the poll condition.
@@ -237,6 +246,25 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     staleTime: 30_000,
     enabled: !!sequenceId,
   });
+
+  // Video variants + viewer-local active video model (#545). When the viewer
+  // pins a model in the header dropdown, the player resolves every frame's
+  // video through that model's variant; "Mixed" (null) keeps each frame's own
+  // (legacy) video.
+  const { data: videoVariants } = useSequenceVideoVariants(sequenceId);
+  const { activeVideoModel } = useActiveVideoModel(sequenceId);
+
+  const videoVariantsByFrame = useMemo(() => {
+    const map = new Map<string, FrameVariant[]>();
+    if (!videoVariants) return map;
+    for (const v of videoVariants) {
+      if (v.variantType !== 'video') continue;
+      const list = map.get(v.frameId) ?? [];
+      list.push(v);
+      map.set(v.frameId, list);
+    }
+    return map;
+  }, [videoVariants]);
 
   // Divergent alternates + realtime stale:detected wiring (issue #625).
   // Mirror the frames-list polling fallback so the corner-dot still updates
@@ -342,9 +370,10 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     );
   }, [imageVariants, curSelectedFrameId]);
 
-  // Reset model override when switching frames
+  // Reset model overrides when switching frames
   useEffect(() => {
     setImageModelOverride(null);
+    setVideoModelOverride(null);
   }, [curSelectedFrameId]);
 
   // Derive variant preview state from model override + variants
@@ -357,39 +386,191 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     return selectedFrameVariants.find((v) => v.model === effectiveImageModel);
   }, [selectedFrameVariants, effectiveImageModel]);
 
-  const { previewVariantUrl, playerBadgeMessage } = useMemo(() => {
-    const none = { previewVariantUrl: null, playerBadgeMessage: null };
-    if (selectedTab !== 'image-prompt' || !selectedFrame) return none;
+  // Video equivalent (#545): the selected scene's video variant for the
+  // effective video model (override → frame's own model). Excludes divergent /
+  // discarded alternates so only the primary per-model row is matched.
+  // `null` = unknown: a never-generated frame has no recorded `motionModel`, so
+  // we surface no model rather than silently asserting DEFAULT_VIDEO_MODEL
+  // (which would attribute a model the scene was never generated with).
+  const effectiveVideoModel =
+    videoModelOverride ??
+    (selectedFrame?.motionModel
+      ? safeImageToVideoModel(selectedFrame.motionModel, DEFAULT_VIDEO_MODEL)
+      : null);
 
-    if (
-      variantForSelectedModel?.status === 'completed' &&
-      variantForSelectedModel.url &&
-      variantForSelectedModel.url !== selectedFrame.thumbnailUrl
-    ) {
-      return {
-        previewVariantUrl: variantForSelectedModel.url,
-        playerBadgeMessage: 'Click Set Image to use',
-      };
-    }
+  const videoVariantForSelectedModel = useMemo(() => {
+    if (!curSelectedFrameId) return undefined;
+    return videoVariantsByFrame
+      .get(curSelectedFrameId)
+      ?.find(
+        (v) =>
+          v.model === effectiveVideoModel &&
+          v.divergedAt === null &&
+          v.discardedAt === null
+      );
+  }, [videoVariantsByFrame, curSelectedFrameId, effectiveVideoModel]);
 
-    const frameImageModel = safeTextToImageModel(
-      selectedFrame.imageModel,
-      DEFAULT_IMAGE_MODEL
+  // Per-model generation status for the selected scene (#545) — feeds the
+  // ✓/⟳/! markers in the image + video model dropdowns. Primary rows only
+  // (divergent/discarded alternates are excluded).
+  // The "set" model is the one whose variant is the frame's live primary
+  // (url match), falling back to the frame's recorded model for legacy frames
+  // with no variant row. It gets the distinct ✓-in-circle marker; other
+  // completed models show a plain ✓ (selectable, then "Set" to promote).
+  const imageModelStatuses = useMemo(() => {
+    const map = new Map<string, ModelGenerationStatus>();
+    const variants = (selectedFrameVariants ?? []).filter(
+      (v) => v.divergedAt === null && v.discardedAt === null
     );
-    if (effectiveImageModel !== frameImageModel && !variantForSelectedModel) {
-      return {
-        previewVariantUrl: null,
-        playerBadgeMessage: 'Click Generate Image to create',
-      };
+    const primaryUrl = selectedFrame?.thumbnailUrl ?? null;
+    const setModel = primaryUrl
+      ? (variants.find((v) => v.url === primaryUrl)?.model ??
+        selectedFrame?.imageModel ??
+        null)
+      : null;
+    for (const v of variants) {
+      map.set(v.model, v.model === setModel ? 'set' : v.status);
     }
-
-    return none;
+    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
+    return map;
   }, [
-    selectedTab,
-    selectedFrame,
-    effectiveImageModel,
-    variantForSelectedModel,
+    selectedFrameVariants,
+    selectedFrame?.thumbnailUrl,
+    selectedFrame?.imageModel,
   ]);
+
+  const videoModelStatuses = useMemo(() => {
+    const map = new Map<string, ModelGenerationStatus>();
+    if (!curSelectedFrameId) return map;
+    const variants = (
+      videoVariantsByFrame.get(curSelectedFrameId) ?? []
+    ).filter((v) => v.divergedAt === null && v.discardedAt === null);
+    const primaryUrl = selectedFrame?.videoUrl ?? null;
+    const setModel = primaryUrl
+      ? (variants.find((v) => v.url === primaryUrl)?.model ??
+        selectedFrame?.motionModel ??
+        null)
+      : null;
+    for (const v of variants) {
+      map.set(v.model, v.model === setModel ? 'set' : v.status);
+    }
+    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
+    return map;
+  }, [
+    videoVariantsByFrame,
+    curSelectedFrameId,
+    selectedFrame?.videoUrl,
+    selectedFrame?.motionModel,
+  ]);
+
+  const { previewVariantUrl, previewVariantVideoUrl, playerBadgeMessage } =
+    useMemo(() => {
+      const none = {
+        previewVariantUrl: null,
+        previewVariantVideoUrl: null,
+        playerBadgeMessage: null,
+      };
+      if (!selectedFrame) return none;
+
+      // Image preview (image-prompt tab)
+      if (selectedTab === 'image-prompt') {
+        if (
+          variantForSelectedModel?.status === 'completed' &&
+          variantForSelectedModel.url &&
+          variantForSelectedModel.url !== selectedFrame.thumbnailUrl
+        ) {
+          return {
+            ...none,
+            previewVariantUrl: variantForSelectedModel.url,
+            playerBadgeMessage: 'Click Set Image to use',
+          };
+        }
+        const frameImageModel = safeTextToImageModel(
+          selectedFrame.imageModel,
+          DEFAULT_IMAGE_MODEL
+        );
+        if (
+          effectiveImageModel !== frameImageModel &&
+          !variantForSelectedModel
+        ) {
+          return {
+            ...none,
+            playerBadgeMessage: 'Click Generate Image to create',
+          };
+        }
+        return none;
+      }
+
+      // Video preview (motion-prompt tab) — mirror of the image flow (#545)
+      if (selectedTab === 'motion-prompt') {
+        if (
+          videoVariantForSelectedModel?.status === 'completed' &&
+          videoVariantForSelectedModel.url &&
+          videoVariantForSelectedModel.url !== selectedFrame.videoUrl
+        ) {
+          return {
+            ...none,
+            previewVariantVideoUrl: videoVariantForSelectedModel.url,
+            playerBadgeMessage: 'Click Set Video to use',
+          };
+        }
+        const frameVideoModel = safeImageToVideoModel(
+          selectedFrame.motionModel,
+          DEFAULT_VIDEO_MODEL
+        );
+        // Only prompt when a specific model is picked (effectiveVideoModel) and
+        // differs from the frame's current one with no variant yet. A null
+        // (unknown) model means there's nothing specific to generate here.
+        if (
+          effectiveVideoModel &&
+          effectiveVideoModel !== frameVideoModel &&
+          !videoVariantForSelectedModel
+        ) {
+          return {
+            ...none,
+            playerBadgeMessage: 'Click Generate Motion to create',
+          };
+        }
+        return none;
+      }
+
+      return none;
+    }, [
+      selectedTab,
+      selectedFrame,
+      effectiveImageModel,
+      variantForSelectedModel,
+      effectiveVideoModel,
+      videoVariantForSelectedModel,
+    ]);
+
+  // Frames as shown by the player: when a video model is pinned, swap each
+  // frame's video for that model's variant (or clear it when the model hasn't
+  // produced one for that frame). Only the player display is remapped — every
+  // other consumer keeps the raw `frames` (generation status, selection, etc.).
+  const playerFrames = useMemo(() => {
+    // Until the variants query resolves, keep the legacy videos rather than
+    // blanking every frame (the map would find no variant and clear them all).
+    if (!frames || !activeVideoModel || !videoVariants) return frames;
+    return frames.map((f) => {
+      const variant = videoVariantsByFrame
+        .get(f.id)
+        ?.find(
+          (v) =>
+            v.model === activeVideoModel &&
+            v.divergedAt === null &&
+            v.discardedAt === null
+        );
+      if (!variant) {
+        return { ...f, videoUrl: null, videoStatus: 'pending' as const };
+      }
+      return {
+        ...f,
+        videoUrl: variant.status === 'completed' ? variant.url : null,
+        videoStatus: variant.status,
+      };
+    });
+  }, [frames, activeVideoModel, videoVariants, videoVariantsByFrame]);
 
   const setterForType = useCallback((type: RegenerationType) => {
     switch (type) {
@@ -703,12 +884,13 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
         <ScrollArea className="flex-1 px-4 md:px-8 gap-8 flex flex-col pb-20 md:pb-0 pt-4">
           <div className="flex flex-1 min-h-0 justify-center pb-8">
             <ScenePlayer
-              frames={frames}
+              frames={playerFrames}
               selectedFrameId={curSelectedFrameId}
               aspectRatio={aspectRatio}
               onSelectFrame={setSelectedFrameId}
               selectedTab={selectedTab}
               overrideImageUrl={previewVariantUrl}
+              overrideVideoUrl={previewVariantVideoUrl}
               badgeMessage={playerBadgeMessage}
               progressMessage={
                 generationState.phases.find((p) => p.status === 'active')
@@ -730,7 +912,11 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             onRegenerateStart={handleRegenerateStart}
             aspectRatio={aspectRatio}
             variantForSelectedModel={variantForSelectedModel}
+            videoVariantForSelectedModel={videoVariantForSelectedModel}
+            imageModelStatuses={imageModelStatuses}
+            videoModelStatuses={videoModelStatuses}
             onImageModelChange={setImageModelOverride}
+            onVideoModelChange={setVideoModelOverride}
             styleCategory={styleCategory}
             sequenceMotionModel={sequenceMotionModel}
             styleName={styleName}

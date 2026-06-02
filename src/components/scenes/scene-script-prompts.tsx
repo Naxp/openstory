@@ -1,6 +1,7 @@
 import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
 import { ImageModelSelector } from '@/components/model/image-model-selector';
 import { MotionModelSelector } from '@/components/model/motion-model-selector';
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
@@ -28,6 +29,7 @@ import {
   useGenerateVariants,
   useSelectVariant,
   useSetImageFromVariant,
+  useSetVideoFromVariant,
 } from '@/hooks/use-frames';
 import {
   type FrameStaleness,
@@ -111,7 +113,14 @@ type SceneScriptPromptsProps = {
   ) => void;
   aspectRatio?: AspectRatio;
   variantForSelectedModel?: FrameVariant;
+  /** The selected scene's video variant for the effective video model (#545). */
+  videoVariantForSelectedModel?: FrameVariant;
+  /** Per-scene generation status by model — drives the ✓/⟳/! dropdown markers (#545). */
+  imageModelStatuses?: Map<string, ModelGenerationStatus>;
+  videoModelStatuses?: Map<string, ModelGenerationStatus>;
   onImageModelChange?: (model: string) => void;
+  /** Per-scene video-model preview switch (#545), mirror of onImageModelChange. */
+  onVideoModelChange?: (model: string) => void;
   /** Current style category, used to show/hide style-restricted motion models */
   styleCategory?: string;
   /** Current style name, used in recommendation tooltips */
@@ -141,7 +150,11 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   onRegenerateStart,
   aspectRatio,
   variantForSelectedModel,
+  videoVariantForSelectedModel,
+  imageModelStatuses,
+  videoModelStatuses,
   onImageModelChange,
+  onVideoModelChange,
   styleCategory,
   styleName,
   recommendedImageModel,
@@ -200,6 +213,16 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     [onImageModelChange]
   );
 
+  // Picking a motion model both sets the regen target and (mirroring the image
+  // flow) previews that model's existing video variant for this scene (#545).
+  const handleMotionModelChange = useCallback(
+    (model: ImageToVideoModel) => {
+      setSelectedMotionModel(model);
+      onVideoModelChange?.(model);
+    },
+    [onVideoModelChange]
+  );
+
   // Script tab edit state — `undefined` means "no draft" (textarea mirrors the
   // saved value); a string means "user has typed". We reset to `undefined` when
   // the frame changes so switching scenes never shows the previous scene's draft.
@@ -221,6 +244,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const generateVariants = useGenerateVariants();
   const selectVariant = useSelectVariant();
   const setImageFromVariant = useSetImageFromVariant();
+  const setVideoFromVariant = useSetVideoFromVariant();
   const {
     needsBillingSetup: falNeedsBillingSetup,
     showGate: showFalGate,
@@ -481,6 +505,15 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const variantAlreadySet =
     variantIsCompleted && variantForSelectedModel.url === frame?.thumbnailUrl;
 
+  // Has the selected image model produced an image for this scene — drives
+  // Generate vs Regenerate (mirror of videoModelGenerated). Variant row (any
+  // status) ⇒ attempted; legacy fallback covers frames with a primary
+  // thumbnail but no variant row.
+  const imageModelGenerated =
+    !!variantForSelectedModel ||
+    (!!frame?.thumbnailUrl &&
+      (selectedImageModel || imageModel) === imageModel);
+
   const handleSetImageFromVariant = useCallback(async () => {
     if (!frame?.id || !frame.sequenceId || !selectedImageModel) return;
 
@@ -496,6 +529,33 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       });
     }
   }, [frame, selectedImageModel, setImageFromVariant]);
+
+  // Video equivalents (#545): drive the "Set Video" action from the selected
+  // scene's video variant for the picked model.
+  const videoVariantIsCompleted =
+    videoVariantForSelectedModel?.status === 'completed' &&
+    !!videoVariantForSelectedModel.url;
+  const videoVariantIsGenerating =
+    videoVariantForSelectedModel?.status === 'generating';
+  const videoVariantAlreadySet =
+    videoVariantIsCompleted &&
+    videoVariantForSelectedModel.url === frame?.videoUrl;
+
+  const handleSetVideoFromVariant = useCallback(async () => {
+    if (!frame?.id || !frame.sequenceId || !selectedMotionModel) return;
+
+    try {
+      await setVideoFromVariant.mutateAsync({
+        sequenceId: frame.sequenceId,
+        frameId: frame.id,
+        model: selectedMotionModel,
+      });
+    } catch (error) {
+      toast.error('Failed to set video', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }, [frame, selectedMotionModel, setVideoFromVariant]);
 
   const handleShortenPrompt = useCallback(async () => {
     setShortenStatus({ loading: false, error: null, success: null });
@@ -762,6 +822,17 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   ]);
 
   const motionModel = effectiveMotionModel;
+
+  // Has the *currently-selected* video model produced a video for this scene —
+  // drives Generate vs Regenerate (NOT whether the frame has any video, which
+  // could be from a different model). A variant row (any status) means it was
+  // attempted; the legacy fallback covers pre-#545 frames that carry a primary
+  // video but no variant row.
+  const videoModelGenerated =
+    !!videoVariantForSelectedModel ||
+    (!!frame?.videoUrl &&
+      effectiveMotionModel ===
+        safeImageToVideoModel(frame.motionModel, DEFAULT_VIDEO_MODEL));
   const maxPromptLength = IMAGE_TO_VIDEO_MODELS[motionModel].maxPromptLength;
   const isOverLimit = assembledPrompt.length > maxPromptLength;
 
@@ -975,6 +1046,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               disabled={isGenerating}
               recommendedImageModel={recommendedImageModel}
               styleName={styleName}
+              generatedStatuses={imageModelStatuses}
             />
           </div>
 
@@ -1087,7 +1159,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               )}
               {isGenerating || variantIsGenerating
                 ? 'Generating…'
-                : variantAlreadySet
+                : imageModelGenerated
                   ? 'Regenerate Image'
                   : 'Generate Image'}
             </Button>
@@ -1157,12 +1229,13 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             <span className="text-sm font-medium">Model</span>
             <MotionModelSelector
               selectedModel={effectiveMotionModel}
-              onModelChange={setSelectedMotionModel}
+              onModelChange={handleMotionModelChange}
               disabled={isGenerating || isGeneratingMotion}
               aspectRatio={aspectRatio}
               styleCategory={styleCategory}
               recommendedVideoModel={recommendedVideoModel}
               styleName={styleName}
+              generatedStatuses={videoModelStatuses}
             />
           </div>
 
@@ -1271,27 +1344,47 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
             </label>
           )}
 
-          {/* Regenerate button */}
-          <Button
-            onClick={() => {
-              if (falNeedsBillingSetup) {
-                showFalGate();
-                return;
+          {/* Motion action button — variant-aware (#545), mirror of the image
+              tab: when the picked model already has a completed video for this
+              scene, offer to Set it; otherwise Generate/Regenerate. */}
+          {videoVariantIsCompleted && !videoVariantAlreadySet ? (
+            <Button
+              onClick={() => void handleSetVideoFromVariant()}
+              disabled={setVideoFromVariant.isPending || !frame}
+              className="w-full"
+            >
+              {setVideoFromVariant.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {setVideoFromVariant.isPending ? 'Setting…' : 'Set Video'}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => {
+                if (falNeedsBillingSetup) {
+                  showFalGate();
+                  return;
+                }
+                void handleRegenerateMotion();
+              }}
+              disabled={
+                isGenerating ||
+                isGeneratingMotion ||
+                videoVariantIsGenerating ||
+                !frame
               }
-              void handleRegenerateMotion();
-            }}
-            disabled={isGenerating || isGeneratingMotion || !frame}
-            className="w-full"
-          >
-            {isGeneratingMotion && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            {isGeneratingMotion
-              ? 'Generating…'
-              : frame?.videoUrl
-                ? 'Regenerate Motion'
-                : 'Generate Motion'}
-          </Button>
+              className="w-full"
+            >
+              {(isGeneratingMotion || videoVariantIsGenerating) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {isGeneratingMotion || videoVariantIsGenerating
+                ? 'Generating…'
+                : videoModelGenerated
+                  ? 'Regenerate Motion'
+                  : 'Generate Motion'}
+            </Button>
+          )}
 
           {/* Copy button for assembled prompt */}
           <Button
@@ -1340,6 +1433,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               disabled={isGenerating || isGeneratingSceneVariants}
               recommendedImageModel={recommendedImageModel}
               styleName={styleName}
+              generatedStatuses={imageModelStatuses}
             />
           </div>
 

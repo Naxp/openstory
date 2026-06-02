@@ -84,10 +84,9 @@ export const generateFramesFn = createServerFn({ method: 'POST' })
           DEFAULT_IMAGE_MODEL
         ),
         aspectRatio: sequence.aspectRatio,
-        videoModel: safeImageToVideoModel(
-          sequence.videoModel,
-          DEFAULT_VIDEO_MODEL
-        ),
+        videoModels: [
+          safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL),
+        ],
       }),
       {
         providers: ['fal', 'openrouter'],
@@ -491,7 +490,13 @@ export const setImageFromVariantFn = createServerFn({ method: 'POST' })
       thumbnailStatus: 'completed',
       thumbnailError: null,
       imageModel: data.model,
-      // Clear stale video fields — video must be regenerated
+      // Adopt the promoted variant's input hash so the staleness check (which
+      // re-derives the current hash with the now-updated imageModel) compares
+      // like-for-like. Without this it diffs the new model's hash against the
+      // OLD model's stored hash and always reports a false "stale". (#545)
+      thumbnailInputHash: variant.inputHash,
+      // Clear stale video fields — the video was generated from the previous
+      // image, so it must be regenerated.
       videoUrl: null,
       videoPath: null,
       videoStatus: 'pending',
@@ -501,4 +506,48 @@ export const setImageFromVariantFn = createServerFn({ method: 'POST' })
     });
 
     return { frameId: frame.id, thumbnailUrl: variant.url };
+  });
+
+const setVideoFromVariantInputSchema = z.object({
+  sequenceId: ulidSchema,
+  frameId: ulidSchema,
+  model: z.string().min(1),
+});
+
+/**
+ * Promote a model's video variant to the frame's primary video (#545) — the
+ * motion analog of `setImageFromVariantFn`. Copies the variant's url/path into
+ * `frames.video*` so the player and exports use it, non-destructively (the
+ * variant row is retained, so the viewer can switch back). Unlike the image
+ * version there is nothing downstream to invalidate — video is the terminal
+ * artifact.
+ */
+export const setVideoFromVariantFn = createServerFn({ method: 'POST' })
+  .middleware([frameAccessMiddleware])
+  .inputValidator(zodValidator(setVideoFromVariantInputSchema))
+  .handler(async ({ context, data }) => {
+    const { frame } = context;
+
+    const variant = await context.scopedDb.frameVariants.getByFrameAndModel(
+      frame.id,
+      'video',
+      data.model
+    );
+
+    if (!variant || variant.status !== 'completed' || !variant.url) {
+      throw new Error('No completed video variant found for this model');
+    }
+
+    await context.scopedDb.frames.update(frame.id, {
+      videoUrl: variant.url,
+      videoPath: variant.storagePath,
+      videoStatus: 'completed',
+      videoError: null,
+      videoGeneratedAt: new Date(),
+      videoInputHash: variant.inputHash,
+      durationMs: variant.durationMs,
+      motionModel: data.model,
+    });
+
+    return { frameId: frame.id, videoUrl: variant.url };
   });

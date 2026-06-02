@@ -15,6 +15,8 @@ import {
   promoteVariantFn,
   discardVariantFn,
   undiscardVariantFn,
+  getSequenceVideoModelsFn,
+  getSequenceVideoVariantsFn,
 } from '@/functions/frames';
 import {
   generateFramesFn,
@@ -22,6 +24,7 @@ import {
   generateFrameVariantsFn,
   selectFrameVariantFn,
   setImageFromVariantFn,
+  setVideoFromVariantFn,
 } from '@/functions/frame-image';
 import type { GenerateVariantInput as SchemaGenerateVariantInput } from '@/lib/schemas/frame.schemas';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
@@ -80,6 +83,35 @@ export const frameKeys = {
   divergentVariants: (sequenceId: string) =>
     [...frameKeys.all, 'divergent-variants', sequenceId] as const,
 };
+
+// Distinct video models that have generated a variant for this sequence (#545).
+// Drives the header video-model dropdown. The realtime video:progress handler
+// invalidates `['sequence-video-models', sequenceId]`, matching this key's tail.
+export function useSequenceVideoModels(sequenceId?: string) {
+  return useQuery<string[]>({
+    queryKey: ['sequence-video-models', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceVideoModelsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
+
+// All video FrameVariant rows for a sequence (#545). Used by the scenes view to
+// resolve each frame's displayed video through the active model's variant.
+export function useSequenceVideoVariants(sequenceId?: string) {
+  return useQuery<FrameVariant[]>({
+    queryKey: ['sequence-video-variants', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceVideoVariantsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
 
 // Hook to fetch the live (non-discarded) divergent alternates for a sequence.
 // The corner-dot indicator and inline banner both filter this list per frame.
@@ -666,6 +698,69 @@ export function useSetImageFromVariant() {
       });
       await queryClient.invalidateQueries({
         queryKey: frameKeys.list(sequenceId),
+      });
+    },
+  });
+}
+
+// Hook for setting a frame's video from an existing variant (#545) — the
+// motion analog of useSetImageFromVariant. Promotes a model's video variant to
+// the primary frames.video* columns and refreshes the video-variant cache.
+export function useSetVideoFromVariant() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { frameId: string; videoUrl: string },
+    Error,
+    { sequenceId: string; frameId: string; model: string }
+  >({
+    mutationFn: async (input) => {
+      return setVideoFromVariantFn({ data: input });
+    },
+    onMutate: async ({ sequenceId, frameId }) => {
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.detail(frameId),
+      });
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+    },
+    onSuccess: async (data, { sequenceId, frameId, model }) => {
+      queryClient.setQueryData<Frame>(frameKeys.detail(frameId), (oldFrame) => {
+        if (!oldFrame) return oldFrame;
+        return {
+          ...oldFrame,
+          videoUrl: data.videoUrl,
+          videoStatus: 'completed' as const,
+          motionModel: model,
+        };
+      });
+
+      queryClient.setQueryData<Frame[]>(
+        frameKeys.list(sequenceId),
+        (oldFrames) => {
+          if (!oldFrames) return oldFrames;
+          return oldFrames.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  videoUrl: data.videoUrl,
+                  videoStatus: 'completed' as const,
+                  motionModel: model,
+                }
+              : f
+          );
+        }
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.detail(frameId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['sequence-video-variants', sequenceId],
       });
     },
   });
