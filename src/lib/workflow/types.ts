@@ -706,6 +706,14 @@ export interface MusicWorkflowInput extends SequenceWorkflowContext {
   duration: number;
   /** Audio model to use */
   model?: keyof typeof AUDIO_MODELS;
+  /**
+   * Whether this model owns the live `sequences.music*` columns (#546). In a
+   * multi-model fan-out only the primary (audioModels[0]) writes the shared
+   * sequence row + drives `musicStatus`; secondary models persist only their
+   * own `sequence_music_variants` row and emit model-scoped events. Defaults
+   * to true for single-model / legacy callers that don't set it.
+   */
+  isPrimary?: boolean;
 }
 
 export interface MusicWorkflowResult {

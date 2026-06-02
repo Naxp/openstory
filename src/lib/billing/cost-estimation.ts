@@ -119,15 +119,19 @@ export function estimateStoryboardCost(opts: {
   videoModels?: ImageToVideoModel[];
   videoDurationSeconds?: number;
   autoGenerateMusic?: boolean;
-  audioModel?: AudioModel;
-  /** Number of audio models selected (multiplies per-sequence music cost) */
-  audioModelCount?: number;
+  /**
+   * Audio models selected for the per-sequence music track (#546). Each model
+   * is priced individually from its own parameters — audio models have
+   * genuinely different rates (e.g. ElevenLabs per-minute vs ACE-Step
+   * per-second), so a uniform multiplier would mis-estimate a mixed selection.
+   * First is primary; one track per model spans the sequence.
+   */
+  audioModels?: AudioModel[];
   /** Total sequence duration in seconds (one music track spans the sequence) */
   audioDurationSeconds?: number;
 }): Microdollars {
   const sceneCount = opts.estimatedSceneCount ?? DEFAULT_ESTIMATED_SCENE_COUNT;
   const imageModelCount = opts.imageModelCount ?? 1;
-  const audioModelCount = opts.audioModelCount ?? 1;
 
   // LLM calls: script analysis + character bible + location bible (~3 calls)
   const llmCost = estimateLLMCost(3);
@@ -164,14 +168,15 @@ export function estimateStoryboardCost(opts: {
     }
   }
 
-  // Optional music generation — one track per sequence per audio model.
-  if (opts.autoGenerateMusic && opts.audioModel) {
+  // Optional music generation — one track per sequence per audio model. Sum
+  // each selected model's own cost (priced from its parameters) rather than
+  // scaling the primary's rate by a count — a mixed selection has genuinely
+  // different per-model costs (mirrors the per-model video costing above).
+  if (opts.autoGenerateMusic && opts.audioModels?.length) {
     const audioDuration = opts.audioDurationSeconds ?? sceneCount * 5;
-    const perTrackMusic = estimateAudioCost(opts.audioModel, audioDuration);
-    totalCost = addMicros(
-      totalCost,
-      multiplyMicros(perTrackMusic, audioModelCount)
-    );
+    for (const model of opts.audioModels) {
+      totalCost = addMicros(totalCost, estimateAudioCost(model, audioDuration));
+    }
   }
 
   return totalCost;

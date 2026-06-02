@@ -156,8 +156,7 @@ export const createSequenceFn = createServerFn({ method: 'POST' })
         // Music only actually generates when motion is also on (it spawns from
         // inside motion-batch), so don't charge for music tracks that won't run.
         autoGenerateMusic: autoGenerateMotion && autoGenerateMusic,
-        audioModel: primaryAudioModel,
-        audioModelCount: audioModels.length,
+        audioModels,
       }),
       {
         providers: ['fal', 'openrouter'],
@@ -456,10 +455,6 @@ export function buildSceneSummaries(frames: Frame[]): MusicSceneSummary[] {
 }
 
 /**
- * Trigger sequence-level music generation.
- * Uses pre-generated prompt/tags when available, otherwise builds from frame audio specs.
- */
-/**
  * Distinct audio models that have generated a track for this sequence (#546).
  * Drives the header audio-model dropdown.
  */
@@ -480,6 +475,10 @@ export const getSequenceAudioVariantsFn = createServerFn({ method: 'GET' })
     );
   });
 
+/**
+ * Trigger sequence-level music generation.
+ * Uses pre-generated prompt/tags when available, otherwise builds from frame audio specs.
+ */
 export const generateMusicFn = createServerFn({ method: 'POST' })
   .middleware([sequenceAccessMiddleware])
   .inputValidator(
