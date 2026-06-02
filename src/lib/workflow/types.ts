@@ -128,6 +128,8 @@ export interface StoryboardWorkflowInput extends SequenceWorkflowContext {
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
+  /** Multiple audio models for variant generation (first is primary) */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
   /** Talent IDs suggested by user for AI-assisted casting */
   suggestedTalentIds?: string[];
   /** Location IDs suggested by user for visual consistency */
@@ -152,6 +154,8 @@ export interface AnalyzeScriptWorkflowInput extends SequenceWorkflowContext {
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
+  /** Multiple audio models for variant generation (first is primary) */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
   /** Talent IDs suggested by user for AI-assisted casting */
   suggestedTalentIds?: string[];
   /** Location IDs suggested by user for visual consistency */
@@ -702,6 +706,14 @@ export interface MusicWorkflowInput extends SequenceWorkflowContext {
   duration: number;
   /** Audio model to use */
   model?: keyof typeof AUDIO_MODELS;
+  /**
+   * Whether this model owns the live `sequences.music*` columns (#546). In a
+   * multi-model fan-out only the primary (audioModels[0]) writes the shared
+   * sequence row + drives `musicStatus`; secondary models persist only their
+   * own `sequence_music_variants` row and emit model-scoped events. Defaults
+   * to true for single-model / legacy callers that don't set it.
+   */
+  isPrimary?: boolean;
 }
 
 export interface MusicWorkflowResult {
@@ -758,6 +770,14 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
     duration: number;
     model?: keyof typeof AUDIO_MODELS;
   };
+  /**
+   * Audio models to generate for the sequence (#546). First is primary (its
+   * track also lands on the live `sequences.music*` columns); the rest are
+   * alternates stored as separate primary rows in `sequence_music_variants`
+   * keyed by (sequenceId, model). When absent, falls back to `music.model`
+   * (single-model behaviour). Each model reuses `music.prompt/tags/duration`.
+   */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
 }
 
 /**

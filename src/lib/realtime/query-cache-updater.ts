@@ -218,17 +218,45 @@ export function updateQueryCacheFromEvent(
     case 'generation.audio:progress': {
       const status = data.status;
       const audioUrl = getOptionalString(data, 'audioUrl');
+      const model = getOptionalString(data, 'model');
       if (isValidMusicStatus(status)) {
         queryClient.setQueryData<Sequence>(
           sequenceKeys.detail(sequenceId),
-          (old) =>
-            old
-              ? {
-                  ...old,
-                  musicStatus: status,
-                  ...(audioUrl ? { musicUrl: audioUrl } : {}),
-                }
-              : old
+          (old) => {
+            if (!old) return old;
+            // Only the primary model owns the live `sequences.music*` columns.
+            // In a multi-model fan-out (#546) secondary models emit model-scoped
+            // events purely to refresh the per-model queries below — applying
+            // their status/url here would clobber the primary (last-writer-wins,
+            // and a secondary failure would mask a working primary track). The
+            // primary's `set-generating-status` writes `musicModel` first, so
+            // match against it; a missing `model` (single-model / legacy
+            // emitters) is treated as the primary.
+            if (model && old.musicModel && model !== old.musicModel) {
+              return old;
+            }
+            return {
+              ...old,
+              musicStatus: status,
+              ...(audioUrl ? { musicUrl: audioUrl } : {}),
+            };
+          }
+        );
+      }
+      // Refresh per-model audio data so the header model dropdown and the
+      // music-tab track switcher stay current (#546). Audio is sequence-level
+      // (sequence_music_variants), so these are separate queries from the frame
+      // image/video variant ones.
+      if (status === 'completed' || status === 'failed') {
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-audio-variants', sequenceId],
+          `audio-variants:${sequenceId}`
+        );
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-audio-models', sequenceId],
+          `audio-models:${sequenceId}`
         );
       }
       break;

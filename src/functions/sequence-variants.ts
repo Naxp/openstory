@@ -102,6 +102,7 @@ export const promoteSequenceMusicVariantFn = createServerFn({ method: 'POST' })
         'generation.audio:progress',
         {
           status: 'completed',
+          model: variant.model,
           ...(updatedSequence.musicUrl
             ? { audioUrl: updatedSequence.musicUrl }
             : {}),
@@ -112,6 +113,63 @@ export const promoteSequenceMusicVariantFn = createServerFn({ method: 'POST' })
     }
 
     return { sequence: updatedSequence, variantId: variant.id };
+  });
+
+// ── Set music model (non-destructive) ────────────────────────────────────────
+
+const setMusicFromVariantInputSchema = z.object({
+  sequenceId: ulidSchema,
+  model: z.string().min(1),
+});
+
+/**
+ * Switch the sequence's live primary music to the selected model's track
+ * ("Set Music"), the per-sequence analog of `setVideoFromVariantFn`. Resolves
+ * the model to its own live (non-divergent, non-discarded) completed variant
+ * and copies it onto `sequences.music*` without discarding the row, so the
+ * model stays available to switch back to. Emits a terminal `audio:progress`
+ * so existing listeners refetch the sequence.
+ */
+export const setMusicFromVariantFn = createServerFn({ method: 'POST' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(zodValidator(setMusicFromVariantInputSchema))
+  .handler(async ({ data, context }) => {
+    const { sequence, scopedDb } = context;
+    const variants = await scopedDb.sequenceVariants.listMusicBySequence(
+      sequence.id
+    );
+    const variant = variants.find(
+      (v) =>
+        v.model === data.model &&
+        v.status === 'completed' &&
+        v.divergedAt === null &&
+        v.discardedAt === null &&
+        v.url
+    );
+    if (!variant) {
+      throw new Error('No completed track found for this model');
+    }
+
+    const updatedSequence = await scopedDb.sequenceVariants.setMusicFromVariant(
+      variant.id
+    );
+
+    try {
+      await getGenerationChannel(sequence.id).emit(
+        'generation.audio:progress',
+        {
+          status: 'completed',
+          model: variant.model,
+          ...(updatedSequence.musicUrl
+            ? { audioUrl: updatedSequence.musicUrl }
+            : {}),
+        }
+      );
+    } catch (error) {
+      logger.error('realtime emit failed', { err: error });
+    }
+
+    return { sequence: updatedSequence, model: variant.model };
   });
 
 // ── Discard / Undiscard ─────────────────────────────────────────────────────

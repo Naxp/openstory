@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { TextToImageModel, ImageToVideoModel } from '@/lib/ai/models';
+import {
+  type AudioModel,
+  type ImageToVideoModel,
+  type TextToImageModel,
+} from '@/lib/ai/models';
 import {
   estimateImageCost,
   estimateStoryboardCost,
@@ -9,6 +13,11 @@ import {
 const IMAGE_MODEL: TextToImageModel = 'nano_banana_2';
 const VIDEO_A: ImageToVideoModel = 'kling_v3_pro';
 const VIDEO_B: ImageToVideoModel = 'veo3_1';
+// Two audio models with genuinely different pricing (ElevenLabs is billed
+// per-minute, ACE-Step per-second) so a mixed selection can't be a flat
+// multiple of either.
+const AUDIO_A: AudioModel = 'elevenlabs_music';
+const AUDIO_B: AudioModel = 'ace_step_1_5';
 const SCENE_COUNT = 8;
 const DURATION = 5;
 
@@ -21,6 +30,16 @@ const base = {
 /** Per-frame motion cost a model contributes across the whole storyboard. */
 const motionContribution = (model: ImageToVideoModel) =>
   Number(estimateVideoCost(model, DURATION)) * SCENE_COUNT;
+
+/** Per-sequence music cost a single audio model adds to the storyboard. */
+const audioContribution = (model: AudioModel) =>
+  Number(
+    estimateStoryboardCost({
+      ...base,
+      autoGenerateMusic: true,
+      audioModels: [model],
+    })
+  ) - Number(estimateStoryboardCost({ ...base, autoGenerateMusic: false }));
 
 describe('estimateStoryboardCost', () => {
   it('adds exactly one extra per-frame image pass per image model', () => {
@@ -80,6 +99,73 @@ describe('estimateStoryboardCost', () => {
     const flatMultiplierEstimate = motionContribution(VIDEO_A) * 2;
     expect(mixed - noMotion).toBe(trueSum);
     expect(mixed - noMotion).not.toBe(flatMultiplierEstimate);
+  });
+
+  it('sums each selected audio model’s own per-sequence music cost', () => {
+    const noMusic = Number(
+      estimateStoryboardCost({ ...base, autoGenerateMusic: false })
+    );
+    const oneModel = Number(
+      estimateStoryboardCost({
+        ...base,
+        autoGenerateMusic: true,
+        audioModels: [AUDIO_A],
+      })
+    );
+    const twoModels = Number(
+      estimateStoryboardCost({
+        ...base,
+        autoGenerateMusic: true,
+        audioModels: [AUDIO_A, AUDIO_B],
+      })
+    );
+
+    expect(oneModel - noMusic).toBe(audioContribution(AUDIO_A));
+    expect(twoModels - noMusic).toBe(
+      audioContribution(AUDIO_A) + audioContribution(AUDIO_B)
+    );
+  });
+
+  it('prices a mixed audio selection per model, not as a flat multiple of the primary', () => {
+    // Guards the regression where every audio model was priced at the primary's
+    // rate × count. These two models have different pricing, so the true sum
+    // diverges from the flat-multiplier estimate.
+    expect(audioContribution(AUDIO_A)).not.toBe(audioContribution(AUDIO_B));
+
+    const noMusic = Number(
+      estimateStoryboardCost({ ...base, autoGenerateMusic: false })
+    );
+    const mixed = Number(
+      estimateStoryboardCost({
+        ...base,
+        autoGenerateMusic: true,
+        audioModels: [AUDIO_A, AUDIO_B],
+      })
+    );
+
+    const trueSum = audioContribution(AUDIO_A) + audioContribution(AUDIO_B);
+    const flatMultiplierEstimate = audioContribution(AUDIO_A) * 2;
+    expect(mixed - noMusic).toBe(trueSum);
+    expect(mixed - noMusic).not.toBe(flatMultiplierEstimate);
+  });
+
+  it('adds no music cost when music is off or no models are selected', () => {
+    const noMusic = Number(
+      estimateStoryboardCost({ ...base, autoGenerateMusic: false })
+    );
+    // autoGenerateMusic true but no models / empty list → nothing to bill.
+    expect(
+      Number(estimateStoryboardCost({ ...base, autoGenerateMusic: true }))
+    ).toBe(noMusic);
+    expect(
+      Number(
+        estimateStoryboardCost({
+          ...base,
+          autoGenerateMusic: true,
+          audioModels: [],
+        })
+      )
+    ).toBe(noMusic);
   });
 
   it('adds no motion cost when motion is off or no models are selected', () => {

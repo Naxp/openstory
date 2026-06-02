@@ -144,6 +144,12 @@ export const realtimeSchema = {
       frameId: z.string().optional(),
       status: z.enum(['pending', 'generating', 'completed', 'failed']),
       audioUrl: z.string().optional(),
+      // Which audio model produced this update. Optional for backward compat
+      // with emitters that predate multi-model audio (#546). The cache updater
+      // uses it to scope live `sequences.music*` writes to the primary model
+      // (so a secondary model can't clobber the primary) and to refresh the
+      // per-model audio queries.
+      model: z.string().optional(),
     }),
 
     // Character sheet generation progress (during recasting)

@@ -46,8 +46,13 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
 
     const { sequenceId, teamId } = input;
     const model = input.model || DEFAULT_MUSIC_MODEL;
+    // Only the primary model owns the live `sequences.music*` columns. In a
+    // multi-model fan-out (#546) secondary models persist only their own
+    // variant row and emit model-scoped events; writing the shared sequence row
+    // would make `musicStatus`/`musicUrl` last-writer-wins across siblings.
+    const isPrimary = input.isPrimary ?? true;
 
-    if (sequenceId) {
+    if (sequenceId && isPrimary) {
       await step.do('set-generating-status', async () => {
         await scopedDb.sequence(sequenceId).updateMusicFields({
           musicStatus: 'generating',
@@ -59,6 +64,7 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
           'generation.audio:progress',
           {
             status: 'generating',
+            model,
           }
         );
       });
@@ -162,23 +168,29 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
 
       if (writeResult.divergent) {
         // Divergent run: prior primary on `sequences.music*` stays
-        // authoritative. Reset musicStatus from 'generating' (set above) back
-        // to 'completed' and emit a terminal event so the UI doesn't hang on
-        // a spinner. The alternate is preserved in `sequence_music_variants`
-        // for future surfacing.
+        // authoritative. For the primary model, reset musicStatus from
+        // 'generating' (set above) back to 'completed'; secondary models never
+        // touched the shared row. Either way emit a terminal event so the UI
+        // doesn't hang on a spinner. The alternate is preserved in
+        // `sequence_music_variants` for future surfacing.
         const divergedVariantId = writeResult.variant.id;
         await step.do('update-sequence-music-divergent', async () => {
           const seq = scopedDb.sequence(sequenceId);
-          const status = await seq.getMusicStatus();
-          await seq.updateMusicFields({
-            musicStatus: 'completed',
-            musicError: null,
-          });
+          let liveMusicUrl: string | undefined;
+          if (isPrimary) {
+            const status = await seq.getMusicStatus();
+            await seq.updateMusicFields({
+              musicStatus: 'completed',
+              musicError: null,
+            });
+            liveMusicUrl = status?.musicUrl ?? undefined;
+          }
 
           const channel = getGenerationChannel(sequenceId);
           await channel.emit('generation.audio:progress', {
             status: 'completed',
-            ...(status?.musicUrl ? { audioUrl: status.musicUrl } : {}),
+            model,
+            ...(liveMusicUrl ? { audioUrl: liveMusicUrl } : {}),
           });
           await channel.emit('generation.stale:detected', {
             entityType: 'sequence',
@@ -193,19 +205,25 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
         );
       } else {
         await step.do('update-sequence-music', async () => {
-          await scopedDb.sequence(sequenceId).updateMusicFields({
-            musicUrl: audioUrl,
-            musicPath: storageResult.path,
-            musicStatus: 'completed',
-            musicGeneratedAt: new Date(),
-            musicError: null,
-          });
+          // Primary owns the live columns; secondary models only emit a
+          // model-scoped event so the per-model audio queries refresh without
+          // clobbering the primary's `sequences.music*`.
+          if (isPrimary) {
+            await scopedDb.sequence(sequenceId).updateMusicFields({
+              musicUrl: audioUrl,
+              musicPath: storageResult.path,
+              musicStatus: 'completed',
+              musicGeneratedAt: new Date(),
+              musicError: null,
+            });
+          }
 
           await getGenerationChannel(sequenceId).emit(
             'generation.audio:progress',
             {
               status: 'completed',
               audioUrl: audioUrl,
+              model,
             }
           );
         });
@@ -227,18 +245,23 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
     scopedDb: ScopedDb;
   }): Promise<void> {
     const input = event.payload;
+    const model = input.model || DEFAULT_MUSIC_MODEL;
+    const isPrimary = input.isPrimary ?? true;
     if (input.sequenceId) {
-      const failSeq = scopedDb.sequence(input.sequenceId);
-
-      await failSeq.updateMusicFields({
-        musicStatus: 'failed',
-        musicError: error,
-      });
+      // Only the primary model owns the live music status — a secondary model's
+      // failure must not clobber a successful primary track (#546). Secondary
+      // failures still emit a model-scoped event so per-model queries refresh.
+      if (isPrimary) {
+        await scopedDb.sequence(input.sequenceId).updateMusicFields({
+          musicStatus: 'failed',
+          musicError: error,
+        });
+      }
 
       try {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.audio:progress',
-          { status: 'failed' }
+          { status: 'failed', model }
         );
       } catch (emitError) {
         logger.error(
