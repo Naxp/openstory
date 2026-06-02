@@ -1,0 +1,288 @@
+/**
+ * Behavioural tests for the motion-workflow dual-write helpers (#545).
+ *
+ * `MotionWorkflow` writes each model's output to the legacy `frames.video*`
+ * columns AND a per-model `frame_variants` row. These tests pin the three
+ * states the workflow transitions through:
+ *
+ *   - generating: open the variant row + stamp the legacy columns
+ *   - completed:  stamp both, clearing any prior error (frame-deleted short-circuit)
+ *   - failed:     record the error on both — via UPSERT so a pre-generating
+ *                 failure still lands a visible `failed` variant
+ */
+
+import { describe, expect, it } from 'vitest';
+import type { NewFrame, NewFrameVariant } from '@/lib/db/schema';
+import type { VariantType } from '@/lib/db/schema/frame-variants';
+import {
+  buildMotionCompletedWrites,
+  buildMotionFailedWrites,
+  buildMotionGeneratingWrites,
+  type MotionVideoProgressPayload,
+  persistMotionCompletion,
+  persistMotionFailure,
+  type PersistMotionScopedDb,
+} from './motion-workflow-persist';
+
+const upload = {
+  url: 'https://r2/seq/frame-veo.mp4',
+  path: 'team/seq/frame.mp4',
+};
+const NOW = new Date('2026-06-02T00:00:00Z');
+
+describe('buildMotionGeneratingWrites', () => {
+  it('stamps the legacy columns with the model + run id and opens the variant row', () => {
+    const writes = buildMotionGeneratingWrites({
+      model: 'veo3',
+      workflowRunId: 'run-1',
+    });
+    expect(writes.frame).toEqual({
+      videoStatus: 'generating',
+      videoWorkflowRunId: 'run-1',
+      motionModel: 'veo3',
+    });
+    expect(writes.variant).toEqual({
+      status: 'generating',
+      workflowRunId: 'run-1',
+    });
+  });
+});
+
+describe('buildMotionCompletedWrites', () => {
+  it('stamps the final video on both the frame and the variant and clears errors', () => {
+    const writes = buildMotionCompletedWrites({
+      upload,
+      durationMs: 5000,
+      promptHash: 'prompt-abc',
+      generatedAt: NOW,
+    });
+    expect(writes.frame).toEqual({
+      videoPath: upload.path,
+      videoUrl: upload.url,
+      durationMs: 5000,
+      videoStatus: 'completed',
+      videoGeneratedAt: NOW,
+      videoError: null,
+    });
+    expect(writes.variant).toEqual({
+      url: upload.url,
+      storagePath: upload.path,
+      status: 'completed',
+      generatedAt: NOW,
+      error: null,
+      durationMs: 5000,
+      promptHash: 'prompt-abc',
+    });
+  });
+
+  it('carries a null promptHash through unchanged', () => {
+    const writes = buildMotionCompletedWrites({
+      upload,
+      durationMs: 5000,
+      promptHash: null,
+      generatedAt: NOW,
+    });
+    expect(writes.variant.promptHash).toBeNull();
+  });
+});
+
+describe('buildMotionFailedWrites', () => {
+  it('records the error on both the frame and the variant', () => {
+    const writes = buildMotionFailedWrites({ error: 'fal 500' });
+    expect(writes.frame).toEqual({
+      videoStatus: 'failed',
+      videoError: 'fal 500',
+    });
+    expect(writes.variant).toEqual({ status: 'failed', error: 'fal 500' });
+  });
+});
+
+type FrameUpdateCall = { frameId: string; data: Partial<NewFrame> };
+type VariantUpdateCall = {
+  frameId: string;
+  variantType: VariantType;
+  model: string;
+  data: Partial<NewFrameVariant>;
+};
+type CallName =
+  | 'frames.update'
+  | 'frameVariants.updateByFrameAndModel'
+  | 'frameVariants.upsert';
+
+function buildScopedDbSpy(opts: { frameMissing?: boolean } = {}): {
+  scopedDb: PersistMotionScopedDb;
+  framesUpdates: FrameUpdateCall[];
+  variantsUpdates: VariantUpdateCall[];
+  variantsUpserts: NewFrameVariant[];
+  callOrder: CallName[];
+} {
+  const framesUpdates: FrameUpdateCall[] = [];
+  const variantsUpdates: VariantUpdateCall[] = [];
+  const variantsUpserts: NewFrameVariant[] = [];
+  const callOrder: CallName[] = [];
+  const scopedDb: PersistMotionScopedDb = {
+    frames: {
+      update: async (frameId, data) => {
+        framesUpdates.push({ frameId, data });
+        callOrder.push('frames.update');
+        if (opts.frameMissing) return undefined;
+        return { id: frameId };
+      },
+    },
+    frameVariants: {
+      updateByFrameAndModel: async (frameId, variantType, model, data) => {
+        variantsUpdates.push({ frameId, variantType, model, data });
+        callOrder.push('frameVariants.updateByFrameAndModel');
+        return { id: 'v1' };
+      },
+      upsert: async (data) => {
+        variantsUpserts.push(data);
+        callOrder.push('frameVariants.upsert');
+        return { id: 'v2' };
+      },
+    },
+  };
+  return {
+    scopedDb,
+    framesUpdates,
+    variantsUpdates,
+    variantsUpserts,
+    callOrder,
+  };
+}
+
+describe('persistMotionCompletion', () => {
+  it('stamps the legacy columns + this model variant, emits completed, returns the url', async () => {
+    const { scopedDb, framesUpdates, variantsUpdates, callOrder } =
+      buildScopedDbSpy();
+    const emits: Array<{ event: string; payload: MotionVideoProgressPayload }> =
+      [];
+
+    const outcome = await persistMotionCompletion({
+      scopedDb,
+      frameId: 'f1',
+      model: 'veo3',
+      upload,
+      durationMs: 5000,
+      promptHash: 'prompt-abc',
+      emit: async (event, payload) => {
+        emits.push({ event, payload });
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'completed', videoUrl: upload.url });
+    expect(callOrder).toEqual([
+      'frames.update',
+      'frameVariants.updateByFrameAndModel',
+    ]);
+
+    const [frameUpdate] = framesUpdates;
+    if (!frameUpdate) throw new Error('expected frames.update call');
+    expect(frameUpdate.data.videoStatus).toBe('completed');
+    expect(frameUpdate.data.videoUrl).toBe(upload.url);
+    expect(frameUpdate.data.videoError).toBeNull();
+
+    const [variantUpdate] = variantsUpdates;
+    if (!variantUpdate) throw new Error('expected variant update call');
+    expect(variantUpdate.frameId).toBe('f1');
+    expect(variantUpdate.variantType).toBe('video');
+    expect(variantUpdate.model).toBe('veo3');
+    expect(variantUpdate.data.status).toBe('completed');
+    expect(variantUpdate.data.url).toBe(upload.url);
+
+    expect(emits).toEqual([
+      {
+        event: 'generation.video:progress',
+        payload: {
+          frameId: 'f1',
+          status: 'completed',
+          videoUrl: upload.url,
+          model: 'veo3',
+        },
+      },
+    ]);
+  });
+
+  it('frame deleted mid-flight: short-circuits without touching frame_variants or emitting', async () => {
+    const { scopedDb, framesUpdates, variantsUpdates, callOrder } =
+      buildScopedDbSpy({ frameMissing: true });
+    const emits: MotionVideoProgressPayload[] = [];
+
+    const outcome = await persistMotionCompletion({
+      scopedDb,
+      frameId: 'f1',
+      model: 'veo3',
+      upload,
+      durationMs: 5000,
+      promptHash: null,
+      emit: async (_event, payload) => {
+        emits.push(payload);
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'frame-deleted' });
+    expect(framesUpdates.length).toBe(1);
+    expect(variantsUpdates).toEqual([]);
+    expect(emits).toEqual([]);
+    expect(callOrder).toEqual(['frames.update']);
+  });
+});
+
+describe('persistMotionFailure', () => {
+  it('records failed on the legacy columns and UPSERTS the variant (not update), then emits', async () => {
+    const {
+      scopedDb,
+      framesUpdates,
+      variantsUpdates,
+      variantsUpserts,
+      callOrder,
+    } = buildScopedDbSpy();
+    const emits: Array<{ event: string; payload: MotionVideoProgressPayload }> =
+      [];
+
+    await persistMotionFailure({
+      scopedDb,
+      frameId: 'f1',
+      sequenceId: 'seq1',
+      model: 'veo3',
+      error: 'Insufficient credits for motion generation',
+      workflowRunId: 'run-9',
+      emit: async (event, payload) => {
+        emits.push({ event, payload });
+      },
+    });
+
+    // Critically: upsert, NOT updateByFrameAndModel — so a failure that
+    // happened before the generating row was written still lands a row.
+    expect(callOrder).toEqual(['frames.update', 'frameVariants.upsert']);
+    expect(variantsUpdates).toEqual([]);
+
+    const [frameUpdate] = framesUpdates;
+    if (!frameUpdate) throw new Error('expected frames.update call');
+    expect(frameUpdate.data.videoStatus).toBe('failed');
+    expect(frameUpdate.data.videoError).toBe(
+      'Insufficient credits for motion generation'
+    );
+
+    const [upserted] = variantsUpserts;
+    if (!upserted) throw new Error('expected frameVariants.upsert call');
+    expect(upserted).toMatchObject({
+      frameId: 'f1',
+      sequenceId: 'seq1',
+      variantType: 'video',
+      model: 'veo3',
+      status: 'failed',
+      error: 'Insufficient credits for motion generation',
+      workflowRunId: 'run-9',
+    });
+
+    expect(emits).toEqual([
+      {
+        event: 'generation.video:progress',
+        payload: { frameId: 'f1', status: 'failed', model: 'veo3' },
+      },
+    ]);
+  });
+});

@@ -1,0 +1,232 @@
+/**
+ * Dual-write builders + persist orchestration for `MotionWorkflow` (#545).
+ *
+ * Motion generation writes each model's output in two places: the legacy
+ * `frames.video*` columns (a last-write-wins default across models, kept so
+ * single-model consumers and the "Mixed" player keep working) AND a per-model
+ * `frame_variants` row (`variantType='video'`) that the scenes-view video-model
+ * switcher resolves against.
+ *
+ * Pulled out of the workflow body — mirroring `image-workflow-snapshot.ts`'s
+ * `persistImageResult` — so the generating → completed → failed state machine
+ * is testable without bootstrapping a `WorkflowEntrypoint`. The workflow keeps
+ * the `step.do` boundaries and the realtime-emit error handling; these helpers
+ * own the write shapes and call sequence.
+ */
+
+import type { NewFrame, NewFrameVariant } from '@/lib/db/schema';
+import type { VariantType } from '@/lib/db/schema/frame-variants';
+
+export type MotionStorageResult = { url: string; path: string };
+
+/**
+ * Minimum scopedDb surface for the persist orchestrators. Production
+ * `ScopedDb` is a structural superset and assigns cleanly; tests build literal
+ * spies against this type without casting (same pattern as
+ * `PersistImageScopedDb`).
+ */
+export type PersistMotionScopedDb = {
+  frames: {
+    update: (
+      id: string,
+      data: Partial<NewFrame>,
+      opts?: { throwOnMissing?: boolean }
+    ) => Promise<{ id: string } | undefined>;
+  };
+  frameVariants: {
+    updateByFrameAndModel: (
+      frameId: string,
+      type: VariantType,
+      model: string,
+      data: Partial<NewFrameVariant>
+    ) => Promise<{ id: string } | null>;
+    upsert: (data: NewFrameVariant) => Promise<{ id: string }>;
+  };
+};
+
+/**
+ * Payload shape for `generation.video:progress`. A subset of the realtime
+ * schema (see `src/lib/realtime/index.ts`) — assignable to the channel's
+ * emitter so the workflow can forward it directly.
+ */
+export type MotionVideoProgressPayload =
+  | { frameId: string; status: 'completed'; videoUrl: string; model: string }
+  | { frameId: string; status: 'failed'; model: string };
+
+export type MotionEmit = (
+  event: 'generation.video:progress',
+  payload: MotionVideoProgressPayload
+) => Promise<void>;
+
+type MotionWrites = {
+  frame: Partial<NewFrame>;
+  variant: Partial<NewFrameVariant>;
+};
+
+/**
+ * `set-generating-status` writes: stamp the legacy columns with the model and
+ * run id, and open this model's `frame_variants` row in `generating`.
+ */
+export function buildMotionGeneratingWrites(opts: {
+  model: string;
+  workflowRunId: string;
+}): MotionWrites {
+  return {
+    frame: {
+      videoStatus: 'generating',
+      videoWorkflowRunId: opts.workflowRunId,
+      motionModel: opts.model,
+    },
+    variant: {
+      status: 'generating',
+      workflowRunId: opts.workflowRunId,
+    },
+  };
+}
+
+/** Completed writes: stamp the final video onto both the legacy columns and
+ *  this model's variant row, clearing any prior `videoError`. */
+export function buildMotionCompletedWrites(opts: {
+  upload: MotionStorageResult;
+  durationMs: number;
+  promptHash: string | null;
+  generatedAt: Date;
+}): MotionWrites {
+  const { upload, durationMs, promptHash, generatedAt } = opts;
+  return {
+    frame: {
+      videoPath: upload.path,
+      videoUrl: upload.url,
+      durationMs,
+      videoStatus: 'completed',
+      videoGeneratedAt: generatedAt,
+      videoError: null,
+    },
+    variant: {
+      url: upload.url,
+      storagePath: upload.path,
+      status: 'completed',
+      generatedAt,
+      error: null,
+      durationMs,
+      promptHash,
+    },
+  };
+}
+
+/** Failed writes: record the error on both the legacy columns and the variant. */
+export function buildMotionFailedWrites(opts: { error: string }): MotionWrites {
+  return {
+    frame: {
+      videoStatus: 'failed',
+      videoError: opts.error,
+    },
+    variant: {
+      status: 'failed',
+      error: opts.error,
+    },
+  };
+}
+
+export type PersistMotionOutcome =
+  | { status: 'completed'; videoUrl: string }
+  | { status: 'frame-deleted' };
+
+/**
+ * Completed dual-write. Stamps the legacy `frames.video*` columns first; if the
+ * frame was deleted mid-flight (`update` returns undefined) it short-circuits
+ * without touching `frame_variants` or emitting — mirroring
+ * `persistImageResult`. Otherwise updates this model's existing (generating)
+ * variant row to `completed` and emits progress.
+ *
+ * `now` is injectable so tests can pin the `generatedAt` timestamp.
+ */
+export async function persistMotionCompletion(opts: {
+  scopedDb: PersistMotionScopedDb;
+  frameId: string;
+  model: string;
+  upload: MotionStorageResult;
+  durationMs: number;
+  promptHash: string | null;
+  emit: MotionEmit;
+  now?: () => Date;
+}): Promise<PersistMotionOutcome> {
+  const {
+    scopedDb,
+    frameId,
+    model,
+    upload,
+    durationMs,
+    promptHash,
+    emit,
+    now = () => new Date(),
+  } = opts;
+
+  const writes = buildMotionCompletedWrites({
+    upload,
+    durationMs,
+    promptHash,
+    generatedAt: now(),
+  });
+
+  const updatedFrame = await scopedDb.frames.update(frameId, writes.frame, {
+    throwOnMissing: false,
+  });
+  if (!updatedFrame) return { status: 'frame-deleted' };
+
+  await scopedDb.frameVariants.updateByFrameAndModel(
+    frameId,
+    'video',
+    model,
+    writes.variant
+  );
+
+  await emit('generation.video:progress', {
+    frameId,
+    status: 'completed',
+    videoUrl: upload.url,
+    model,
+  });
+
+  return { status: 'completed', videoUrl: upload.url };
+}
+
+/**
+ * Failure dual-write (called from the workflow's `onFailure`). Records `failed`
+ * on the legacy columns and on this model's variant row, then emits.
+ *
+ * Uses `upsert` (not `updateByFrameAndModel`) so a `failed` row is recorded
+ * even when the failure happened before `set-generating-status` ran (e.g. an
+ * insufficient-credit throw in `check-credits`, or the top-level imageUrl
+ * guard) — at that point no generating row exists yet, and a bare update would
+ * no-op, leaving this model's variant invisible in the scenes-view switcher.
+ */
+export async function persistMotionFailure(opts: {
+  scopedDb: PersistMotionScopedDb;
+  frameId: string;
+  sequenceId: string;
+  model: string;
+  error: string;
+  workflowRunId: string;
+  emit: MotionEmit;
+}): Promise<void> {
+  const { scopedDb, frameId, sequenceId, model, error, workflowRunId, emit } =
+    opts;
+
+  const writes = buildMotionFailedWrites({ error });
+
+  await scopedDb.frames.update(frameId, writes.frame, {
+    throwOnMissing: false,
+  });
+
+  await scopedDb.frameVariants.upsert({
+    frameId,
+    sequenceId,
+    variantType: 'video',
+    model,
+    workflowRunId,
+    ...writes.variant,
+  });
+
+  await emit('generation.video:progress', { frameId, status: 'failed', model });
+}

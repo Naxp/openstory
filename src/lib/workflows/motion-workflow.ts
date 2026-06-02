@@ -34,6 +34,11 @@ import { simpleHash } from '@/lib/utils/hash';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type { MotionWorkflowInput } from '@/lib/workflow/types';
+import {
+  buildMotionGeneratingWrites,
+  persistMotionCompletion,
+  persistMotionFailure,
+} from '@/lib/workflows/motion-workflow-persist';
 import { shouldRecordUserEdit } from '@/lib/workflows/user-edit-predicate';
 import { NonRetryableError } from 'cloudflare:workflows';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -129,13 +134,14 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
       async () => {
         if (!input.frameId) return { frameDeleted: false };
 
+        const generatingWrites = buildMotionGeneratingWrites({
+          model,
+          workflowRunId,
+        });
+
         const frame = await scopedDb.frames.update(
           input.frameId,
-          {
-            videoStatus: 'generating',
-            videoWorkflowRunId: workflowRunId,
-            motionModel: model,
-          },
+          generatingWrites.frame,
           { throwOnMissing: false }
         );
 
@@ -206,8 +212,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
             sequenceId: input.sequenceId,
             variantType: 'video',
             model,
-            status: 'generating',
-            workflowRunId,
+            ...generatingWrites.variant,
           });
         }
 
@@ -424,57 +429,32 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
 
       videoUrl = storageResult.url;
 
-      // Step 5: Update frame with video path, URL, and status
+      // Step 5: Update frame with video path, URL, and status — dual-writing
+      // the completed video onto the legacy columns AND this model's
+      // frame_variants row (see motion-workflow-persist).
       await step.do('update-frame', async () => {
-        const updatedFrame = await scopedDb.frames.update(
+        const outcome = await persistMotionCompletion({
+          scopedDb,
           frameId,
-          {
-            videoPath: storageResult.path,
-            videoUrl: storageResult.url,
-            durationMs: duration * 1000,
-            videoStatus: 'completed',
-            videoGeneratedAt: new Date(),
-            videoError: null,
+          model,
+          upload: { url: storageResult.url, path: storageResult.path },
+          durationMs: duration * 1000,
+          promptHash: input.prompt ? simpleHash(input.prompt) : null,
+          emit: async (event, payload) => {
+            try {
+              await getGenerationChannel(input.sequenceId).emit(event, payload);
+            } catch (emitError) {
+              logger.error(
+                `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${frameId}:`,
+                { err: emitError }
+              );
+            }
           },
-          { throwOnMissing: false }
-        );
+        });
 
-        if (!updatedFrame) {
+        if (outcome.status === 'frame-deleted') {
           logger.info(
             `[MotionWorkflow:cf] Frame ${frameId} was deleted, skipping final update`
-          );
-          return;
-        }
-
-        // Dual-write the completed video into this model's frame_variants row.
-        if (input.sequenceId) {
-          await scopedDb.frameVariants.updateByFrameAndModel(
-            frameId,
-            'video',
-            model,
-            {
-              url: storageResult.url,
-              storagePath: storageResult.path,
-              status: 'completed',
-              generatedAt: new Date(),
-              error: null,
-              durationMs: duration * 1000,
-              promptHash: input.prompt ? simpleHash(input.prompt) : null,
-            }
-          );
-        }
-
-        try {
-          await getGenerationChannel(input.sequenceId).emit(
-            'generation.video:progress',
-            { frameId, status: 'completed', videoUrl: storageResult.url, model }
-          );
-        } catch (emitError) {
-          logger.error(
-            `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${frameId}:`,
-            {
-              err: emitError,
-            }
           );
         }
       });
@@ -496,46 +476,28 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
     const input = event.payload;
     const model = input.model || DEFAULT_VIDEO_MODEL;
 
-    if (input.frameId && input.teamId) {
-      await scopedDb.frames.update(
-        input.frameId,
-        {
-          videoStatus: 'failed',
-          videoError: error,
-        },
-        { throwOnMissing: false }
-      );
-    }
-
-    if (input.sequenceId && input.frameId) {
-      // Upsert (not update) so a `failed` row is recorded even when the failure
-      // happened before `set-generating-status` ran (e.g. an insufficient-credit
-      // throw in `check-credits`, or the top-level imageUrl guard) — at that
-      // point no generating row exists yet, and a bare update would no-op,
-      // leaving this model's variant invisible in the scenes-view switcher.
-      await scopedDb.frameVariants.upsert({
-        frameId: input.frameId,
-        sequenceId: input.sequenceId,
-        variantType: 'video',
+    // Motion is always sequence-scoped (every trigger sets both ids), and the
+    // dual-write needs sequenceId for the frame_variants row — so gate on both.
+    if (input.frameId && input.sequenceId) {
+      const { frameId, sequenceId } = input;
+      await persistMotionFailure({
+        scopedDb,
+        frameId,
+        sequenceId,
         model,
-        status: 'failed',
         error,
         workflowRunId: event.instanceId,
-      });
-
-      try {
-        await getGenerationChannel(input.sequenceId).emit(
-          'generation.video:progress',
-          { frameId: input.frameId, status: 'failed', model }
-        );
-      } catch (emitError) {
-        logger.error(
-          `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${input.frameId}:`,
-          {
-            err: emitError,
+        emit: async (event2, payload) => {
+          try {
+            await getGenerationChannel(sequenceId).emit(event2, payload);
+          } catch (emitError) {
+            logger.error(
+              `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${frameId}:`,
+              { err: emitError }
+            );
           }
-        );
-      }
+        },
+      });
     }
 
     logger.error(
