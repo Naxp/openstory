@@ -106,7 +106,12 @@ async function splitIntoBeats(args: {
         content:
           'You are a cinematographer turning a short ad script into 2-3 shots that cover it start to finish. ' +
           'For each shot give an imagePrompt (a vivid still-frame: subject, action, composition, framing) and a ' +
-          'motionPrompt (one continuous ~5 second shot — camera movement and subject motion for image-to-video). ' +
+          'motionPrompt (one continuous ~5 second shot for image-to-video). Each motionPrompt is rendered by ' +
+          'image-to-video from the SINGLE still in its imagePrompt, so the motion must be achievable from that ' +
+          'one frame: a slow push-in or pull-out, pan, tilt, handheld drift, parallax, rack focus, and motion of ' +
+          'subjects already visible in the still. Do NOT write moves that reveal new rooms, geometry, or subjects ' +
+          'not in the still, large crane or aerial moves, or "pull back to reveal the whole X" — image-to-video ' +
+          'warps instead of revealing. Keep the framing essentially the one described in imagePrompt. ' +
           'Keep the subject and setting consistent across shots. Do NOT describe the visual style, color grade, or ' +
           'film stock in either field — those are applied separately.\n\n' +
           'Return ONLY a JSON object of the form ' +

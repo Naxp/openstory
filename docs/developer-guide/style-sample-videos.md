@@ -76,7 +76,31 @@ OPENROUTER_KEY=… bun scripts/generate-style-sample-videos.ts --scripts-only
 Writes `sample-videos/{slug}/canonical.script.json` (enhanced script + beats).
 Eyeball a few; the render step reuses these. `--force` regenerates them.
 
-### 2. Dry-run the render to see the fal.ai bill
+### 2. Score the scripts (gate before you spend on render)
+
+```bash
+OPENROUTER_KEY=… bun run styles:sample-videos:score
+```
+
+Scores every `canonical.script.json` on style-adherence, brief coverage,
+**image-to-video feasibility** (can each `motionPrompt` be produced by one ~5s
+i2v from a single still, or does it demand a reveal/crane that warps?), and
+lighting fit. Writes `sample-videos/_script-scores.json`, prints a worst-first
+report, and exits non-zero when any script has an **infeasible-motion** beat
+(hard) or scores below `--threshold` (default 6). Soft advisories flag
+golden-hour-against-style and style-bleed (grade/stock named in a beat).
+
+Re-roll a flagged style and re-score:
+
+```bash
+bun scripts/generate-style-sample-videos.ts --scripts-only --force --filter "Rom Com"
+bun run styles:sample-videos:score --filter "Rom Com"
+```
+
+Like the still gate, this exists because a sample video has no later
+pick-the-best safety net — a weak script renders faithfully into a weak video.
+
+### 3. Dry-run the render to see the fal.ai bill
 
 ```bash
 bun scripts/generate-style-sample-videos.ts --dry-run
@@ -85,7 +109,7 @@ bun scripts/generate-style-sample-videos.ts --dry-run
 Prints resolved models + the brief + estimated fal.ai spend. (A run with no
 `FAL_KEY` is implicitly a dry-run too.)
 
-### 3. Render one style first to sanity-check quality
+### 4. Render one style first to sanity-check quality
 
 ```bash
 FAL_KEY=… OPENROUTER_KEY=… bun scripts/generate-style-sample-videos.ts --filter "Product Ad"
@@ -94,7 +118,7 @@ FAL_KEY=… OPENROUTER_KEY=… bun scripts/generate-style-sample-videos.ts --fil
 Keep `OPENROUTER_KEY` set so the still gate is active. Watch the output mp4 and
 the intermediate `_frames/`.
 
-### 4. Render the rest
+### 5. Render the rest
 
 ```bash
 FAL_KEY=… OPENROUTER_KEY=… bun run styles:sample-videos
@@ -111,7 +135,7 @@ Useful flags / env:
 | `MAX_CONCURRENT` (default 3)                          | Parallel videos — heavy on GPU/API quota    |
 | `STILL_ATTEMPTS` (default 3)                          | Re-rolls per still before keeping best-of-N |
 
-### 5. Review locally, then upload to R2
+### 6. Review locally, then upload to R2
 
 ```bash
 bun scripts/upload-style-sample-videos-to-r2.ts --dry-run   # list keys, no upload
@@ -123,7 +147,7 @@ bucket. The default is `wrangler` (account-wide token, reliable write access).
 Only add `--s3` if you have **unscoped** `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` /
 `R2_SECRET_ACCESS_KEY` — scoped R2 keys 403 against `openstory-public-assets`.
 
-### 6. Seed the database
+### 7. Seed the database
 
 ```bash
 bun run styles:sample-videos:seed:local                      # local D1
@@ -157,17 +181,18 @@ consumes them. The still thumbnails shown in the UI come from the separate
 ## TL;DR
 
 ```
---scripts-only  →  --dry-run  →  render --filter (one)  →  render all  →  upload  →  seed
+--scripts-only  →  score  →  --dry-run  →  render --filter (one)  →  render all  →  upload  →  seed
 ```
 
-Iterate on steps 1–3 for a single style until it looks right, then fan out to
+Iterate on steps 1–4 for a single style until it looks right, then fan out to
 the full set.
 
 ## package.json aliases
 
 ```bash
-bun run styles:sample-videos              # generate (step 4)
-bun run styles:sample-videos:upload       # upload  (step 5)
-bun run styles:sample-videos:seed:local   # seed local D1 (step 6)
+bun run styles:sample-videos              # generate scripts/render (steps 1, 5)
+bun run styles:sample-videos:score        # score the scripts (step 2)
+bun run styles:sample-videos:upload       # upload  (step 6)
+bun run styles:sample-videos:seed:local   # seed local D1 (step 7)
 bun run styles:sample-videos:seed:d1      # seed prod D1
 ```
