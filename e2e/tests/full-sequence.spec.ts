@@ -306,12 +306,21 @@ SUPER:  CORAL.  OUT NOW.
       // 11. Per-scene playback: click through every scene-list-item and
       //     assert the active <video> in the ScenePlayer is decodable.
       //     The list item carries `data-testid="scene-list-item"` so we can
-      //     enumerate without relying on title text. The player only renders
-      //     one <video> at a time (the selected frame), so each iteration
-      //     forces a fresh load.
+      //     enumerate without relying on title text.
+      //
+      //     The player only shows the scene's <video> on a video tab; the
+      //     default "Variants" tab (the multi-model scene-review UX, #545)
+      //     shows the still image instead — leaving the only <video> in the
+      //     DOM the hidden next-scene prefetch (`<video preload="auto">`).
+      //     Select the Motion tab once (it persists across scene selection) so
+      //     each scene's player renders its <video>; that player video is
+      //     ordered before the prefetch in the DOM, so `.first()` resolves to
+      //     it.
       const sceneItems = page.locator('[data-testid="scene-list-item"]');
       const sceneCount = await sceneItems.count();
       expect(sceneCount, 'sequence has at least one scene').toBeGreaterThan(0);
+      await sceneItems.first().click();
+      await page.getByRole('tab', { name: 'Motion' }).click();
       const playerVideo = page.locator('video').first();
       for (let i = 0; i < sceneCount; i++) {
         await sceneItems.nth(i).click();
