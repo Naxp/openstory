@@ -4,6 +4,7 @@ import {
   getDivergentSequenceMusicVariantsFn,
   getTeamDivergentSequenceVariantsFn,
   promoteSequenceMusicVariantFn,
+  setMusicFromVariantFn,
   undiscardSequenceMusicVariantFn,
 } from '@/functions/sequence-variants';
 import { sequenceKeys } from '@/hooks/use-sequences';
@@ -79,6 +80,35 @@ export function usePromoteSequenceMusicVariant() {
         }),
         queryClient.invalidateQueries({
           queryKey: sequenceVariantKeys.divergentByTeam(),
+        }),
+      ]);
+    },
+  });
+}
+
+/**
+ * "Set Music": switch the sequence's live primary track to a chosen model
+ * (#546). Non-destructive — the per-sequence analog of `useSetVideoFromVariant`.
+ */
+export function useSetMusicFromVariant() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { sequence: Sequence; model: string },
+    Error,
+    { sequenceId: string; model: string }
+  >({
+    mutationFn: async (input) => setMusicFromVariantFn({ data: input }),
+    onSuccess: async ({ sequence }, { sequenceId }) => {
+      queryClient.setQueryData(sequenceKeys.detail(sequenceId), sequence);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: sequenceKeys.detail(sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['sequence-audio-models', sequenceId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['sequence-audio-variants', sequenceId],
         }),
       ]);
     },

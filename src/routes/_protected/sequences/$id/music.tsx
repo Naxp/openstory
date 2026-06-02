@@ -16,8 +16,11 @@ import {
   useDiscardSequenceMusicVariant,
   usePromoteSequenceMusicVariant,
   useSequenceDivergentMusicVariants,
+  useSetMusicFromVariant,
   useUndiscardSequenceMusicVariant,
 } from '@/hooks/use-sequence-variants';
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
+import { type AudioModel } from '@/lib/ai/models';
 import type { SequenceMusicVariant } from '@/lib/db/schema';
 import { useGenerationStream } from '@/lib/realtime/use-generation-stream';
 import { useSequenceStaleDetected } from '@/lib/realtime/use-sequence-stale-detected';
@@ -41,8 +44,8 @@ function MusicPage() {
     refetchInterval: false,
   });
   // Resolve the music tab through the viewer's active audio model (#546). When
-  // a model is pinned in the header, play that model's primary track instead
-  // of the live `sequences.music*` primary; "Mixed" (null) keeps the primary.
+  // a model is pinned in the header, play that model's track instead of the
+  // live `sequences.music*` primary; unpinned (null) follows the primary.
   const { activeAudioModel } = useActiveAudioModel(sequenceId);
   const { data: audioVariants } = useSequenceAudioVariants(sequenceId);
   const resolvedSequence = useMemo<Sequence | undefined>(() => {
@@ -65,6 +68,39 @@ function MusicPage() {
     if (!variant?.url) return sequence;
     return { ...sequence, musicUrl: variant.url };
   }, [sequence, activeAudioModel, audioVariants]);
+
+  // Per-model status for the music model selector + action button (#546),
+  // mirroring scenes-view's videoModelStatuses. The "set" model is the one
+  // whose track is the sequence's live primary (url match, else the recorded
+  // musicModel); a completed alternate is selectable, then promoted via "Set
+  // Music". Music variant rows have no 'generating' state, so the live
+  // generating status is overlaid onto the model currently being generated.
+  const audioModelStatuses = useMemo(() => {
+    const map = new Map<string, ModelGenerationStatus>();
+    const variants = (audioVariants ?? []).filter(
+      (v) => v.divergedAt === null && v.discardedAt === null
+    );
+    const primaryUrl = sequence?.musicUrl ?? null;
+    const setModel = primaryUrl
+      ? (variants.find((v) => v.url === primaryUrl)?.model ??
+        sequence?.musicModel ??
+        null)
+      : null;
+    for (const v of variants) {
+      map.set(v.model, v.model === setModel ? 'set' : v.status);
+    }
+    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
+    if (sequence?.musicStatus === 'generating' && sequence.musicModel) {
+      map.set(sequence.musicModel, 'generating');
+    }
+    return map;
+  }, [
+    audioVariants,
+    sequence?.musicUrl,
+    sequence?.musicModel,
+    sequence?.musicStatus,
+  ]);
+
   const queryClient = useQueryClient();
   const posthog = usePostHog();
 
@@ -93,6 +129,7 @@ function MusicPage() {
   const promoteVariant = usePromoteSequenceMusicVariant();
   const discardVariant = useDiscardSequenceMusicVariant();
   const undiscardVariant = useUndiscardSequenceMusicVariant();
+  const setMusicModel = useSetMusicFromVariant();
 
   const handleDiscardWithUndo = useCallback(
     (variant: SequenceMusicVariant) => {
@@ -147,6 +184,29 @@ function MusicPage() {
       );
     },
     [sequenceId, promoteVariant]
+  );
+
+  // "Set Music": switch the sequence's live primary to the selected model's
+  // track (mirrors the video tab's "Set Video"). Non-destructive — the server
+  // resolves the model to its live completed variant and keeps the row.
+  const handleSetModel = useCallback(
+    (model: AudioModel) => {
+      setMusicModel.mutate(
+        { sequenceId, model },
+        {
+          onSuccess: () => {
+            toast.success('Music model set');
+          },
+          onError: (error) => {
+            toast.error('Failed to set music model', {
+              description:
+                error instanceof Error ? error.message : 'Unknown error',
+            });
+          },
+        }
+      );
+    },
+    [sequenceId, setMusicModel]
   );
 
   const generateMusic = useMutation({
@@ -236,6 +296,9 @@ function MusicPage() {
         <MusicView
           sequence={resolvedSequence ?? sequence}
           videoDuration={videoDuration}
+          audioModelStatuses={audioModelStatuses}
+          onSetModel={handleSetModel}
+          isSettingModel={setMusicModel.isPending}
           onGenerateMusic={(args) => generateMusic.mutate(args)}
           isGeneratingMusic={generateMusic.isPending}
           divergentBanner={divergentBanner}

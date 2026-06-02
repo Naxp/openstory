@@ -1,4 +1,7 @@
-import { BaseModelSelector } from './base-model-selector';
+import {
+  BaseModelSelector,
+  type ModelGenerationStatus,
+} from './base-model-selector';
 import {
   AUDIO_MODELS,
   isValidAudioModel,
@@ -35,14 +38,25 @@ type MusicModelSelectorProps = {
   selectedModel: AudioModel;
   onModelChange: (model: AudioModel) => void;
   disabled?: boolean;
+  /** Per-model generation status (#546); renders ⊙/✓/⟳/! in the list. */
+  generatedStatuses?: Map<string, ModelGenerationStatus>;
 };
 
 export const MusicModelSelector: React.FC<MusicModelSelectorProps> = ({
   selectedModel,
   onModelChange,
   disabled = false,
+  generatedStatuses,
 }) => {
-  const models = useMusicModels();
+  const baseModels = useMusicModels();
+  const models = useMemo(
+    () =>
+      baseModels.map((m) => ({
+        ...m,
+        generationStatus: generatedStatuses?.get(m.id),
+      })),
+    [baseModels, generatedStatuses]
+  );
 
   return (
     <BaseModelSelector

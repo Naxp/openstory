@@ -1,3 +1,4 @@
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { MusicModelSelector } from '@/components/model/music-model-selector';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
@@ -35,6 +36,16 @@ type MusicViewProps = {
   videoDuration?: number;
   onGenerateMusic: (args?: GenerateMusicArgs) => void;
   isGeneratingMusic: boolean;
+  /**
+   * Per-model generation status for this sequence (#546), mirroring the
+   * video/image scene-detail selector: ⊙ `set` (the live primary track) /
+   * ✓ `completed` (a generated alternate) / ⟳ `generating` / ! `failed`.
+   * Drives the model markers and the Set/Regenerate/Generate action button.
+   */
+  audioModelStatuses?: Map<string, ModelGenerationStatus>;
+  /** Promote the selected model's track to the sequence primary ("Set Music"). */
+  onSetModel: (model: AudioModel) => void;
+  isSettingModel?: boolean;
   /** Banner rendered above the audio player while `musicStatus === 'completed'`. */
   divergentBanner?: React.ReactNode;
   isMusicPromptStale?: boolean;
@@ -133,6 +144,9 @@ export const MusicView: React.FC<MusicViewProps> = ({
   videoDuration,
   onGenerateMusic,
   isGeneratingMusic,
+  audioModelStatuses,
+  onSetModel,
+  isSettingModel = false,
   divergentBanner,
   isMusicPromptStale,
   onRegenerateMusicPrompt,
@@ -220,6 +234,33 @@ export const MusicView: React.FC<MusicViewProps> = ({
     });
   }
 
+  // Action for the selected model, mirroring the video/image scene-detail
+  // button: a completed alternate promotes ("Set Music"); the live primary
+  // regenerates; anything without a track generates for the first time.
+  const selectedStatus = audioModelStatuses?.get(editModel);
+  const selectedIsSet = selectedStatus === 'set';
+  const selectedIsCompletedAlternate = selectedStatus === 'completed';
+
+  const actionButton = selectedIsCompletedAlternate ? (
+    <LoadingButton
+      onClick={() => onSetModel(editModel)}
+      isLoading={isSettingModel}
+      loadingText="Setting…"
+    >
+      Set Music
+    </LoadingButton>
+  ) : (
+    <LoadingButton
+      variant={selectedIsSet ? 'outline' : 'default'}
+      onClick={handleGenerate}
+      disabled={!editPrompt}
+      isLoading={isGeneratingMusic}
+      loadingText={selectedIsSet ? 'Regenerating…' : 'Generating…'}
+    >
+      {selectedIsSet ? 'Regenerate Music' : 'Generate Music'}
+    </LoadingButton>
+  );
+
   if (musicStatus === 'completed' && musicUrl) {
     return (
       <StatusPanel
@@ -240,6 +281,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
           <MusicModelSelector
             selectedModel={editModel}
             onModelChange={setEditModel}
+            generatedStatuses={audioModelStatuses}
           />
         </FormField>
 
@@ -248,14 +290,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
         <div className="flex justify-center gap-3">
           {historyButton}
-          <LoadingButton
-            variant="outline"
-            onClick={handleGenerate}
-            isLoading={isGeneratingMusic}
-            loadingText="Regenerating…"
-          >
-            Regenerate Music
-          </LoadingButton>
+          {actionButton}
         </div>
         {historySheet}
       </StatusPanel>
@@ -290,17 +325,11 @@ export const MusicView: React.FC<MusicViewProps> = ({
           <MusicModelSelector
             selectedModel={editModel}
             onModelChange={setEditModel}
+            generatedStatuses={audioModelStatuses}
           />
         </FormField>
 
-        <LoadingButton
-          className="self-center"
-          onClick={handleGenerate}
-          isLoading={isGeneratingMusic}
-          loadingText="Retrying…"
-        >
-          Retry
-        </LoadingButton>
+        <div className="flex justify-center">{actionButton}</div>
       </StatusPanel>
     );
   }
@@ -340,6 +369,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
         <MusicModelSelector
           selectedModel={editModel}
           onModelChange={setEditModel}
+          generatedStatuses={audioModelStatuses}
         />
       </FormField>
 
@@ -363,14 +393,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
       <div className="flex justify-center gap-3">
         {historyButton}
-        <LoadingButton
-          onClick={handleGenerate}
-          disabled={!editPrompt}
-          isLoading={isGeneratingMusic}
-          loadingText="Generating…"
-        >
-          Generate Music
-        </LoadingButton>
+        {actionButton}
       </div>
       {historySheet}
     </StatusPanel>

@@ -299,5 +299,45 @@ export function createSequenceVariantsMethods(db: Database) {
       }
       return { sequence: promotedSequence, discardedAt: now };
     },
+
+    /**
+     * Copy a model's completed variant onto the sequence's live primary
+     * (`sequences.music*`) WITHOUT discarding the variant row — the
+     * non-destructive "Set Music" used to switch which model's track is the
+     * sequence primary (#546). Mirrors `setVideoFromVariant`. Contrast
+     * `promoteMusicVariant`, which consumes a divergent alternate.
+     */
+    setMusicFromVariant: async (variantId: string): Promise<Sequence> => {
+      const variantRows = await db
+        .select()
+        .from(sequenceMusicVariants)
+        .where(eq(sequenceMusicVariants.id, variantId));
+      const variant = variantRows.at(0);
+      if (!variant) {
+        throw new Error(`SequenceMusicVariant ${variantId} not found`);
+      }
+      const now = new Date();
+      const [updated] = await db
+        .update(sequences)
+        .set({
+          musicUrl: variant.url,
+          musicPath: variant.storagePath,
+          musicPrompt: variant.prompt,
+          musicTags: variant.tags,
+          musicModel: variant.model,
+          musicStatus: 'completed',
+          musicGeneratedAt: variant.generatedAt ?? now,
+          musicError: null,
+          updatedAt: now,
+        })
+        .where(eq(sequences.id, variant.sequenceId))
+        .returning();
+      if (!updated) {
+        throw new Error(
+          `Sequence ${variant.sequenceId} disappeared during set-music`
+        );
+      }
+      return updated;
+    },
   };
 }
