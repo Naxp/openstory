@@ -1,3 +1,4 @@
+import { convertWebSearchToolToAdapterFormat } from '@tanstack/ai-openrouter/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
@@ -320,6 +321,53 @@ describe('llm-client', () => {
           throw new Error('expected a terminal done:true chunk');
         }
         expect(terminal.parsed).toBeUndefined();
+      });
+    });
+
+    describe('web search tool', () => {
+      it('wires the OpenRouter web search server tool when webSearch is enabled', async () => {
+        mockChat.mockReturnValue(
+          (async function* () {
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: 'ok' };
+          })()
+        );
+
+        await drain(
+          callLLMStream({
+            model: 'anthropic/claude-sonnet-4.6',
+            messages: [{ role: 'user', content: 'test' }],
+            webSearch: true,
+          })
+        );
+
+        expect(mockChat).toHaveBeenCalledTimes(1);
+        const callArgs = mockChat.mock.calls[0]?.[0];
+        if (!callArgs) throw new Error('expected mockChat to have been called');
+        expect(callArgs.tools).toHaveLength(1);
+        // Converting to the adapter wire format proves it's a genuine
+        // webSearchTool() output and resolves to OpenRouter's server tool type.
+        expect(
+          convertWebSearchToolToAdapterFormat(callArgs.tools[0]).type
+        ).toBe('openrouter:web_search');
+      });
+
+      it('omits tools entirely when webSearch is not requested', async () => {
+        mockChat.mockReturnValue(
+          (async function* () {
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: 'ok' };
+          })()
+        );
+
+        await drain(
+          callLLMStream({
+            model: 'anthropic/claude-sonnet-4.6',
+            messages: [{ role: 'user', content: 'test' }],
+          })
+        );
+
+        const callArgs = mockChat.mock.calls[0]?.[0];
+        if (!callArgs) throw new Error('expected mockChat to have been called');
+        expect(callArgs.tools).toBeUndefined();
       });
     });
   });

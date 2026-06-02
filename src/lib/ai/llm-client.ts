@@ -4,14 +4,11 @@
  */
 
 import type { TextModel } from '@/lib/ai/models';
-import { getChatPrompt, type ChatMessage } from '@/lib/prompts';
+import type { ChatMessage } from '@/lib/prompts';
 import { chat } from '@tanstack/ai';
+import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
-import { ZERO_MICROS } from '../billing/money';
-import { deductWorkflowCredits } from '../billing/workflow-deduction';
-import type { ScopedDb } from '../db/scoped';
 import { createAdapter } from './create-adapter';
-import { getContextWindow } from './models.config';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -68,8 +65,15 @@ export type LLMRequestParams<T = unknown> = {
   sessionId?: string;
   responseSchema?: z.ZodType<T>;
   apiKey?: string;
-  /** OpenRouter plugins (e.g. web search) to enable for this request */
-  plugins?: Array<{ id: 'web'; max_results?: number }>;
+  /**
+   * Enable OpenRouter's web-search server tool for this request. The model
+   * decides when to search; OpenRouter runs the search server-side inside the
+   * agent loop and feeds results back. `true` uses defaults; pass an object to
+   * tune the engine / result count / search prompt.
+   */
+  webSearch?:
+    | boolean
+    | { engine?: 'native' | 'exa'; maxResults?: number; searchPrompt?: string };
 
   /** Debug mode for LLM client */
   debug?: boolean;
@@ -147,8 +151,24 @@ function buildModelOptions(params: LLMRequestParams) {
     ...(params.provider && { provider: params.provider }),
     frequency_penalty: params.frequency_penalty,
     presence_penalty: params.presence_penalty,
-    ...(params.plugins && { plugins: params.plugins }),
   };
+}
+
+/**
+ * Assemble the `tools` array for `chat()`. Currently only the OpenRouter
+ * web-search server tool, gated on `params.webSearch`. Returns `undefined`
+ * (not an empty array) when no tool is requested so the option is omitted.
+ */
+function buildTools(params: LLMRequestParams) {
+  if (!params.webSearch) return undefined;
+  const opts = params.webSearch === true ? {} : params.webSearch;
+  return [
+    webSearchTool({
+      ...(opts.engine && { engine: opts.engine }),
+      ...(opts.maxResults !== undefined && { maxResults: opts.maxResults }),
+      ...(opts.searchPrompt && { searchPrompt: opts.searchPrompt }),
+    }),
+  ];
 }
 
 function validateStructuredOutputSupport(model: string): void {
@@ -173,6 +193,7 @@ function buildChatMetadata(params: LLMRequestParams) {
 
 function baseChatOptions(params: LLMRequestParams) {
   const { systemPrompts, messages } = convertMessages(params.messages);
+  const tools = buildTools(params);
   return {
     adapter: createAdapter(params.model, params.apiKey),
     messages,
@@ -181,6 +202,7 @@ function baseChatOptions(params: LLMRequestParams) {
     temperature: params.temperature,
     topP: params.top_p,
     modelOptions: buildModelOptions(params),
+    ...(tools && { tools }),
     debug: params.debug ?? false,
   };
 }
@@ -224,19 +246,24 @@ export async function callLLM<T>(
 /**
  * Diagnostic detail pulled from a streaming `RUN_ERROR` event.
  *
- * The `@tanstack/ai-openrouter` adapter collapses the provider's error to
- * `{ message, code }` before it reaches us — its `processStreamChunks`
- * rethrows `new Error(chunk.error.message)`, dropping OpenRouter's
- * `error.metadata` (provider name, raw upstream body). So `message` is
- * frequently the provider's opaque headline like "Provider returned error".
- * We surface `code` and `model` alongside it, and the caller logs the full
- * event, so that context isn't lost when the error propagates (e.g. up to a
- * parent workflow's "Child workflow … failed: …").
+ * `message` is frequently the provider's opaque headline like "Provider
+ * returned error". Since `@tanstack/ai@0.24` the RUN_ERROR event also carries
+ * `rawEvent` — the provider's *structured* error body (provider name, the
+ * upstream model's error JSON, rate-limit/overload codes) that the
+ * `{ message, code }` collapse deliberately drops. We surface `code`, `model`,
+ * and `rawEvent` alongside `message`, and the caller logs them, so that context
+ * isn't lost when the error propagates (e.g. up to a parent workflow's
+ * "Child workflow … failed: …").
  */
 export type RunErrorDetail = {
   message: string;
   code: string | undefined;
   model: string | undefined;
+  /**
+   * Provider's structured error body (AG-UI `rawEvent`), when the adapter
+   * attached one. `undefined` for errors carrying no upstream body.
+   */
+  rawEvent: unknown;
   /** The full RUN_ERROR event, for structured logging. */
   event: unknown;
 };
@@ -269,7 +296,8 @@ export function extractRunError(event: unknown): RunErrorDetail | null {
     'model' in event && typeof event.model === 'string'
       ? event.model
       : undefined;
-  return { message, code, model, event };
+  const rawEvent = 'rawEvent' in event ? event.rawEvent : undefined;
+  return { message, code, model, rawEvent, event };
 }
 
 /**
@@ -289,7 +317,10 @@ export function formatRunErrorMessage(detail: RunErrorDetail): string {
 function throwIfRunError(event: unknown): void {
   const detail = extractRunError(event);
   if (!detail) return;
-  logger.error('LLM stream RUN_ERROR', { runError: detail.event });
+  logger.error('LLM stream RUN_ERROR', {
+    runError: detail.event,
+    rawEvent: detail.rawEvent,
+  });
   throw new Error(formatRunErrorMessage(detail));
 }
 
@@ -353,101 +384,4 @@ export async function* callLLMStream<T>(
   }
 
   yield { delta: '', accumulated, done: true, parsed };
-}
-
-export type DurableLLMCallConfig<TSchema extends z.ZodType> = {
-  name: string;
-  promptName: string;
-  promptVariables?: Record<string, string>;
-  modelId: TextModel;
-  responseSchema: TSchema;
-  additionalMetadata?: Record<string, unknown>;
-};
-
-/**
- * Execute a durable LLM call with the standard 3-step pattern:
- * 1. Prepare: Fetch prompt from Langfuse, emit phase start
- * 2. Call: LLM call via context.run() + @tanstack/ai-openrouter
- * 3. Log & Process: Log to Langfuse, parse response, emit phase complete
- *
- * Uses context.run() instead of context.api.openai.call() to avoid
- * passing API keys in headers that get stored in Upstash logs.
- */
-export async function callChat<TSchema extends z.ZodType>(
-  config: DurableLLMCallConfig<TSchema>,
-  scopedDb: ScopedDb
-) {
-  const { name, modelId, promptName, promptVariables, responseSchema } = config;
-  const logTags = [name, promptName, 'analysis'];
-  const logMetadata = {
-    name,
-    modelId,
-    promptName,
-    promptVariables,
-    ...config.additionalMetadata,
-  };
-
-  // Step 1: Prepare -- fetch prompt and emit phase start
-  // Prompt is the Langfuse prompt reference, messages is the compiled messages
-  const { prompt, messages } = await getChatPrompt(promptName, promptVariables);
-
-  // Step 2: Durable LLM call (QStash retries step delivery on failure)
-  // Determine the API key to use
-  const openRouterApiKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');
-  // Create the adapter using the API key
-  const adapter = createAdapter(modelId, openRouterApiKeyInfo.key);
-
-  logger.info(`[LLM:${name}] Starting call`, {
-    model: modelId,
-    keySource: openRouterApiKeyInfo.source,
-    messageCount: messages.length,
-  });
-
-  const systemPrompts: string[] = [];
-  const chatMessages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-  }> = [];
-
-  for (const msg of messages) {
-    const flat = systemContentToString(msg.content);
-    if (msg.role === 'system') {
-      systemPrompts.push(flat);
-    } else {
-      chatMessages.push({ role: msg.role, content: flat });
-    }
-  }
-
-  const jsonResponse = await chat({
-    adapter,
-    messages: chatMessages,
-    systemPrompts,
-    stream: false,
-    maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
-    metadata: {
-      observationName: promptName,
-      prompt,
-      tags: logTags,
-      metadata: logMetadata,
-    },
-    outputSchema: responseSchema,
-    debug: false,
-  });
-
-  logger.info(`[LLM:${name}] Call succeeded`);
-
-  // Deduct LLM credits (cost tracked via Langfuse; adapter doesn't expose per-call usage)
-  // TODO: Add cost calculation
-  await deductWorkflowCredits({
-    scopedDb: scopedDb,
-    costMicros: ZERO_MICROS,
-    usedOwnKey: openRouterApiKeyInfo.source === 'team',
-    description: `LLM analysis (${modelId})`,
-    metadata: {
-      model: modelId,
-      stepName: name,
-    },
-  });
-
-  return responseSchema.parse(jsonResponse);
 }
