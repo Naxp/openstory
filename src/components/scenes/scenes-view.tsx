@@ -23,6 +23,7 @@ import {
   useUndiscardVariant,
 } from '@/hooks/use-frames';
 import { useActiveVideoModel } from '@/hooks/use-active-video-model';
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { useStaleDetected } from '@/lib/realtime/use-stale-detected';
 import { DivergenceCompareDialog } from '@/components/scenes/divergence-compare-dialog';
 import { getDivergentVariantPromptDiffFn } from '@/functions/prompt-variants';
@@ -403,6 +404,59 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
           v.discardedAt === null
       );
   }, [videoVariantsByFrame, curSelectedFrameId, effectiveVideoModel]);
+
+  // Per-model generation status for the selected scene (#545) — feeds the
+  // ✓/⟳/! markers in the image + video model dropdowns. Primary rows only
+  // (divergent/discarded alternates are excluded).
+  // The "set" model is the one whose variant is the frame's live primary
+  // (url match), falling back to the frame's recorded model for legacy frames
+  // with no variant row. It gets the distinct ✓-in-circle marker; other
+  // completed models show a plain ✓ (selectable, then "Set" to promote).
+  const imageModelStatuses = useMemo(() => {
+    const map = new Map<string, ModelGenerationStatus>();
+    const variants = (selectedFrameVariants ?? []).filter(
+      (v) => v.divergedAt === null && v.discardedAt === null
+    );
+    const primaryUrl = selectedFrame?.thumbnailUrl ?? null;
+    const setModel = primaryUrl
+      ? (variants.find((v) => v.url === primaryUrl)?.model ??
+        selectedFrame?.imageModel ??
+        null)
+      : null;
+    for (const v of variants) {
+      map.set(v.model, v.model === setModel ? 'set' : v.status);
+    }
+    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
+    return map;
+  }, [
+    selectedFrameVariants,
+    selectedFrame?.thumbnailUrl,
+    selectedFrame?.imageModel,
+  ]);
+
+  const videoModelStatuses = useMemo(() => {
+    const map = new Map<string, ModelGenerationStatus>();
+    if (!curSelectedFrameId) return map;
+    const variants = (
+      videoVariantsByFrame.get(curSelectedFrameId) ?? []
+    ).filter((v) => v.divergedAt === null && v.discardedAt === null);
+    const primaryUrl = selectedFrame?.videoUrl ?? null;
+    const setModel = primaryUrl
+      ? (variants.find((v) => v.url === primaryUrl)?.model ??
+        selectedFrame?.motionModel ??
+        null)
+      : null;
+    for (const v of variants) {
+      map.set(v.model, v.model === setModel ? 'set' : v.status);
+    }
+    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
+    return map;
+  }, [
+    videoVariantsByFrame,
+    curSelectedFrameId,
+    selectedFrame?.videoUrl,
+    selectedFrame?.motionModel,
+  ]);
 
   const { previewVariantUrl, previewVariantVideoUrl, playerBadgeMessage } =
     useMemo(() => {
@@ -850,6 +904,8 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             aspectRatio={aspectRatio}
             variantForSelectedModel={variantForSelectedModel}
             videoVariantForSelectedModel={videoVariantForSelectedModel}
+            imageModelStatuses={imageModelStatuses}
+            videoModelStatuses={videoModelStatuses}
             onImageModelChange={setImageModelOverride}
             onVideoModelChange={setVideoModelOverride}
             styleCategory={styleCategory}

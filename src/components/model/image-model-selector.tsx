@@ -1,4 +1,7 @@
-import { BaseModelSelector } from './base-model-selector';
+import {
+  BaseModelSelector,
+  type ModelGenerationStatus,
+} from './base-model-selector';
 import {
   IMAGE_MODELS,
   isValidTextToImageModel,
@@ -90,6 +93,8 @@ type ImageModelSelectorProps = {
   disabled?: boolean;
   /** When set, only show these models instead of all available models */
   filterModels?: TextToImageModel[];
+  /** Per-scene generation status by model (#545); renders ✓/⟳/! in the list. */
+  generatedStatuses?: Map<string, ModelGenerationStatus>;
 } & RecommendationProps;
 
 export const ImageModelSelector: React.FC<ImageModelSelectorProps> = ({
@@ -99,13 +104,20 @@ export const ImageModelSelector: React.FC<ImageModelSelectorProps> = ({
   filterModels,
   recommendedImageModel,
   styleName,
+  generatedStatuses,
 }) => {
   const allModels = useImageModels({ recommendedImageModel, styleName });
-  const models = filterModels
-    ? allModels.filter(
-        (m) => isValidTextToImageModel(m.id) && filterModels.includes(m.id)
-      )
-    : allModels;
+  const models = useMemo(() => {
+    const filtered = filterModels
+      ? allModels.filter(
+          (m) => isValidTextToImageModel(m.id) && filterModels.includes(m.id)
+        )
+      : allModels;
+    return filtered.map((m) => ({
+      ...m,
+      generationStatus: generatedStatuses?.get(m.id),
+    }));
+  }, [allModels, filterModels, generatedStatuses]);
   const status = useMemo(
     () => resolveRecommendation(recommendedImageModel, filterModels),
     [recommendedImageModel, filterModels]

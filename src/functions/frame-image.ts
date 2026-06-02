@@ -491,7 +491,13 @@ export const setImageFromVariantFn = createServerFn({ method: 'POST' })
       thumbnailStatus: 'completed',
       thumbnailError: null,
       imageModel: data.model,
-      // Clear stale video fields — video must be regenerated
+      // Adopt the promoted variant's input hash so the staleness check (which
+      // re-derives the current hash with the now-updated imageModel) compares
+      // like-for-like. Without this it diffs the new model's hash against the
+      // OLD model's stored hash and always reports a false "stale". (#545)
+      thumbnailInputHash: variant.inputHash,
+      // Clear stale video fields — the video was generated from the previous
+      // image, so it must be regenerated.
       videoUrl: null,
       videoPath: null,
       videoStatus: 'pending',
@@ -539,6 +545,7 @@ export const setVideoFromVariantFn = createServerFn({ method: 'POST' })
       videoStatus: 'completed',
       videoError: null,
       videoGeneratedAt: new Date(),
+      videoInputHash: variant.inputHash,
       durationMs: variant.durationMs,
       motionModel: data.model,
     });

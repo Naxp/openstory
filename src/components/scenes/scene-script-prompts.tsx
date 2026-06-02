@@ -1,6 +1,7 @@
 import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
 import { ImageModelSelector } from '@/components/model/image-model-selector';
 import { MotionModelSelector } from '@/components/model/motion-model-selector';
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
@@ -114,6 +115,9 @@ type SceneScriptPromptsProps = {
   variantForSelectedModel?: FrameVariant;
   /** The selected scene's video variant for the effective video model (#545). */
   videoVariantForSelectedModel?: FrameVariant;
+  /** Per-scene generation status by model — drives the ✓/⟳/! dropdown markers (#545). */
+  imageModelStatuses?: Map<string, ModelGenerationStatus>;
+  videoModelStatuses?: Map<string, ModelGenerationStatus>;
   onImageModelChange?: (model: string) => void;
   /** Per-scene video-model preview switch (#545), mirror of onImageModelChange. */
   onVideoModelChange?: (model: string) => void;
@@ -147,6 +151,8 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   aspectRatio,
   variantForSelectedModel,
   videoVariantForSelectedModel,
+  imageModelStatuses,
+  videoModelStatuses,
   onImageModelChange,
   onVideoModelChange,
   styleCategory,
@@ -499,6 +505,15 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   const variantAlreadySet =
     variantIsCompleted && variantForSelectedModel.url === frame?.thumbnailUrl;
 
+  // Has the selected image model produced an image for this scene — drives
+  // Generate vs Regenerate (mirror of videoModelGenerated). Variant row (any
+  // status) ⇒ attempted; legacy fallback covers frames with a primary
+  // thumbnail but no variant row.
+  const imageModelGenerated =
+    !!variantForSelectedModel ||
+    (!!frame?.thumbnailUrl &&
+      (selectedImageModel || imageModel) === imageModel);
+
   const handleSetImageFromVariant = useCallback(async () => {
     if (!frame?.id || !frame.sequenceId || !selectedImageModel) return;
 
@@ -807,6 +822,17 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   ]);
 
   const motionModel = effectiveMotionModel;
+
+  // Has the *currently-selected* video model produced a video for this scene —
+  // drives Generate vs Regenerate (NOT whether the frame has any video, which
+  // could be from a different model). A variant row (any status) means it was
+  // attempted; the legacy fallback covers pre-#545 frames that carry a primary
+  // video but no variant row.
+  const videoModelGenerated =
+    !!videoVariantForSelectedModel ||
+    (!!frame?.videoUrl &&
+      effectiveMotionModel ===
+        safeImageToVideoModel(frame.motionModel, DEFAULT_VIDEO_MODEL));
   const maxPromptLength = IMAGE_TO_VIDEO_MODELS[motionModel].maxPromptLength;
   const isOverLimit = assembledPrompt.length > maxPromptLength;
 
@@ -1020,6 +1046,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               disabled={isGenerating}
               recommendedImageModel={recommendedImageModel}
               styleName={styleName}
+              generatedStatuses={imageModelStatuses}
             />
           </div>
 
@@ -1132,7 +1159,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               )}
               {isGenerating || variantIsGenerating
                 ? 'Generating…'
-                : variantAlreadySet
+                : imageModelGenerated
                   ? 'Regenerate Image'
                   : 'Generate Image'}
             </Button>
@@ -1208,6 +1235,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               styleCategory={styleCategory}
               recommendedVideoModel={recommendedVideoModel}
               styleName={styleName}
+              generatedStatuses={videoModelStatuses}
             />
           </div>
 
@@ -1352,7 +1380,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               )}
               {isGeneratingMotion || videoVariantIsGenerating
                 ? 'Generating…'
-                : frame?.videoUrl
+                : videoModelGenerated
                   ? 'Regenerate Motion'
                   : 'Generate Motion'}
             </Button>
@@ -1405,6 +1433,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
               disabled={isGenerating || isGeneratingSceneVariants}
               recommendedImageModel={recommendedImageModel}
               styleName={styleName}
+              generatedStatuses={imageModelStatuses}
             />
           </div>
 

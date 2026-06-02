@@ -1,4 +1,7 @@
-import { BaseModelSelector } from './base-model-selector';
+import {
+  BaseModelSelector,
+  type ModelGenerationStatus,
+} from './base-model-selector';
 import {
   IMAGE_TO_VIDEO_MODELS,
   isModelCompatibleWithAspectRatio,
@@ -121,6 +124,8 @@ type MotionModelSelectorProps = {
   selectedModel: ImageToVideoModel;
   onModelChange: (model: ImageToVideoModel) => void;
   disabled?: boolean;
+  /** Per-scene generation status by model (#545); renders ✓/⟳/! in the list. */
+  generatedStatuses?: Map<string, ModelGenerationStatus>;
 } & MotionModelFilterProps;
 
 export const MotionModelSelector: React.FC<MotionModelSelectorProps> = ({
@@ -131,13 +136,22 @@ export const MotionModelSelector: React.FC<MotionModelSelectorProps> = ({
   styleCategory,
   recommendedVideoModel,
   styleName,
+  generatedStatuses,
 }) => {
-  const models = useMotionModels({
+  const baseModels = useMotionModels({
     aspectRatio,
     styleCategory,
     recommendedVideoModel,
     styleName,
   });
+  const models = useMemo(
+    () =>
+      baseModels.map((m) => ({
+        ...m,
+        generationStatus: generatedStatuses?.get(m.id),
+      })),
+    [baseModels, generatedStatuses]
+  );
   const recommendationStatus = useRecommendationStatus(
     recommendedVideoModel,
     aspectRatio
