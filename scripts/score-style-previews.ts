@@ -79,11 +79,12 @@ const sceneVerdictSchema = z.object({
   styleAdherence: z.number().min(0).max(10),
   representativeness: z.number().min(0).max(10),
   quality: z.number().min(0).max(10),
-  literalMedium: z.boolean(),
-  multiFrame: z.boolean(),
-  anatomy: z.boolean(),
-  unwantedText: z.boolean(),
-  note: z.string(),
+  // Flags default to false when the model omits them (a missing flag = not set).
+  literalMedium: z.boolean().default(false),
+  multiFrame: z.boolean().default(false),
+  anatomy: z.boolean().default(false),
+  unwantedText: z.boolean().default(false),
+  note: z.string().default(''),
 });
 type SceneVerdict = z.infer<typeof sceneVerdictSchema>;
 
@@ -105,7 +106,7 @@ Definitions:
 - quality: clear subject, well composed, in focus, appealing at small thumbnail size.
 - literalMedium (hard fail): depicts the MEDIUM/FORMAT/ARTIFACT as the object — a physical book, storyboard sheet, panel sheet, a TV/monitor/phone showing the scene — instead of a scene in that style. If the intended look IS a device/setup (phone in-hand, product on white, turntable, UI, stage), that's CORRECT — set false.
 - multiFrame (hard fail): a grid, multiple panels, collage, split-screen, or several separate images in one frame.
-- anatomy (hard fail): look very carefully and COUNT the hands and fingers of every person. Flag extra/missing/duplicated/floating hands, extra/missing fingers, extra/missing limbs, or distorted faces.
+- anatomy (hard fail): set true ONLY for a clear, obvious anatomy error a viewer would notice at a glance — an extra / missing / duplicated / floating hand or limb, an obviously wrong finger count on a prominent hand, or a badly distorted face. Do NOT flag minor or soft imperfections, slightly messy or blurred small/background hands, or stylized hands that read as acceptable for the style. If you'd call it "acceptable", set false. When in doubt, set false.
 - unwantedText: any text, caption, watermark, logo, or frame number.
 
 "best" MUST be one of the scene names, and MUST NOT be a scene you flagged literalMedium/multiFrame/anatomy unless every scene is flagged. Be strict and consistent.`;
@@ -151,12 +152,17 @@ function extractJson(text: string): string {
   return candidate.slice(start, end + 1);
 }
 
-function flagCount(v: SceneVerdict): number {
-  return [v.literalMedium, v.multiFrame, v.anatomy].filter(Boolean).length;
+// HARD flags gate the pick + reroll: literal-medium and multi-frame, which the
+// model detects reliably. Anatomy is a SOFT signal — gemini-flash can't be
+// tuned to flag it dependably (over-flags messy action shots, under-flags real
+// errors), so it only nudges the score down and is surfaced for human review.
+function hardFlagCount(v: SceneVerdict): number {
+  return [v.literalMedium, v.multiFrame].filter(Boolean).length;
 }
 function composite(v: SceneVerdict): number {
   const mean = (v.styleAdherence + v.representativeness + v.quality) / 3;
-  return Math.max(0, Math.round((mean - 3 * flagCount(v)) * 10) / 10);
+  const penalty = 3 * hardFlagCount(v) + (v.anatomy ? 1.5 : 0);
+  return Math.max(0, Math.round((mean - penalty) * 10) / 10);
 }
 function flagLabels(v: SceneVerdict): string {
   const f: string[] = [];
@@ -228,11 +234,11 @@ async function scoreStyle(
     (s) => s.scene.toLowerCase() === parsed.best.toLowerCase()
   );
   const bestScene =
-    picked && flagCount(picked.verdict) === 0
+    picked && hardFlagCount(picked.verdict) === 0
       ? picked.scene
       : ([...scenes].sort((a, b) => {
-          const fa = flagCount(a.verdict) === 0 ? 1 : 0;
-          const fb = flagCount(b.verdict) === 0 ? 1 : 0;
+          const fa = hardFlagCount(a.verdict) === 0 ? 1 : 0;
+          const fb = hardFlagCount(b.verdict) === 0 ? 1 : 0;
           if (fa !== fb) return fb - fa;
           if (a.verdict.representativeness !== b.verdict.representativeness)
             return b.verdict.representativeness - a.verdict.representativeness;
@@ -351,15 +357,29 @@ async function main() {
     );
   }
 
+  // Re-roll = a hard failure (literal-medium / multi-frame) on the chosen scene,
+  // or a composite below threshold.
+  const chosenVerdict = (r: StyleResult) =>
+    r.scenes.find((s) => s.scene === r.bestScene)?.verdict;
   const reroll = results.filter((r) => {
-    const best = r.scenes.find((s) => s.scene === r.bestScene)?.verdict;
-    return r.bestComposite < THRESHOLD || (best ? flagCount(best) > 0 : true);
+    const best = chosenVerdict(r);
+    return (
+      r.bestComposite < THRESHOLD || (best ? hardFlagCount(best) > 0 : true)
+    );
   });
   console.log(
-    `\n${results.length} styles scored. ${reroll.length} below threshold ${THRESHOLD} or flagged on chosen scene:`
+    `\n${results.length} styles scored. ${reroll.length} below threshold ${THRESHOLD} or hard-flagged on chosen scene:`
   );
   for (const r of reroll)
     console.log(`  - ${r.slug} (${r.bestComposite.toFixed(1)})`);
+
+  // Soft advisory: chosen thumbnails the model flagged for anatomy — worth a
+  // human spot-check (the flag is unreliable, so it's not auto-rerolled).
+  const anatomyReview = results.filter((r) => chosenVerdict(r)?.anatomy);
+  console.log(
+    `\n${anatomyReview.length} chosen thumbnail(s) flagged for anatomy — spot-check:`
+  );
+  for (const r of anatomyReview) console.log(`  ? ${r.slug} (${r.bestScene})`);
   console.log(`\nWrote preview/_scores.json and preview/_thumbnails.json`);
 
   if (failures.length > 0) {
