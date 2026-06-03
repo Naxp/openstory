@@ -52,6 +52,12 @@ type ScenePlayerProps = {
    */
   overrideVideoUrl?: string | null;
   badgeMessage?: string | null;
+  /**
+   * Warning badge shown when the pinned image model has not generated this
+   * scene (#547) — the displayed image is the primary fallback, not the
+   * pinned model's output.
+   */
+  modelMismatchLabel?: string | null;
   progressMessage?: string;
   posterUrl?: string;
   onTimeUpdate?: (currentTime: number) => void;
@@ -68,6 +74,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   overrideImageUrl,
   overrideVideoUrl,
   badgeMessage,
+  modelMismatchLabel,
   progressMessage,
   posterUrl,
   onTimeUpdate,
@@ -425,6 +432,11 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
           {badgeMessage && (
             <span className="absolute top-2 left-2 z-10 rounded bg-primary/80 px-2 py-1 text-xs font-medium text-primary-foreground backdrop-blur-sm">
               {badgeMessage}
+            </span>
+          )}
+          {modelMismatchLabel && !badgeMessage && (
+            <span className="absolute top-2 left-2 z-10 rounded bg-amber-500/90 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              {modelMismatchLabel}
             </span>
           )}
           {isPreviewImage && !isVariantPreview && (

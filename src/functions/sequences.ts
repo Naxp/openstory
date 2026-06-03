@@ -27,6 +27,7 @@ import { multiplyMicros } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
 import { DEFAULT_ASPECT_RATIO } from '@/lib/constants/aspect-ratios';
 import type { Frame } from '@/lib/db/schema';
+import { buildPromoteUpdate } from '@/functions/frames';
 import { buildFrameImageWorkflowInput } from '@/lib/image/build-frame-image-input';
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
 import { VARIANT_TYPES } from '@/lib/db/schema/frame-variants';
@@ -625,6 +626,9 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         ...baseCtx,
         includeMusic: false,
         videoModels: [model],
+        // Adding a video model lands as an alternate only — never the primary
+        // video. Promote later with "Set". (#547)
+        variantOnly: true,
         frames: eligible.map((f) => ({
           frameId: f.id,
           imageUrl: f.thumbnailUrl ?? '',
@@ -693,6 +697,9 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         characters,
         locations,
         elements,
+        // Adding a model never repoints the primary — it lands as an alternate
+        // variant only. Promote later with "Set". (#547)
+        variantOnly: true,
       });
       if (input) inputs.push(input);
     }
@@ -752,6 +759,83 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
       throw new Error('Failed to start image generation for any frame');
     }
     return { workflowRunId, variantType, model, count: triggered };
+  });
+
+/**
+ * Promote a model to the live primary across the WHOLE sequence (#547) — the
+ * sequence-wide "Set" that pairs with the header image/video dropdowns. For
+ * every frame that has a completed `frame_variants` row for `model`, copies that
+ * row onto the legacy primary columns (the per-scene `setImageFromVariantFn` /
+ * `setVideoFromVariantFn` applied in bulk, reusing `buildPromoteUpdate`). Frames
+ * the model never generated are left on their current primary. Image promotion
+ * invalidates each affected frame's video (the start image changed); video
+ * promotion is terminal. Audio is per-sequence — use `setMusicFromVariantFn`.
+ */
+export const setSequenceModelFn = createServerFn({ method: 'POST' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(
+    zodValidator(
+      z.object({
+        sequenceId: ulidSchema,
+        variantType: z.enum(['image', 'video']),
+        model: z.string().min(1),
+      })
+    )
+  )
+  .handler(async ({ data, context }) => {
+    const { sequence, scopedDb } = context;
+    const { variantType, model } = data;
+
+    if (variantType === 'image' && !isValidTextToImageModel(model)) {
+      throw new Error('Invalid image model');
+    }
+    if (variantType === 'video' && !isValidImageToVideoModel(model)) {
+      throw new Error('Invalid video model');
+    }
+
+    const variants = await scopedDb.frameVariants.listBySequence(
+      sequence.id,
+      variantType
+    );
+    const promotable = variants.filter(
+      (v) =>
+        v.model === model &&
+        v.status === 'completed' &&
+        v.url &&
+        v.divergedAt === null &&
+        v.discardedAt === null
+    );
+    if (promotable.length === 0) {
+      throw new Error('That model has not generated anything to set');
+    }
+
+    let count = 0;
+    for (const variant of promotable) {
+      // `buildPromoteUpdate` matches `setImageFromVariantFn` exactly for image
+      // (incl. clearing the now-stale video). Its video case omits the
+      // motion-model / duration / timestamp that `setVideoFromVariantFn`
+      // records, so layer those on for parity.
+      const { update } = buildPromoteUpdate(variant);
+      const frameUpdate =
+        variantType === 'video'
+          ? {
+              ...update,
+              motionModel: model,
+              durationMs: variant.durationMs,
+              videoGeneratedAt: new Date(),
+            }
+          : update;
+      const updated = await scopedDb.frames.update(
+        variant.frameId,
+        frameUpdate,
+        {
+          throwOnMissing: false,
+        }
+      );
+      if (updated) count++;
+    }
+
+    return { count, variantType, model };
   });
 
 /**

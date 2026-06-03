@@ -151,11 +151,16 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
           workflowRunId,
         });
 
-        const frame = await scopedDb.frames.update(
-          input.frameId,
-          generatingWrites.frame,
-          { throwOnMissing: false }
-        );
+        // Variant-only (#547): don't stamp the legacy `frames.video*` columns —
+        // read the frame instead. The per-model `frame_variants` row (opened
+        // below) carries the in-flight state; the primary video is left intact.
+        const frame = input.variantOnly
+          ? await scopedDb.frames.getById(input.frameId)
+          : await scopedDb.frames.update(
+              input.frameId,
+              generatingWrites.frame,
+              { throwOnMissing: false }
+            );
 
         if (!frame) {
           logger.info(
@@ -452,6 +457,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
           upload: { url: storageResult.url, path: storageResult.path },
           durationMs: duration * 1000,
           promptHash: input.prompt ? simpleHash(input.prompt) : null,
+          variantOnly: input.variantOnly,
           emit: async (event, payload) => {
             try {
               await getGenerationChannel(input.sequenceId).emit(event, payload);
@@ -499,6 +505,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
         model,
         error,
         workflowRunId: event.instanceId,
+        variantOnly: input.variantOnly,
         emit: async (event2, payload) => {
           try {
             await getGenerationChannel(sequenceId).emit(event2, payload);

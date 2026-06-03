@@ -45,6 +45,14 @@ type SceneListProps = {
   initialMusicModel?: AudioModel;
   /** Current style category — used to filter style-restricted motion models. */
   styleCategory?: string;
+  /**
+   * Scenes the pinned image model hasn't generated yet (#547). Those cards show
+   * a "No {model}" badge so the thumbnail (which still shows the primary image)
+   * isn't mistaken for the pinned model's output.
+   */
+  modelMissingFrameIds?: Set<string>;
+  /** Name of the pinned image model, for the per-card "No {model}" badge. */
+  modelMissingLabel?: string | null;
 };
 
 const isCompleted = (frame: Frame) => {
@@ -68,6 +76,8 @@ const SceneListComponent: React.FC<SceneListProps> = ({
   initialMotionModel,
   initialMusicModel,
   styleCategory,
+  modelMissingFrameIds,
+  modelMissingLabel,
 }) => {
   const divergentByFrameId = useMemo(() => {
     const map = new Map<string, FrameVariant>();
@@ -202,6 +212,11 @@ const SceneListComponent: React.FC<SceneListProps> = ({
                       ? () => onCompareDivergent?.(divergent)
                       : undefined
                   }
+                  modelMissing={
+                    !!modelMissingLabel &&
+                    (modelMissingFrameIds?.has(frame.id) ?? false)
+                  }
+                  modelMissingLabel={modelMissingLabel}
                 />
               );
             })}
@@ -308,7 +323,9 @@ const areEqual = (
     prevProps.musicPromptsReady !== nextProps.musicPromptsReady ||
     prevProps.initialMotionModel !== nextProps.initialMotionModel ||
     prevProps.initialMusicModel !== nextProps.initialMusicModel ||
-    prevProps.styleCategory !== nextProps.styleCategory
+    prevProps.styleCategory !== nextProps.styleCategory ||
+    prevProps.modelMissingLabel !== nextProps.modelMissingLabel ||
+    prevProps.modelMissingFrameIds !== nextProps.modelMissingFrameIds
   ) {
     return false;
   }

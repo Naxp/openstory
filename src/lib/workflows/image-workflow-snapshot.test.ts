@@ -644,4 +644,59 @@ describe('persistImageResult — orchestration', () => {
     expect(variantsUpdates).toEqual([]);
     expect(variantsInserts).toEqual([]);
   });
+
+  it('variant-only (#547): writes ONLY the variant row — no frames.update, no divergence, even when hashes differ', async () => {
+    const {
+      scopedDb,
+      framesUpdates,
+      variantsUpdates,
+      variantsInserts,
+      callOrder,
+    } = buildScopedDbSpy();
+    const emits: Array<{ event: string; payload: unknown }> = [];
+
+    const outcome = await persistImageResult({
+      scopedDb,
+      frameId: 'f1',
+      sequenceId: 'seq1',
+      model: 'nano_banana_2',
+      upload,
+      // Hashes differ — convergent/divergent would diverge, but variant-only
+      // skips that path entirely (there is no primary to protect).
+      snapshotHash: 'snapshot-abc',
+      currentHash: 'current-xyz',
+      promptHash: 'prompt-1',
+      variantOnly: true,
+      emit: async (event, payload) => {
+        emits.push({ event, payload });
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'variant-only', imageUrl: upload.url });
+    // The primary columns are never touched, and nothing diverges.
+    expect(framesUpdates).toEqual([]);
+    expect(variantsInserts).toEqual([]);
+    expect(callOrder).toEqual(['frameVariants.updateByFrameAndModel']);
+
+    const [variantWrite] = variantsUpdates;
+    if (!variantWrite) throw new Error('expected variant update call');
+    expect(variantWrite.variantType).toBe('image');
+    expect(variantWrite.model).toBe('nano_banana_2');
+    expect(variantWrite.data.url).toBe(upload.url);
+    expect(variantWrite.data.status).toBe('completed');
+    expect(variantWrite.data.inputHash).toBe('snapshot-abc');
+
+    expect(emits).toEqual([
+      {
+        event: 'generation.image:progress',
+        payload: {
+          frameId: 'f1',
+          status: 'completed',
+          thumbnailUrl: upload.url,
+          model: 'nano_banana_2',
+        },
+      },
+    ]);
+  });
 });

@@ -8,13 +8,20 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AddModelMenuSection } from '@/components/model/add-model-menu';
+import { ModelCoverageMarker } from '@/components/model/model-coverage-marker';
+import { SetModelButton } from '@/components/model/set-model-button';
 import { useActiveVideoModel } from '@/hooks/use-active-video-model';
-import { useSequenceVideoModels } from '@/hooks/use-frames';
+import {
+  useSequenceVideoModels,
+  useSequenceVideoVariants,
+} from '@/hooks/use-frames';
 import {
   IMAGE_TO_VIDEO_MODELS,
   isValidImageToVideoModel,
 } from '@/lib/ai/models';
+import { computeSequenceModelCoverage } from '@/lib/model/sequence-model-coverage';
 import { ChevronDown } from 'lucide-react';
+import { useMemo } from 'react';
 
 function videoModelName(model: string): string {
   return isValidImageToVideoModel(model)
@@ -40,8 +47,19 @@ export const SequenceVideoModelSelector = ({
   sequenceVideoModel?: string | null;
 }) => {
   const { data: models } = useSequenceVideoModels(sequenceId);
+  const { data: variants } = useSequenceVideoVariants(sequenceId);
   const { activeVideoModel, selectVideoModel } =
     useActiveVideoModel(sequenceId);
+
+  const coverage = useMemo(
+    () =>
+      computeSequenceModelCoverage({
+        variants,
+        variantType: 'video',
+        primaryModel: sequenceVideoModel,
+      }),
+    [variants, sequenceVideoModel]
+  );
 
   // No video variants generated yet — fall back to the read-only chip showing
   // the sequence's configured model (or render nothing when motion is off).
@@ -92,7 +110,19 @@ export const SequenceVideoModelSelector = ({
             onSelect={(e) => e.preventDefault()}
             className="cursor-pointer"
           >
-            {videoModelName(model)}
+            <span className="flex w-full items-center justify-between gap-2">
+              <span className="truncate">{videoModelName(model)}</span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <ModelCoverageMarker coverage={coverage.get(model)} />
+                <SetModelButton
+                  sequenceId={sequenceId}
+                  variantType="video"
+                  model={model}
+                  modelName={videoModelName(model)}
+                  coverage={coverage.get(model)}
+                />
+              </span>
+            </span>
           </DropdownMenuCheckboxItem>
         ))}
         <AddModelMenuSection

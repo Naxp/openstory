@@ -30,6 +30,10 @@ type SceneListItemProps = {
    */
   divergentVariantId?: string;
   onCompareDivergent?: () => void;
+  /** Pinned image model hasn't generated this scene (#547) — show a badge. */
+  modelMissing?: boolean;
+  /** Name of the pinned image model, for the "No {model}" badge. */
+  modelMissingLabel?: string | null;
 };
 
 const SceneListItemComponent: React.FC<SceneListItemProps> = ({
@@ -43,6 +47,8 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
   isRegeneratingMotion = false,
   divergentVariantId,
   onCompareDivergent,
+  modelMissing = false,
+  modelMissingLabel,
 }) => {
   // Divergent alternate takes precedence: promoting it resolves staleness too.
   const showDivergentDot = !!divergentVariantId;
@@ -139,28 +145,42 @@ const SceneListItemComponent: React.FC<SceneListItemProps> = ({
             variant === 'horizontal' && 'flex-row gap-4'
           )}
         >
-          <SceneThumbnail
-            thumbnailUrl={frame?.thumbnailUrl}
-            previewThumbnailUrl={frame?.previewThumbnailUrl}
-            thumbnailStatus={frame?.thumbnailStatus || undefined}
-            alt={title ?? 'Scene thumbnail'}
-            aspectRatio={aspectRatio}
+          <div
             className={cn(
-              'w-full rounded-md',
-              // Portrait (9:16) uses smaller width to reduce height
+              'relative w-full',
               aspectRatio === '9:16' && [
                 variant === 'responsive' &&
                   '@[280px]/scene:w-20 @[280px]/scene:shrink-0',
                 variant === 'horizontal' && 'w-20 shrink-0',
               ],
-              // Landscape (16:9) and square (1:1) use standard width
               aspectRatio !== '9:16' && [
                 variant === 'responsive' &&
                   '@[280px]/scene:w-32 @[280px]/scene:shrink-0',
                 variant === 'horizontal' && 'w-32 shrink-0',
               ]
             )}
-          />
+          >
+            <SceneThumbnail
+              thumbnailUrl={frame?.thumbnailUrl}
+              previewThumbnailUrl={frame?.previewThumbnailUrl}
+              thumbnailStatus={frame?.thumbnailStatus || undefined}
+              alt={title ?? 'Scene thumbnail'}
+              aspectRatio={aspectRatio}
+              className="w-full rounded-md"
+            />
+            {modelMissing && (
+              <span
+                className="absolute bottom-1 left-1 rounded bg-amber-500/90 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+                aria-label={
+                  modelMissingLabel
+                    ? `Not generated with ${modelMissingLabel}`
+                    : 'Not generated with the selected model'
+                }
+              >
+                No {modelMissingLabel}
+              </span>
+            )}
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <CardTitle className="text-sm">
@@ -190,7 +210,9 @@ const areEqual = (
     prevProps.variant !== nextProps.variant ||
     prevProps.isRegeneratingImage !== nextProps.isRegeneratingImage ||
     prevProps.isRegeneratingMotion !== nextProps.isRegeneratingMotion ||
-    prevProps.divergentVariantId !== nextProps.divergentVariantId
+    prevProps.divergentVariantId !== nextProps.divergentVariantId ||
+    prevProps.modelMissing !== nextProps.modelMissing ||
+    prevProps.modelMissingLabel !== nextProps.modelMissingLabel
   ) {
     return false;
   }

@@ -16,6 +16,7 @@ import {
   discardVariantFn,
   undiscardVariantFn,
   getSequenceImageModelsFn,
+  getSequenceImageVariantsFn,
   getSequenceVideoModelsFn,
   getSequenceVideoVariantsFn,
 } from '@/functions/frames';
@@ -121,6 +122,22 @@ export function useSequenceVideoVariants(sequenceId?: string) {
     queryFn: async () => {
       if (!sequenceId) throw new Error('sequenceId is required');
       return getSequenceVideoVariantsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
+
+// All image FrameVariant rows for a sequence (#547). Used by the header image
+// dropdown for sequence-wide per-model coverage, and by the scenes view to
+// resolve each frame's displayed image through the active model's variant. Key
+// matches the scenes-view query + the image:progress cache invalidation.
+export function useSequenceImageVariants(sequenceId?: string) {
+  return useQuery<FrameVariant[]>({
+    queryKey: ['sequence-image-variants', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceImageVariantsFn({ data: { sequenceId } });
     },
     enabled: !!sequenceId,
     staleTime: 30_000,

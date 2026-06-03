@@ -325,3 +325,90 @@ describe('persistMotionFailure', () => {
     });
   });
 });
+
+describe('variant-only (#547)', () => {
+  it('persistMotionCompletion: writes only the variant row, never the legacy frames.video* columns', async () => {
+    const { scopedDb, framesUpdates, variantsUpdates, callOrder } =
+      buildScopedDbSpy();
+    const emits: MotionVideoProgressPayload[] = [];
+
+    const outcome = await persistMotionCompletion({
+      scopedDb,
+      frameId: 'f1',
+      model: 'veo3',
+      upload,
+      durationMs: 5000,
+      promptHash: 'prompt-abc',
+      variantOnly: true,
+      emit: async (_event, payload) => {
+        emits.push(payload);
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'completed', videoUrl: upload.url });
+    // The primary columns are untouched — only the per-model variant is written.
+    expect(framesUpdates).toEqual([]);
+    expect(callOrder).toEqual(['frameVariants.updateByFrameAndModel']);
+    const [variantUpdate] = variantsUpdates;
+    if (!variantUpdate) throw new Error('expected variant update call');
+    expect(variantUpdate.data.url).toBe(upload.url);
+    expect(variantUpdate.data.status).toBe('completed');
+    expect(emits).toEqual([
+      {
+        frameId: 'f1',
+        status: 'completed',
+        videoUrl: upload.url,
+        model: 'veo3',
+      },
+    ]);
+  });
+
+  it('persistMotionCompletion: variant-only frame-deleted (no variant row) short-circuits without emitting', async () => {
+    const { scopedDb, framesUpdates, callOrder } = buildScopedDbSpy({
+      variantMissing: true,
+    });
+    const emits: MotionVideoProgressPayload[] = [];
+
+    const outcome = await persistMotionCompletion({
+      scopedDb,
+      frameId: 'f1',
+      model: 'veo3',
+      upload,
+      durationMs: 5000,
+      promptHash: null,
+      variantOnly: true,
+      emit: async (_event, payload) => {
+        emits.push(payload);
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'frame-deleted' });
+    expect(framesUpdates).toEqual([]);
+    expect(callOrder).toEqual(['frameVariants.updateByFrameAndModel']);
+    expect(emits).toEqual([]);
+  });
+
+  it('persistMotionFailure: records failed only on the variant, never the legacy columns', async () => {
+    const { scopedDb, framesUpdates, variantsUpdates, callOrder } =
+      buildScopedDbSpy();
+
+    await persistMotionFailure({
+      scopedDb,
+      frameId: 'f1',
+      sequenceId: 'seq1',
+      model: 'veo3',
+      error: 'fal 500',
+      workflowRunId: 'run-9',
+      variantOnly: true,
+      emit: async () => {},
+    });
+
+    expect(framesUpdates).toEqual([]);
+    expect(callOrder).toEqual(['frameVariants.updateByFrameAndModel']);
+    const [variantUpdate] = variantsUpdates;
+    if (!variantUpdate) throw new Error('expected variant update call');
+    expect(variantUpdate.data).toEqual({ status: 'failed', error: 'fal 500' });
+  });
+});

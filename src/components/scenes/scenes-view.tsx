@@ -34,6 +34,8 @@ import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_MUSIC_MODEL,
   DEFAULT_VIDEO_MODEL,
+  IMAGE_MODELS,
+  isValidTextToImageModel,
   safeAudioModel,
   safeImageToVideoModel,
   safeTextToImageModel,
@@ -282,6 +284,32 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     }
     return map;
   }, [imageVariants]);
+
+  // Scenes the pinned image model has NOT generated yet (#547). When a model is
+  // pinned, the player + scene list flag these so a viewer isn't shown the
+  // primary image as if it were the pinned model's output.
+  const activeImageModelLabel =
+    activeImageModel && isValidTextToImageModel(activeImageModel)
+      ? IMAGE_MODELS[activeImageModel].name
+      : null;
+  const framesMissingActiveImage = useMemo(() => {
+    const missing = new Set<string>();
+    if (!activeImageModel || !frames) return missing;
+    for (const f of frames) {
+      const hasModel = imageVariantsByFrame
+        .get(f.id)
+        ?.some(
+          (v) =>
+            v.model === activeImageModel &&
+            v.divergedAt === null &&
+            v.discardedAt === null &&
+            v.status === 'completed' &&
+            v.url
+        );
+      if (!hasModel) missing.add(f.id);
+    }
+    return missing;
+  }, [activeImageModel, frames, imageVariantsByFrame]);
 
   // Divergent alternates + realtime stale:detected wiring (issue #625).
   // Mirror the frames-list polling fallback so the corner-dot still updates
@@ -910,6 +938,8 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             initialMotionModel={sequenceMotionModel}
             initialMusicModel={sequenceMusicModel}
             styleCategory={styleCategory}
+            modelMissingFrameIds={framesMissingActiveImage}
+            modelMissingLabel={activeImageModelLabel}
           />
         </div>
 
@@ -945,6 +975,14 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
               overrideImageUrl={previewVariantUrl}
               overrideVideoUrl={previewVariantVideoUrl}
               badgeMessage={playerBadgeMessage}
+              modelMismatchLabel={
+                selectedTab === 'scene-variants' &&
+                activeImageModelLabel &&
+                curSelectedFrameId &&
+                framesMissingActiveImage.has(curSelectedFrameId)
+                  ? `Not generated with ${activeImageModelLabel}`
+                  : null
+              }
               progressMessage={
                 generationState.phases.find((p) => p.status === 'active')
                   ?.phaseName

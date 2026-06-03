@@ -73,6 +73,11 @@ export async function buildFrameImageWorkflowInput(opts: {
   /** Prompt override (e.g. a user edit). Defaults to the frame's prompt chain. */
   prompt?: string;
   userEditedPrompt?: boolean;
+  /**
+   * Variant-only (#547): the resulting `/image` run writes only this model's
+   * `frame_variants` row, never the primary columns. Set by the add-model path.
+   */
+  variantOnly?: boolean;
 }): Promise<ImageWorkflowInput | null> {
   const {
     frame,
@@ -159,5 +164,6 @@ export async function buildFrameImageWorkflowInput(opts: {
       ...elementReferences,
     ],
     userEditedPrompt: opts.userEditedPrompt ?? false,
+    variantOnly: opts.variantOnly ?? false,
   };
 }

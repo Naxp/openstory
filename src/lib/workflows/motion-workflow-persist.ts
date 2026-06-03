@@ -149,6 +149,12 @@ export async function persistMotionCompletion(opts: {
   durationMs: number;
   promptHash: string | null;
   emit: MotionEmit;
+  /**
+   * Variant-only (#547): write only this model's `frame_variants` row, never
+   * the legacy `frames.video*` columns — adding a video model leaves the
+   * primary video intact.
+   */
+  variantOnly?: boolean;
   now?: () => Date;
 }): Promise<PersistMotionOutcome> {
   const {
@@ -159,6 +165,7 @@ export async function persistMotionCompletion(opts: {
     durationMs,
     promptHash,
     emit,
+    variantOnly,
     now = () => new Date(),
   } = opts;
 
@@ -168,6 +175,27 @@ export async function persistMotionCompletion(opts: {
     promptHash,
     generatedAt: now(),
   });
+
+  if (variantOnly) {
+    // Only this model's variant row; the primary `frames.video*` are untouched.
+    // A null update means the frame (and its cascade-deleted variant) is gone.
+    const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+      frameId,
+      'video',
+      model,
+      writes.variant
+    );
+    if (!updated) return { status: 'frame-deleted' };
+
+    await emit('generation.video:progress', {
+      frameId,
+      status: 'completed',
+      videoUrl: upload.url,
+      model,
+    });
+
+    return { status: 'completed', videoUrl: upload.url };
+  }
 
   const updatedFrame = await scopedDb.frames.update(frameId, writes.frame, {
     throwOnMissing: false,
@@ -213,15 +241,28 @@ export async function persistMotionFailure(opts: {
   error: string;
   workflowRunId: string;
   emit: MotionEmit;
+  /** Variant-only (#547): record `failed` only on the variant, never the
+   * legacy `frames.video*` columns. */
+  variantOnly?: boolean;
 }): Promise<void> {
-  const { scopedDb, frameId, sequenceId, model, error, workflowRunId, emit } =
-    opts;
+  const {
+    scopedDb,
+    frameId,
+    sequenceId,
+    model,
+    error,
+    workflowRunId,
+    emit,
+    variantOnly,
+  } = opts;
 
   const writes = buildMotionFailedWrites({ error });
 
-  await scopedDb.frames.update(frameId, writes.frame, {
-    throwOnMissing: false,
-  });
+  if (!variantOnly) {
+    await scopedDb.frames.update(frameId, writes.frame, {
+      throwOnMissing: false,
+    });
+  }
 
   const updated = await scopedDb.frameVariants.updateByFrameAndModel(
     frameId,

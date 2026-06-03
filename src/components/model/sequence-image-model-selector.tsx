@@ -8,10 +8,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ModelCoverageMarker } from '@/components/model/model-coverage-marker';
+import { SetModelButton } from '@/components/model/set-model-button';
 import { useActiveImageModel } from '@/hooks/use-active-image-model';
-import { useSequenceImageModels } from '@/hooks/use-frames';
+import {
+  useSequenceImageModels,
+  useSequenceImageVariants,
+} from '@/hooks/use-frames';
 import { IMAGE_MODELS, isValidTextToImageModel } from '@/lib/ai/models';
+import { computeSequenceModelCoverage } from '@/lib/model/sequence-model-coverage';
 import { ChevronDown } from 'lucide-react';
+import { useMemo } from 'react';
 
 function imageModelName(model: string): string {
   return isValidTextToImageModel(model) ? IMAGE_MODELS[model].name : model;
@@ -32,8 +39,19 @@ export const SequenceImageModelSelector = ({
   sequenceImageModel?: string | null;
 }) => {
   const { data: models } = useSequenceImageModels(sequenceId);
+  const { data: variants } = useSequenceImageVariants(sequenceId);
   const { activeImageModel, selectImageModel } =
     useActiveImageModel(sequenceId);
+
+  const coverage = useMemo(
+    () =>
+      computeSequenceModelCoverage({
+        variants,
+        variantType: 'image',
+        primaryModel: sequenceImageModel,
+      }),
+    [variants, sequenceImageModel]
+  );
 
   if (!models || models.length === 0) {
     if (!sequenceImageModel) return null;
@@ -82,7 +100,19 @@ export const SequenceImageModelSelector = ({
             onSelect={(e) => e.preventDefault()}
             className="cursor-pointer"
           >
-            {imageModelName(model)}
+            <span className="flex w-full items-center justify-between gap-2">
+              <span className="truncate">{imageModelName(model)}</span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <ModelCoverageMarker coverage={coverage.get(model)} />
+                <SetModelButton
+                  sequenceId={sequenceId}
+                  variantType="image"
+                  model={model}
+                  modelName={imageModelName(model)}
+                  coverage={coverage.get(model)}
+                />
+              </span>
+            </span>
           </DropdownMenuCheckboxItem>
         ))}
         <AddModelMenuSection

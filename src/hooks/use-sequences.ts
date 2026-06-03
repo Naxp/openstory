@@ -6,6 +6,7 @@ import {
   getSequenceAudioVariantsFn,
   getSequenceFn,
   getSequencesFn,
+  setSequenceModelFn,
   updateSequenceFn,
 } from '@/functions/sequences';
 import { DEFAULT_ANALYSIS_MODEL } from '@/lib/ai/models.config';
@@ -95,6 +96,36 @@ export function useAddModelToSequence() {
         }),
         queryClient.invalidateQueries({
           queryKey: VARIANTS_KEY[variantType](sequenceId),
+        }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Promote a model to the live primary across the whole sequence (#547) — the
+ * sequence-wide "Set". Invalidates the model list + variants (so the dropdown's
+ * ⊙ primary marker moves) and the frames list (the primary image/video changed,
+ * and an image Set also reset each frame's video).
+ */
+export function useSetSequenceModel() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { count: number; variantType: 'image' | 'video'; model: string },
+    Error,
+    { sequenceId: string; variantType: 'image' | 'video'; model: string }
+  >({
+    mutationFn: async (input) => setSequenceModelFn({ data: input }),
+    onSuccess: async (_, { sequenceId, variantType }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: MODEL_LIST_KEY[variantType](sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: VARIANTS_KEY[variantType](sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['frames', 'list', sequenceId],
         }),
       ]);
     },
