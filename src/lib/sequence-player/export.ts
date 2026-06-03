@@ -14,11 +14,13 @@
 
 import {
   BufferTarget,
+  CanvasSource,
   EncodedAudioPacketSource,
   EncodedPacket,
   EncodedVideoPacketSource,
   Mp4OutputFormat,
   Output,
+  QUALITY_HIGH,
 } from 'mediabunny';
 import { addCorsCacheBuster } from '@/lib/utils/cors-cache-buster';
 
@@ -110,7 +112,22 @@ export async function exportSequence(
       format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
       target: new BufferTarget(),
     });
-    const videoSrc = new EncodedVideoPacketSource('avc');
+
+    // Fast path: every scene shares a byte-identical AVC decoder config, so we
+    // can concatenate encoded packets without touching pixels. Slow path: the
+    // scenes disagree (mixed resolutions from different models, #791, or
+    // otherwise incompatible configs), so we decode each scene, letterbox it to
+    // the common target via `canvases()`, and re-encode a single uniform track.
+    const reEncodeCanvas = meta.canTransmux
+      ? null
+      : new OffscreenCanvas(meta.displayWidth, meta.displayHeight);
+    const videoSrc =
+      reEncodeCanvas === null
+        ? new EncodedVideoPacketSource('avc')
+        : new CanvasSource(reEncodeCanvas, {
+            codec: 'avc',
+            bitrate: QUALITY_HIGH,
+          });
     output.addVideoTrack(videoSrc);
 
     const audioSrc = hasAudio ? new EncodedAudioPacketSource('aac') : null;
@@ -119,30 +136,41 @@ export async function exportSequence(
     await output.start();
 
     try {
-      // VIDEO: transmux packets from each scene, with global timestamps.
-      let packetCount = 0;
-      for await (const { packet, decoderConfig } of videoSource.packets({
-        signal,
-      })) {
-        if (signal?.aborted) throw new Error('Export aborted');
-        await videoSrc.add(
-          packet,
-          decoderConfig ? { decoderConfig } : undefined
-        );
-        packetCount++;
-        if (packetCount % 30 === 0) {
-          onProgress?.({
-            phase: 'video',
-            completed: packetCount,
-            total: 0,
-          });
+      // VIDEO
+      if (videoSrc instanceof CanvasSource && reEncodeCanvas) {
+        await reEncodeNormalizedVideo({
+          videoSource,
+          canvasSource: videoSrc,
+          canvas: reEncodeCanvas,
+          onProgress,
+          signal,
+        });
+      } else if (videoSrc instanceof EncodedVideoPacketSource) {
+        // Transmux packets from each scene, with global timestamps.
+        let packetCount = 0;
+        for await (const { packet, decoderConfig } of videoSource.packets({
+          signal,
+        })) {
+          if (signal?.aborted) throw new Error('Export aborted');
+          await videoSrc.add(
+            packet,
+            decoderConfig ? { decoderConfig } : undefined
+          );
+          packetCount++;
+          if (packetCount % 30 === 0) {
+            onProgress?.({
+              phase: 'video',
+              completed: packetCount,
+              total: 0,
+            });
+          }
         }
+        onProgress?.({
+          phase: 'video',
+          completed: packetCount,
+          total: packetCount,
+        });
       }
-      onProgress?.({
-        phase: 'video',
-        completed: packetCount,
-        total: packetCount,
-      });
 
       // AUDIO: fetch music + decode each scene's embedded audio (dialogue/VO),
       // mix at scene offsets, encode AAC.
@@ -218,6 +246,55 @@ export async function exportSequence(
   } finally {
     videoSource.dispose();
   }
+}
+
+/**
+ * Decode every scene through the shared `ConcatenatedVideoSource`, which
+ * letterboxes each frame to the common target resolution, draw each onto the
+ * `CanvasSource`'s backing canvas, and re-encode into one uniform AVC track.
+ *
+ * This is the normalization path for mixed-model sequences (#791): pure
+ * transmux can't rescale (no pixel decode), so when scenes disagree on
+ * resolution / decoder config we pay a full decode→re-encode to produce a
+ * consistent output instead of a distorted or hard-failed export.
+ */
+async function reEncodeNormalizedVideo(args: {
+  videoSource: ConcatenatedVideoSource;
+  canvasSource: CanvasSource;
+  canvas: OffscreenCanvas;
+  onProgress?: ExportProgressCallback;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const { videoSource, canvasSource, canvas, onProgress, signal } = args;
+
+  const targetWidth = canvas.width;
+  const targetHeight = canvas.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Failed to acquire 2D context for video re-encode');
+  }
+
+  let frameCount = 0;
+  const iterator = videoSource.canvases(0, { fit: 'contain', signal });
+  try {
+    for await (const frame of iterator) {
+      if (signal?.aborted) throw new Error('Export aborted');
+      // `canvases()` already letterboxes to the target size; redraw onto the
+      // encoder's canvas (clearing first so transparent letterbox bars stay
+      // black rather than retaining the previous frame).
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      ctx.drawImage(frame.canvas, 0, 0, targetWidth, targetHeight);
+      await canvasSource.add(frame.timestamp, frame.duration);
+      frameCount++;
+      if (frameCount % 30 === 0) {
+        onProgress?.({ phase: 'video', completed: frameCount, total: 0 });
+      }
+    }
+  } finally {
+    await iterator.return();
+  }
+
+  onProgress?.({ phase: 'video', completed: frameCount, total: frameCount });
 }
 
 async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {

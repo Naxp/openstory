@@ -28,6 +28,12 @@ import {
   type WrappedCanvas,
 } from 'mediabunny';
 import { addCorsCacheBuster } from '@/lib/utils/cors-cache-buster';
+import {
+  computeTargetResolution,
+  describeResolutions,
+  detectMixedResolutions,
+  type SceneDimensions,
+} from './resolution';
 
 type CanvasFit = 'fill' | 'contain' | 'cover';
 
@@ -50,9 +56,33 @@ export type ConcatenatedVideoMeta = {
   sceneDurationsSeconds: number[];
   /** Cumulative scene start offsets (seconds), in order. */
   sceneOffsetsSeconds: number[];
-  /** Display dimensions of the first scene — assumed consistent across scenes. */
+  /**
+   * Common target dimensions every scene is normalized to. This is the
+   * bounding box (max width × max height) of all scenes, so mismatched scenes
+   * are letterboxed into it without cropping. For a uniform sequence this is
+   * just the shared per-scene size.
+   */
   displayWidth: number;
   displayHeight: number;
+  /** Per-scene native dimensions, in order. */
+  sceneDimensions: SceneDimensions[];
+  /**
+   * True when the scenes resolve to more than one distinct native resolution —
+   * the models disagree on pixel dimensions, so the output is normalized
+   * (letterboxed) and the user should be warned (#791).
+   */
+  hasMixedResolutions: boolean;
+  /**
+   * Human-readable list of the distinct resolutions present, e.g.
+   * `"1920×1080, 1280×1280"`. Empty string when uniform.
+   */
+  resolutionsLabel: string;
+  /**
+   * True when every scene is AVC with a byte-identical decoder config, so the
+   * export can transmux without re-encoding. When false, the export must
+   * decode→normalize→re-encode (`packets()` would throw on the config check).
+   */
+  canTransmux: boolean;
 };
 
 export type SceneAudioTrack = {
@@ -90,8 +120,11 @@ export class ConcatenatedVideoSource {
     const videoTracks: InputVideoTrack[] = [];
     const audioTracks: Array<InputAudioTrack | null> = [];
     const sceneDurationsSeconds: number[] = [];
-    let displayWidth = 0;
-    let displayHeight = 0;
+    const sceneDimensions: SceneDimensions[] = [];
+    // Track whether every scene shares a byte-identical AVC decoder config so
+    // the export can pick the fast transmux path vs. a decode→re-encode path.
+    let canTransmux = true;
+    let firstDescriptionHex: string | null = null;
 
     for (let i = 0; i < this.scenes.length; i++) {
       const scene = this.scenes[i];
@@ -118,9 +151,33 @@ export class ConcatenatedVideoSource {
         metaDuration ??
         (await input.computeDuration([videoTrack], { skipLiveWait: true }));
 
-      if (i === 0) {
-        displayWidth = await videoTrack.getDisplayWidth();
-        displayHeight = await videoTrack.getDisplayHeight();
+      // Probe EVERY scene's display dimensions — different models emit
+      // different sizes for the same aspect ratio (#791), so we can't assume
+      // scene 0 is representative.
+      const width = await videoTrack.getDisplayWidth();
+      const height = await videoTrack.getDisplayHeight();
+      sceneDimensions.push({ width, height });
+
+      // Decide transmux-safety as we go: any non-AVC codec, missing/empty
+      // decoder config, or a config that differs from scene 0 means the
+      // packets can't be concatenated as-is and the export must re-encode.
+      if (canTransmux) {
+        const codec = await videoTrack.getCodec();
+        if (codec !== 'avc') {
+          canTransmux = false;
+        } else {
+          const decoderConfig = await videoTrack.getDecoderConfig();
+          const descriptionHex = decoderConfig
+            ? decoderConfigDescriptionHex(decoderConfig)
+            : '';
+          if (descriptionHex.length === 0) {
+            canTransmux = false;
+          } else if (firstDescriptionHex === null) {
+            firstDescriptionHex = descriptionHex;
+          } else if (descriptionHex !== firstDescriptionHex) {
+            canTransmux = false;
+          }
+        }
       }
 
       // Embedded scene audio (dialogue / VO). Best-effort: scenes without an
@@ -143,6 +200,9 @@ export class ConcatenatedVideoSource {
       acc += d;
     }
 
+    const target = computeTargetResolution(sceneDimensions);
+    const hasMixedResolutions = detectMixedResolutions(sceneDimensions);
+
     this.inputs = inputs;
     this.videoTracks = videoTracks;
     this.audioTracks = audioTracks;
@@ -150,8 +210,14 @@ export class ConcatenatedVideoSource {
       totalDurationSeconds: acc,
       sceneDurationsSeconds,
       sceneOffsetsSeconds,
-      displayWidth,
-      displayHeight,
+      displayWidth: target.width,
+      displayHeight: target.height,
+      sceneDimensions,
+      hasMixedResolutions,
+      resolutionsLabel: hasMixedResolutions
+        ? describeResolutions(sceneDimensions)
+        : '',
+      canTransmux,
     };
     return this.meta;
   }
@@ -212,7 +278,16 @@ export class ConcatenatedVideoSource {
       const videoTrack = this.videoTracks[sceneIndex];
       const offset = meta.sceneOffsetsSeconds[sceneIndex];
       if (!videoTrack || offset === undefined) continue;
-      const sink = new CanvasSink(videoTrack, { poolSize, fit });
+      // Pin every scene to the common target size so mixed-resolution scenes
+      // (#791) are letterboxed into one canvas instead of being drawn at their
+      // own size and clipped/misaligned. For a uniform sequence target ===
+      // the scene's own size, so this is a no-op.
+      const sink = new CanvasSink(videoTrack, {
+        poolSize,
+        fit,
+        width: meta.displayWidth,
+        height: meta.displayHeight,
+      });
       const localStart = sceneIndex === startSceneIndex ? startLocalTime : 0;
 
       const iterator = sink.canvases(localStart);

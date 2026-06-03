@@ -59,6 +59,14 @@ export type SequencePlayerMeta = {
   displayWidth: number;
   displayHeight: number;
   hasAudio: boolean;
+  /**
+   * True when the scenes resolve to more than one distinct native resolution.
+   * Playback is normalized (letterboxed) regardless, but the UI should warn the
+   * user that mixing models produced inconsistent sizes (#791).
+   */
+  hasMixedResolutions: boolean;
+  /** Distinct resolutions present, e.g. `"1920×1080, 1280×1280"`. */
+  resolutionsLabel: string;
 };
 
 type DialogueClip = {
@@ -190,6 +198,8 @@ export class SequencePlayerEngine {
       displayWidth: videoMeta.displayWidth,
       displayHeight: videoMeta.displayHeight,
       hasAudio,
+      hasMixedResolutions: videoMeta.hasMixedResolutions,
+      resolutionsLabel: videoMeta.resolutionsLabel,
     };
 
     await this.primeFirstFrame();
