@@ -228,6 +228,15 @@
       "class_name": "AnalyzeScriptWorkflow",
     },
   ],
+  // Realtime broker (#802): one SQLite-backed Durable Object per channel holds
+  // SSE subscribers open and persists replayable history. The `RealtimeChannel`
+  // class is re-exported from src/server.ts. DO bindings + migrations are NOT
+  // inherited across env blocks, so they are redeclared in [env.production] and
+  // [env.test] below.
+  "durable_objects": {
+    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] }],
   "env": {
     // Production deploy target. @cloudflare/vite-plugin selects the env at
     // BUILD time via CLOUDFLARE_ENV — `cf:deploy:prd` sets
@@ -418,6 +427,15 @@
           "binding": "ANALYZE_SCRIPT_WORKFLOW",
           "class_name": "AnalyzeScriptWorkflow",
         },
+      ],
+      // Realtime broker DO — redeclared because durable_objects + migrations
+      // are non-inheritable across env blocks. Keep the `v1` migration tag in
+      // sync with the top-level block.
+      "durable_objects": {
+        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
       ],
       "triggers": {
         "crons": ["*/5 * * * *"],
@@ -629,6 +647,15 @@
           "binding": "ANALYZE_SCRIPT_WORKFLOW",
           "class_name": "AnalyzeScriptWorkflow",
         },
+      ],
+      // Realtime broker DO — redeclared because durable_objects + migrations
+      // are non-inheritable across env blocks. Keep the `v1` migration tag in
+      // sync with the top-level block.
+      "durable_objects": {
+        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
       ],
       // Explicit empty array opts out of inheritance and silences wrangler's
       // "tail_consumers not on env.test" warning. We don't want e2e runs

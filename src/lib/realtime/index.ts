@@ -1,8 +1,9 @@
-import { getRedis } from '#redis';
-import { Realtime } from '@upstash/realtime';
+import { getEnv } from '#env';
 import { z } from 'zod';
 
 import { getLogger } from '@/lib/observability/logger';
+import type { ChannelHistoryMessage } from './realtime-channel.do';
+import type { EventData, EventPaths } from './shared-types';
 
 const logger = getLogger(['openstory', 'realtime', 'index']);
 
@@ -351,28 +352,78 @@ export type ReplaceElementFailedPayload = z.infer<
   (typeof realtimeSchema.generation)['replace-element:failed']
 >;
 
-let realtimeInstance: ReturnType<typeof createRealtime> | null = null;
+/** Every dotted event path declared in `realtimeSchema`. */
+type SchemaEventPath = EventPaths<typeof realtimeSchema>;
 
-function createRealtime() {
-  const redis = getRedis();
-  return new Realtime({
-    schema: realtimeSchema,
-    redis,
-    maxDurationSecs: 10,
-    history: {
-      expireAfterSecs: 60 * 60 * 24 * 30, // 30 days
-    },
-  });
-}
+/** The inferred payload type for a given event path. */
+type SchemaEventData<K extends SchemaEventPath> =
+  EventData<typeof realtimeSchema, K> extends z.ZodType
+    ? z.infer<EventData<typeof realtimeSchema, K>>
+    : never;
 
 /**
- * Get the Realtime instance for emitting/subscribing to events.
- * Lazily initialized to avoid errors when Redis env vars are not set.
+ * Server-side channel API, backed by the `RealtimeChannel` Durable Object
+ * (#802). `emit` keeps the same typed signature the call sites used under
+ * Upstash; `history` reads the DO's persisted events for replay.
  */
-export function getRealtime() {
-  if (realtimeInstance) return realtimeInstance;
-  realtimeInstance = createRealtime();
-  return realtimeInstance;
+type RealtimeChannelApi = {
+  emit: <K extends SchemaEventPath>(
+    event: K,
+    data: SchemaEventData<K>
+  ) => Promise<void>;
+  history: () => Promise<ChannelHistoryMessage[]>;
+};
+
+/** Resolve the Durable Object stub for a channel id. */
+function channelStub(channel: string) {
+  // getEnv()'s type is platform-dependent; the Cloudflare runtime guarantees
+  // the Cloudflare.Env shape with the REALTIME Durable Object binding present.
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- platform-dependent env shape
+  const namespace = (getEnv() as unknown as Cloudflare.Env).REALTIME;
+  return namespace.get(namespace.idFromName(channel));
+}
+
+/** Build the DO-backed channel API for a concrete channel id. */
+function realtimeChannel(channel: string): RealtimeChannelApi {
+  return {
+    async emit(event, data) {
+      try {
+        const response = await channelStub(channel).fetch(
+          `https://realtime.do/emit?channel=${encodeURIComponent(channel)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ event, data }),
+          }
+        );
+        if (!response.ok) {
+          logger.warn(`realtime emit failed for "${channel}"`, {
+            status: response.status,
+            event,
+          });
+        }
+      } catch (error) {
+        // A realtime emit is best-effort progress signalling — never let a
+        // broker hiccup fail the workflow step that produced the real artifact.
+        logger.warn(`realtime emit threw for "${channel}"`, {
+          err: error,
+          event,
+        });
+      }
+    },
+    async history() {
+      const response = await channelStub(channel).fetch(
+        `https://realtime.do/history?channel=${encodeURIComponent(channel)}`
+      );
+      if (!response.ok) {
+        logger.warn(`realtime history fetch failed for "${channel}"`, {
+          status: response.status,
+        });
+        return [];
+      }
+      return response.json<ChannelHistoryMessage[]>();
+    },
+  };
 }
 
 /**
@@ -381,30 +432,41 @@ export function getRealtime() {
  * channel-id helpers below are server-only, and a missing id is always a
  * bug at the call site.
  */
-function noopChannel(label: string): { emit: () => null } {
+function noopChannel(label: string): RealtimeChannelApi {
   logger.warn(
     `dropping ${label} emit: missing channel id — caller should guard on id presence before emitting`
   );
-  return { emit: () => null };
+  return {
+    emit: () => Promise.resolve(),
+    history: () => Promise.resolve([]),
+  };
+}
+
+/**
+ * Read a channel's persisted event history for replay (page refresh
+ * resilience). Backed by the channel's Durable Object SQLite storage.
+ */
+export function getChannelHistory(
+  channel: string
+): Promise<ChannelHistoryMessage[]> {
+  return realtimeChannel(channel).history();
 }
 
 /**
  * Get a channel for a specific sequence to emit/receive events.
  * @param sequenceId - The sequence ID to use as the channel identifier
  */
-export function getGenerationChannel(sequenceId?: string) {
-  return sequenceId
-    ? getRealtime().channel(sequenceId)
-    : noopChannel('generation');
+export function getGenerationChannel(sequenceId?: string): RealtimeChannelApi {
+  return sequenceId ? realtimeChannel(sequenceId) : noopChannel('generation');
 }
 
 /**
  * Get a channel for talent library events.
  * @param talentId - The talent ID to use as the channel identifier
  */
-export function getTalentChannel(talentId?: string) {
+export function getTalentChannel(talentId?: string): RealtimeChannelApi {
   return talentId
-    ? getRealtime().channel(`talent:${talentId}`)
+    ? realtimeChannel(`talent:${talentId}`)
     : noopChannel('talent');
 }
 
@@ -412,9 +474,9 @@ export function getTalentChannel(talentId?: string) {
  * Get a channel for location library events.
  * @param locationId - The location ID to use as the channel identifier
  */
-export function getLocationChannel(locationId?: string) {
+export function getLocationChannel(locationId?: string): RealtimeChannelApi {
   return locationId
-    ? getRealtime().channel(`location:${locationId}`)
+    ? realtimeChannel(`location:${locationId}`)
     : noopChannel('location');
 }
 
@@ -422,9 +484,9 @@ export function getLocationChannel(locationId?: string) {
  * Get a channel for per-frame prompt regeneration streaming.
  * @param frameId - The frame ID to use as the channel identifier
  */
-export function getFramePromptChannel(frameId?: string) {
+export function getFramePromptChannel(frameId?: string): RealtimeChannelApi {
   return frameId
-    ? getRealtime().channel(`frame-prompt:${frameId}`)
+    ? realtimeChannel(`frame-prompt:${frameId}`)
     : noopChannel('frame-prompt');
 }
 

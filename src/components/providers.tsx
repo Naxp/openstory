@@ -5,7 +5,7 @@ import { configureLogging } from '@/lib/observability/logger';
 import { PostHogProvider } from '@posthog/react';
 import type { QueryClient } from '@tanstack/react-query';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { RealtimeContext, RealtimeProvider } from '@upstash/realtime/client';
+import { RealtimeContext, RealtimeProvider } from '@/lib/realtime/client';
 import { lazy, useEffect, useState, type FC } from 'react';
 
 configureLogging();
@@ -85,14 +85,13 @@ const ObservabilityProvider: FC<{ children: React.ReactNode }> = ({
 };
 
 /**
- * Diagnostic kill-switch for the Upstash realtime SSE subscription.
+ * Diagnostic kill-switch for the realtime SSE subscription.
  *
- * The realtime client reconnects continuously on Cloudflare Workers (Workers
- * don't hold an SSE stream open, so the stream opens → closes → reconnects,
- * and the client resets its attempt counter on every successful open, so it
- * never gives up). We use this switch to test whether that reconnect loop is
- * starving other requests (e.g. the sequence-export upload hanging on "Initial
- * connection").
+ * The stream is now held open by a per-channel Durable Object (#802), so the
+ * old reconnect-loop pathology (request-isolate handlers couldn't hold an SSE
+ * stream open, so it opened → closed → reconnected forever) is gone. The switch
+ * is retained as a general diagnostic to rule realtime out when chasing
+ * request-starvation or connection issues.
  *
  * Toggle WITHOUT a rebuild on a deployed preview:
  *   localStorage.setItem('os:disable-realtime', '1'); location.reload();
@@ -123,12 +122,7 @@ export function Providers({ children, queryClient }: ProvidersProps) {
         <TooltipProvider>
           <PostHogIdentify />
           {realtimeEnabled ? (
-            <RealtimeProvider
-              api={{ url: '/api/realtime' }}
-              maxReconnectAttempts={10}
-            >
-              {children}
-            </RealtimeProvider>
+            <RealtimeProvider>{children}</RealtimeProvider>
           ) : (
             // Stub context so consumers (useRealtime) don't throw; nothing ever
             // registers a channel, so no EventSource is ever opened.

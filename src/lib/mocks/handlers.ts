@@ -22,7 +22,7 @@ function createMockSSEStream() {
  * These handlers intercept fetch requests and return mock data
  */
 export const handlers = [
-  // GET /api/realtime - Mock SSE endpoint for Upstash Realtime
+  // GET /api/realtime - Mock SSE endpoint for the realtime Durable Object
   http.get('/api/realtime', () => {
     return new HttpResponse(createMockSSEStream(), {
       status: 200,
