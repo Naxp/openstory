@@ -14,15 +14,19 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useCreateLibraryLocation } from '@/hooks/use-location-library';
+import type { LibraryLocation } from '@/lib/db/schema';
 import { Plus } from 'lucide-react';
 import { LocationMediaUpload } from './location-media-upload';
 
 type AddLocationDialogProps = {
   trigger?: React.ReactNode;
+  /** Called with the newly created location so callers can auto-select it. */
+  onCreated?: (location: LibraryLocation) => void;
 };
 
 export const AddLocationDialog: React.FC<AddLocationDialogProps> = ({
   trigger,
+  onCreated,
 }) => {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -69,7 +73,10 @@ export const AddLocationDialog: React.FC<AddLocationDialogProps> = ({
         referenceImageUrls: uploadedUrls.length > 0 ? uploadedUrls : undefined,
       },
       {
-        onSuccess: () => closeAndReset(),
+        onSuccess: (location) => {
+          onCreated?.(location);
+          closeAndReset();
+        },
       }
     );
   };

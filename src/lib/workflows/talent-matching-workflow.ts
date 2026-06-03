@@ -55,7 +55,21 @@ export class TalentMatchingWorkflow extends OpenStoryWorkflowEntrypoint<TalentMa
     // those sheets before reading them — otherwise the cast character is
     // generated with an empty reference and won't look like the chosen talent.
     if (suggestedTalentIds?.length && input.teamId) {
-      await waitForTalentSheets(step, scopedDb, suggestedTalentIds);
+      await waitForTalentSheets(step, scopedDb, suggestedTalentIds, {
+        // Surface the wait in the generation progress dialog. Phase 2 is the
+        // "Casting characters & locations…" step; only emitted when we actually
+        // have to wait, so a ready library never flashes a spurious status.
+        onWaitNeeded: async () => {
+          if (!sequenceId) return;
+          await getGenerationChannel(sequenceId).emit(
+            'generation.phase:start',
+            {
+              phase: 2,
+              phaseName: 'Waiting for talent sheets…',
+            }
+          );
+        },
+      });
     }
 
     const { talentList, matchingPromptVariables } = await step.do(

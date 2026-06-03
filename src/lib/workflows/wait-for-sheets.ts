@@ -49,6 +49,15 @@ export type WaitForSheetsResult = {
   pendingIds: string[];
 };
 
+/**
+ * Optional hook fired exactly once, the first time a wait is actually needed
+ * (i.e. the first poll finds pending entities). Use it to surface "waiting for
+ * sheets…" UI feedback. It runs inside its own durable step, so it emits once
+ * per run even across replays. Skipped entirely when everything is already
+ * ready, so it never produces a spurious "waiting" flash.
+ */
+type OnWaitNeeded = (pendingCount: number) => Promise<void> | void;
+
 type PollArgs = {
   ids: string[];
   /** Prefix for the durable step names; must be unique within the workflow. */
@@ -62,17 +71,19 @@ type PollArgs = {
    * never wait the full timeout for something matching will skip anyway.
    */
   findPending: () => Promise<string[]>;
+  onWaitNeeded?: OnWaitNeeded;
 };
 
 async function pollUntilReady(
   step: WorkflowStep,
-  { ids, stepPrefix, label, findPending }: PollArgs
+  { ids, stepPrefix, label, findPending, onWaitNeeded }: PollArgs
 ): Promise<WaitForSheetsResult> {
   if (ids.length === 0) {
     return { ready: true, pendingIds: [] };
   }
 
   let pendingIds: string[] = ids;
+  let notifiedWaiting = false;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     pendingIds = await step.do(`${stepPrefix}-check-${attempt}`, async () =>
       findPending()
@@ -80,6 +91,18 @@ async function pollUntilReady(
 
     if (pendingIds.length === 0) {
       return { ready: true, pendingIds: [] };
+    }
+
+    // First time we discover we actually have to wait, fire the hook once.
+    // Guarding with `notifiedWaiting` keeps the step name unique per run (a
+    // duplicate `step.do` name would throw).
+    if (onWaitNeeded && !notifiedWaiting) {
+      notifiedWaiting = true;
+      const waitingCount = pendingIds.length;
+      await step.do(`${stepPrefix}-notify-waiting`, async () => {
+        await onWaitNeeded(waitingCount);
+        return { notified: true };
+      });
     }
 
     if (attempt < MAX_ATTEMPTS - 1) {
@@ -103,12 +126,14 @@ async function pollUntilReady(
 export async function waitForTalentSheets(
   step: WorkflowStep,
   scopedDb: ScopedDb,
-  talentIds: string[]
+  talentIds: string[],
+  opts?: { onWaitNeeded?: OnWaitNeeded }
 ): Promise<WaitForSheetsResult> {
   return pollUntilReady(step, {
     ids: talentIds,
     stepPrefix: 'wait-talent-sheets',
     label: 'talent sheets',
+    onWaitNeeded: opts?.onWaitNeeded,
     findPending: async () => {
       const talent = await scopedDb.talent.getByIds(talentIds);
       return talent.filter((t) => !t.defaultSheet?.imageUrl).map((t) => t.id);
@@ -125,12 +150,14 @@ export async function waitForTalentSheets(
 export async function waitForLocationReferences(
   step: WorkflowStep,
   scopedDb: ScopedDb,
-  locationIds: string[]
+  locationIds: string[],
+  opts?: { onWaitNeeded?: OnWaitNeeded }
 ): Promise<WaitForSheetsResult> {
   return pollUntilReady(step, {
     ids: locationIds,
     stepPrefix: 'wait-location-refs',
     label: 'location references',
+    onWaitNeeded: opts?.onWaitNeeded,
     findPending: async () => {
       const locations = await scopedDb.locations.getByIds(locationIds);
       return locations.filter((l) => !l.referenceImageUrl).map((l) => l.id);

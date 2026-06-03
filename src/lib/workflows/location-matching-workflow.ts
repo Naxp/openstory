@@ -59,7 +59,21 @@ export class LocationMatchingWorkflow extends OpenStoryWorkflowEntrypoint<Locati
     // `/library-location-sheet` workflow finishes. Wait (bounded) for those
     // references first so pre-selected locations aren't silently skipped.
     if (suggestedLocationIds?.length && input.teamId) {
-      await waitForLocationReferences(step, scopedDb, suggestedLocationIds);
+      await waitForLocationReferences(step, scopedDb, suggestedLocationIds, {
+        // Surface the wait in the generation progress dialog (phase 2 is the
+        // "Casting characters & locations…" step). Only emitted when we actually
+        // have to wait, so a ready library never flashes a spurious status.
+        onWaitNeeded: async () => {
+          if (!sequenceId) return;
+          await getGenerationChannel(sequenceId).emit(
+            'generation.phase:start',
+            {
+              phase: 2,
+              phaseName: 'Waiting for location references…',
+            }
+          );
+        },
+      });
     }
 
     const { libraryLocationList, locationMatchingPromptVariables } =

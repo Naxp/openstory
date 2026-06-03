@@ -123,6 +123,41 @@ describe('waitForTalentSheets', () => {
     expect(getByIds).toHaveBeenCalledTimes(1);
   });
 
+  test('fires onWaitNeeded exactly once, only when a wait is actually needed', async () => {
+    const { step } = fakeStep();
+    const onWaitNeeded = vi.fn(async () => undefined);
+    const getByIds = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 't1', defaultSheet: null }])
+      .mockResolvedValueOnce([{ id: 't1', defaultSheet: null }])
+      .mockResolvedValueOnce([
+        { id: 't1', defaultSheet: { imageUrl: 'https://cdn/t1.png' } },
+      ]);
+
+    const result = await waitForTalentSheets(step, talentDb(getByIds), ['t1'], {
+      onWaitNeeded,
+    });
+
+    expect(result.ready).toBe(true);
+    // Fired once, on first discovery of a pending sheet, with the pending count.
+    expect(onWaitNeeded).toHaveBeenCalledTimes(1);
+    expect(onWaitNeeded).toHaveBeenCalledWith(1);
+  });
+
+  test('does not fire onWaitNeeded when everything is already ready', async () => {
+    const { step } = fakeStep();
+    const onWaitNeeded = vi.fn(async () => undefined);
+    const getByIds = vi.fn(async () => [
+      { id: 't1', defaultSheet: { imageUrl: 'https://cdn/t1.png' } },
+    ]);
+
+    await waitForTalentSheets(step, talentDb(getByIds), ['t1'], {
+      onWaitNeeded,
+    });
+
+    expect(onWaitNeeded).not.toHaveBeenCalled();
+  });
+
   test('gives up after the bounded number of attempts and reports pending ids', async () => {
     const { step, doSpy, sleepSpy } = fakeStep();
     // Never becomes ready.
