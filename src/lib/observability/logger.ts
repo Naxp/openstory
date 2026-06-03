@@ -106,13 +106,14 @@ function buildServerSinks(dev: boolean): Record<string, Sink> {
   // formatter's dependency stays in the bundle.
   const formatter: TextFormatter = dev
     ? redactByPattern(
-        // Verbose pretty output for local debugging.
-        // - timestamp: 'time' → wall-clock per record (HH:MM:SS.sss), useful
-        //   for correlating LLM/workflow steps even though concurrently's
-        //   `dev:vite | ` prefix already anchors interleave order.
-        // - properties: true → print the structured-field block so the
-        //   key/value context on every record (model, frameId, runError, …) is
-        //   visible inline, not just interpolated `{placeholder}` values.
+        // One clean pretty line per record.
+        // - timestamp: 'time' → wall-clock per record (HH:MM:SS.sss) to help
+        //   correlate LLM/workflow steps; concurrently's `dev:vite | ` prefix
+        //   already anchors interleave order.
+        // - properties: false → don't print the structured-field block. The
+        //   noisy request/serverFn logs interpolate their values into the
+        //   message via `{placeholder}`, so re-listing them is redundant; the
+        //   prod JSON-lines sink (below) still keeps every field for PostHog.
         // - wordWrap: false → no hanging-indent continuation. `bun --parallel`
         //   (concurrently, e.g. `dev:all`) re-prefixes wrapped lines with
         //   `dev:vite | `, making the default auto-wrap ragged; let the
@@ -120,7 +121,7 @@ function buildServerSinks(dev: boolean): Record<string, Sink> {
         getPrettyFormatter({
           timestamp: 'time',
           wordWrap: false,
-          properties: true,
+          properties: false,
         }),
         SECRET_PATTERNS
       )

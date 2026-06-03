@@ -30,7 +30,6 @@ import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getLogger } from '@/lib/observability/logger';
-import { isLocalDevelopment } from '@/lib/utils/environment';
 import { getChatPrompt } from '@/lib/prompts';
 import { getFramePromptChannel, getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
@@ -181,7 +180,7 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
               sessionId: sequenceId,
               userId,
             },
-            debug: isLocalDevelopment(),
+            debug: false,
           });
           logger.info(
             `[VisualPromptSceneWorkflow:cf] [LLM:${LOG_NAME}] Call succeeded`
@@ -223,7 +222,7 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
             userId,
           },
           outputSchema: visualPromptWithContinuitySchema,
-          debug: isLocalDevelopment(),
+          debug: false,
         })) {
           if (
             streamEvent.type === 'TEXT_MESSAGE_CONTENT' &&

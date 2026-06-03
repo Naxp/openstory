@@ -11,7 +11,6 @@ import { z } from 'zod';
 import { createAdapter } from './create-adapter';
 
 import { getLogger } from '@/lib/observability/logger';
-import { isLocalDevelopment } from '@/lib/utils/environment';
 
 const logger = getLogger(['openstory', 'ai', 'llm-client']);
 
@@ -204,9 +203,7 @@ function baseChatOptions(params: LLMRequestParams) {
     topP: params.top_p,
     modelOptions: buildModelOptions(params),
     ...(tools && { tools }),
-    // Default `debug` on in local dev so every chat() call streams TanStack AI's
-    // request/provider/output logs; explicit `params.debug` still wins.
-    debug: params.debug ?? isLocalDevelopment(),
+    debug: params.debug ?? false,
   };
 }
 

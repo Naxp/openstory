@@ -19,7 +19,6 @@ import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getLogger } from '@/lib/observability/logger';
 import { getChatPrompt } from '@/lib/prompts';
-import { isLocalDevelopment } from '@/lib/utils/environment';
 import { getFramePromptChannel } from '@/lib/realtime';
 import { chat } from '@tanstack/ai';
 import type { WorkflowStep } from 'cloudflare:workers';
@@ -158,7 +157,7 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
           userId: callContext.userId,
         },
         outputSchema: config.responseSchema,
-        debug: isLocalDevelopment(),
+        debug: false,
       });
       logger.info(`[LLM:${logName}:cf] Call succeeded`);
       // Return as JSON string — round-trips through step.do without hitting
@@ -311,7 +310,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
             userId: callContext.userId,
           },
           outputSchema: config.responseSchema,
-          debug: isLocalDevelopment(),
+          debug: false,
         })) {
           if (
             event.type === 'TEXT_MESSAGE_CONTENT' &&

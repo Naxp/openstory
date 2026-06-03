@@ -6,7 +6,6 @@
  */
 
 import type { ChatMessage } from '@/lib/prompts';
-import { isLocalDevelopment } from '@/lib/utils/environment';
 import { chat } from '@tanstack/ai';
 import { z } from 'zod';
 import { createAdapter } from './create-adapter';
@@ -102,7 +101,7 @@ export async function describeElementImage(
     stream: false,
     temperature: 0.3,
     outputSchema: responseSchema,
-    debug: isLocalDevelopment(),
+    debug: false,
   });
 
   const parsed = responseSchema.parse(result);
