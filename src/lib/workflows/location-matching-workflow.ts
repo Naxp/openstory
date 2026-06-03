@@ -24,6 +24,7 @@ import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { durableLLMCallCf } from '@/lib/workflows/llm-call-helper';
+import { waitForLocationReferences } from '@/lib/workflows/wait-for-sheets';
 import type {
   LibraryLocationMatch,
   LocationMatchingWorkflowInput,
@@ -50,6 +51,30 @@ export class LocationMatchingWorkflow extends OpenStoryWorkflowEntrypoint<Locati
     const { suggestedLocationIds, sequenceId, analysisModelId } = input;
 
     const locationBible = input.locationBible;
+
+    // Location matching drops any library location without a `referenceImageUrl`
+    // (see build-location-matches below). A location the user just added while
+    // creating this sequence — especially one created from name/description with
+    // no uploaded image — only gets its reference once the fire-and-forget
+    // `/library-location-sheet` workflow finishes. Wait (bounded) for those
+    // references first so pre-selected locations aren't silently skipped.
+    if (suggestedLocationIds?.length && input.teamId) {
+      await waitForLocationReferences(step, scopedDb, suggestedLocationIds, {
+        // Surface the wait in the generation progress dialog (phase 2 is the
+        // "Casting characters & locations…" step). Only emitted when we actually
+        // have to wait, so a ready library never flashes a spurious status.
+        onWaitNeeded: async () => {
+          if (!sequenceId) return;
+          await getGenerationChannel(sequenceId).emit(
+            'generation.phase:start',
+            {
+              phase: 2,
+              phaseName: 'Waiting for location references…',
+            }
+          );
+        },
+      });
+    }
 
     const { libraryLocationList, locationMatchingPromptVariables } =
       await step.do('get-library-locations', async () => {

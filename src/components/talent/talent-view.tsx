@@ -1,9 +1,14 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCharacterDivergentVariants } from '@/hooks/use-character-sheet-variants';
-import { useSequenceCharacters } from '@/hooks/use-sequence-characters';
+import {
+  sequenceCharacterKeys,
+  useSequenceCharacters,
+} from '@/hooks/use-sequence-characters';
+import { useRealtime } from '@/lib/realtime/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Users } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { TalentCard } from './talent-card';
 
 type TalentViewProps = {
@@ -11,11 +16,36 @@ type TalentViewProps = {
 };
 
 export const TalentView: React.FC<TalentViewProps> = ({ sequenceId }) => {
+  const queryClient = useQueryClient();
   const {
     data: characters,
     isLoading,
     error,
   } = useSequenceCharacters(sequenceId);
+
+  // Refresh the cast grid live as characters get created and cast during
+  // generation, instead of requiring a page refresh. The character-sheet
+  // workflow emits `generation.character-sheet:progress` (generating → the
+  // characters now exist in the DB; completed → their sheet image is ready);
+  // talent:matched / complete cover pre-cast and end-of-run. React Query
+  // coalesces the resulting invalidations.
+  const invalidateCharacters = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: sequenceCharacterKeys.list(sequenceId),
+    });
+  }, [queryClient, sequenceId]);
+
+  useRealtime({
+    channels: sequenceId ? [sequenceId] : [],
+    events: [
+      'generation.character-sheet:progress',
+      'generation.talent:matched',
+      'generation.complete',
+    ] as const,
+    onData: invalidateCharacters,
+    enabled: !!sequenceId,
+  });
+
   const { data: divergentVariants } = useCharacterDivergentVariants(sequenceId);
   const divergentByCharacterId = useMemo(() => {
     const map = new Map<string, string>();

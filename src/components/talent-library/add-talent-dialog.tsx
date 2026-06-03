@@ -14,15 +14,19 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useCreateTalent } from '@/hooks/use-talent';
+import type { Talent } from '@/lib/db/schema';
 import { Plus } from 'lucide-react';
 import { TalentMediaUpload } from './talent-media-upload';
 
 type AddTalentDialogProps = {
   trigger?: React.ReactNode;
+  /** Called with the newly created talent so callers can auto-select it. */
+  onCreated?: (talent: Talent) => void;
 };
 
 export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
   trigger,
+  onCreated,
 }) => {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -70,7 +74,10 @@ export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
         referenceImageUrls: uploadedUrls,
       },
       {
-        onSuccess: () => closeAndReset(),
+        onSuccess: (talent) => {
+          onCreated?.(talent);
+          closeAndReset();
+        },
       }
     );
   };

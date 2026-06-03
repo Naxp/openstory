@@ -158,6 +158,13 @@ export const LocationSuggestionSelector: React.FC<
     onSelectionChange(selectedLocationIds.filter((id) => id !== locationId));
   };
 
+  // Auto-select a freshly added location so the user doesn't have to find and
+  // re-pick it in the grid after the dialog closes.
+  const handleLocationCreated = (location: { id: string }) => {
+    if (selectedLocationIds.includes(location.id)) return;
+    onSelectionChange([...selectedLocationIds, location.id]);
+  };
+
   return (
     <>
       <div className="flex items-center gap-2">
@@ -249,6 +256,7 @@ export const LocationSuggestionSelector: React.FC<
                   </p>
                   {!searchQuery && (
                     <AddLocationDialog
+                      onCreated={handleLocationCreated}
                       trigger={
                         <Button variant="outline" size="sm" className="mt-3">
                           <Plus className="mr-2 h-4 w-4" />
@@ -275,6 +283,7 @@ export const LocationSuggestionSelector: React.FC<
             {/* Footer */}
             <div className="flex justify-between">
               <AddLocationDialog
+                onCreated={handleLocationCreated}
                 trigger={
                   <Button variant="outline" size="sm">
                     <Plus className="mr-2 h-4 w-4" />

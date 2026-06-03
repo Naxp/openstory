@@ -21,6 +21,7 @@ import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { durableLLMCallCf } from '@/lib/workflows/llm-call-helper';
+import { waitForTalentSheets } from '@/lib/workflows/wait-for-sheets';
 import type {
   TalentCharacterMatch,
   TalentMatchingWorkflowInput,
@@ -43,10 +44,34 @@ export class TalentMatchingWorkflow extends OpenStoryWorkflowEntrypoint<TalentMa
     // Use pre-extracted bible from scene splitting (always provided by upstream)
     const characterBible = input.characterBible;
 
-    // Talent matching is conditional and does NOT block on talent sheets:
-    // it only runs against pre-selected talent IDs. Characters without a
-    // pre-cast talent are auto-extracted later in the pipeline and given
-    // AI-generated portraits — script generation never waits for sheets.
+    // Talent matching only runs against pre-selected talent IDs. Characters
+    // without a pre-cast talent are auto-extracted later in the pipeline and
+    // given AI-generated portraits — that path never waits for sheets.
+    //
+    // For PRE-CAST talent, though, we DO need the casting reference: the
+    // matches below read `defaultSheet?.imageUrl`. Talent the user just added
+    // while creating this sequence may still be generating their sheet in the
+    // fire-and-forget `/library-talent-sheet` workflow, so wait (bounded) for
+    // those sheets before reading them — otherwise the cast character is
+    // generated with an empty reference and won't look like the chosen talent.
+    if (suggestedTalentIds?.length && input.teamId) {
+      await waitForTalentSheets(step, scopedDb, suggestedTalentIds, {
+        // Surface the wait in the generation progress dialog. Phase 2 is the
+        // "Casting characters & locations…" step; only emitted when we actually
+        // have to wait, so a ready library never flashes a spurious status.
+        onWaitNeeded: async () => {
+          if (!sequenceId) return;
+          await getGenerationChannel(sequenceId).emit(
+            'generation.phase:start',
+            {
+              phase: 2,
+              phaseName: 'Waiting for talent sheets…',
+            }
+          );
+        },
+      });
+    }
+
     const { talentList, matchingPromptVariables } = await step.do(
       'get-talent-list',
       async () => {

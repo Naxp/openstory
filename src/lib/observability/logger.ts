@@ -107,18 +107,19 @@ function buildServerSinks(dev: boolean): Record<string, Sink> {
   const formatter: TextFormatter = dev
     ? redactByPattern(
         // One clean pretty line per record.
+        // - timestamp: 'time' → wall-clock per record (HH:MM:SS.sss) to help
+        //   correlate LLM/workflow steps; concurrently's `dev:vite | ` prefix
+        //   already anchors interleave order.
         // - properties: false → don't print the structured-field block. The
         //   noisy request/serverFn logs interpolate their values into the
-        //   message via `{placeholder}`, so re-listing them is redundant. The
+        //   message via `{placeholder}`, so re-listing them is redundant; the
         //   prod JSON-lines sink (below) still keeps every field for PostHog.
         // - wordWrap: false → no hanging-indent continuation. `bun --parallel`
         //   (concurrently, e.g. `dev:all`) re-prefixes wrapped lines with
         //   `dev:vite | `, making the default auto-wrap ragged; let the
         //   terminal hard-wrap instead.
-        // - timestamp: 'disabled' → concurrently's prefix already anchors
-        //   ordering, and dropping the clock buys message width.
         getPrettyFormatter({
-          timestamp: 'disabled',
+          timestamp: 'time',
           wordWrap: false,
           properties: false,
         }),
