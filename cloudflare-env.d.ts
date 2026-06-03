@@ -7,6 +7,7 @@ declare namespace Cloudflare {
     R2_PUBLIC_ASSETS_BUCKET: R2Bucket;
     R2_STORAGE_BUCKET: R2Bucket;
     DB: D1Database;
+    REALTIME: DurableObjectNamespace<import('./src/server').RealtimeChannel>;
     API_KEY_ENCRYPTION_KEY: string;
     VITE_APP_NAME: string;
     VITE_APP_URL: string;
@@ -52,6 +53,7 @@ declare namespace Cloudflare {
     R2_PUBLIC_ASSETS_BUCKET: R2Bucket;
     R2_STORAGE_BUCKET: R2Bucket;
     DB: D1Database;
+    REALTIME: DurableObjectNamespace<import('./src/server').RealtimeChannel>;
     API_KEY_ENCRYPTION_KEY: string;
     VITE_APP_NAME: string;
     VITE_APP_URL: string;
@@ -135,6 +137,7 @@ declare namespace Cloudflare {
     NEXT_INC_CACHE_R2_BUCKET?: R2Bucket;
     R2_STORAGE_BUCKET?: R2Bucket;
     DB?: D1Database;
+    REALTIME: DurableObjectNamespace<import('./src/server').RealtimeChannel>;
   }
 }
 interface CloudflareEnv extends Cloudflare.Env {}

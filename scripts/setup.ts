@@ -151,7 +151,7 @@ function writeEnvFile(vars: Map<string, string>) {
       keys: ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'],
     },
     {
-      header: 'Redis (Upstash)',
+      header: 'Redis (Upstash) — OpenRouter OAuth state',
       keys: ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'],
     },
     {
@@ -1738,8 +1738,11 @@ async function main() {
     }
   }
 
+  // Realtime progress updates run on the `REALTIME` Durable Object
+  // (wrangler.jsonc) — no external Redis/Upstash setup required for those.
+
   // -------------------------------------------------------------------------
-  // Redis (Upstash) — real-time progress updates
+  // Redis (Upstash) — OpenRouter OAuth state store
   // -------------------------------------------------------------------------
   const redisKeys = [
     'UPSTASH_REDIS_REST_URL',
@@ -1750,7 +1753,7 @@ async function main() {
   } else {
     const setupRedis = checkCancel(
       await p.confirm({
-        message: 'Set up Upstash Redis? (real-time progress updates)',
+        message: 'Set up Upstash Redis? (OpenRouter OAuth state store)',
         initialValue: false,
       })
     );

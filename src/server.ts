@@ -46,12 +46,17 @@ export { SceneSplitWorkflow } from '@/lib/workflows/scene-split-workflow';
 export { StoryboardWorkflow } from '@/lib/workflows/storyboard-workflow';
 export { AnalyzeScriptWorkflow } from '@/lib/workflows/analyze-script-workflow';
 
+// Realtime broker Durable Object. Re-exported so the binding's `class_name`
+// in wrangler.jsonc resolves in the Worker bundle (#802).
+export { RealtimeChannel } from '@/lib/realtime/realtime-channel.do';
+
 // Bindings shape from wrangler.jsonc. Only declared so the scheduled() handler
 // has a real type for its env parameter (vs. the framework default of unknown).
 interface WorkerEnv {
   DB: D1Database;
   R2_PUBLIC_ASSETS_BUCKET: R2Bucket;
   R2_STORAGE_BUCKET: R2Bucket;
+  REALTIME: DurableObjectNamespace;
 }
 
 const exportedHandler: ExportedHandler<WorkerEnv> = {
