@@ -8,6 +8,7 @@ import {
   getSequencesFn,
   setSequenceModelFn,
   updateSequenceFn,
+  type AddModelResult,
 } from '@/functions/sequences';
 import { DEFAULT_ANALYSIS_MODEL } from '@/lib/ai/models.config';
 import type { SequenceMusicVariant } from '@/lib/db/schema';
@@ -79,12 +80,7 @@ const VARIANTS_KEY: Record<VariantType, (id: string) => string[]> = {
 export function useAddModelToSequence() {
   const queryClient = useQueryClient();
   return useMutation<
-    {
-      workflowRunId: string;
-      variantType: VariantType;
-      model: string;
-      count: number;
-    },
+    AddModelResult,
     Error,
     { sequenceId: string; variantType: VariantType; model: string }
   >({

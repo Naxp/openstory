@@ -26,11 +26,14 @@ import {
 import { multiplyMicros } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
 import { DEFAULT_ASPECT_RATIO } from '@/lib/constants/aspect-ratios';
-import type { Frame } from '@/lib/db/schema';
+import type { Frame, FrameVariant, NewFrame } from '@/lib/db/schema';
 import { buildPromoteUpdate } from '@/functions/frames';
 import { buildFrameImageWorkflowInput } from '@/lib/image/build-frame-image-input';
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
-import { VARIANT_TYPES } from '@/lib/db/schema/frame-variants';
+import {
+  VARIANT_TYPES,
+  type VariantType,
+} from '@/lib/db/schema/frame-variants';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import {
   createSequenceSchema,
@@ -51,6 +54,25 @@ import { authWithTeamMiddleware, sequenceAccessMiddleware } from './middleware';
 import { copySequenceElements } from '@/lib/sequence-elements/copy-sequence-elements';
 import { promoteTempElements } from '@/lib/sequence-elements/promote-temp-elements';
 import { bumpStylePopularity } from '@/lib/style/bump-style-popularity';
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'serverFn', 'sequences']);
+
+/**
+ * Result of {@link addModelToSequenceFn}. `count` is the number of generation
+ * units actually started (1 track for audio; eligible frames for video; frames
+ * whose `/image` workflow successfully triggered for image). `failed` is the
+ * number of units that failed to start — only ever non-zero for the image path,
+ * which triggers one workflow per frame and tolerates partial failure. Mirrored
+ * by `useAddModelToSequence`'s mutation generic.
+ */
+export type AddModelResult = {
+  workflowRunId: string;
+  variantType: VariantType;
+  model: string;
+  count: number;
+  failed: number;
+};
 
 export const getSequencesFn = createServerFn({ method: 'GET' })
   .middleware([authWithTeamMiddleware])
@@ -489,6 +511,34 @@ export const getSequenceAudioVariantsFn = createServerFn({ method: 'GET' })
   });
 
 /**
+ * Throw if `model` is already on the sequence (#547). A model counts as
+ * "already added" only when a NON-failed (pending/generating/completed) variant
+ * row exists for it — a previously failed add can always be retried. Shared by
+ * all three add-model branches; `label` ('image' | 'video' | 'audio') shapes
+ * the error message.
+ */
+export function assertModelNotAlreadyAdded(
+  existing: ReadonlyArray<{ model: string; status: string }>,
+  model: string,
+  label: VariantType
+): void {
+  if (existing.some((v) => v.model === model && v.status !== 'failed')) {
+    throw new Error(`That ${label} model is already on this sequence`);
+  }
+}
+
+/**
+ * Frames eligible for a video add-model run (#547): only those with a completed
+ * primary image to animate. A frame with no usable image is skipped — there is
+ * nothing to feed image-to-video.
+ */
+export function selectEligibleVideoFrames(frames: readonly Frame[]): Frame[] {
+  return frames.filter(
+    (f) => f.thumbnailStatus === 'completed' && Boolean(f.thumbnailUrl)
+  );
+}
+
+/**
  * Add a new image / video / audio model to an existing sequence (#547).
  * Generates that model's output for every eligible frame (image/video) or the
  * whole sequence (audio) using the EXISTING prompts — no re-analysis. Each unit
@@ -522,14 +572,10 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
       if (!isValidAudioModel(model)) {
         throw new Error('Invalid audio model');
       }
-      // Block only when a non-failed (pending/generating/completed) track for
-      // this model already exists — a previously failed add can be retried.
       const existing = await scopedDb.sequenceVariants.listMusicBySequence(
         sequence.id
       );
-      if (existing.some((v) => v.model === model && v.status !== 'failed')) {
-        throw new Error('That audio model is already on this sequence');
-      }
+      assertModelNotAlreadyAdded(existing, model, 'audio');
       if (!sequence.musicPrompt || !sequence.musicTags) {
         throw new Error(
           'Generate music once before adding another audio model'
@@ -571,17 +617,38 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
           deduplicationId: `add-audio-${sequence.id}-${model}-${Date.now()}`,
           label: buildWorkflowLabel(sequence.id),
         });
-        return { workflowRunId, variantType, model, count: 1 };
+        return {
+          workflowRunId,
+          variantType,
+          model,
+          count: 1,
+          failed: 0,
+        } satisfies AddModelResult;
       } catch (error) {
-        // Mark the pre-stamped row failed so the model can be re-added.
-        await scopedDb.sequenceVariants.upsertMusicPrimary({
+        logger.error('add-model: failed to trigger music workflow', {
+          err: error,
           sequenceId: sequence.id,
           model,
-          prompt: sequence.musicPrompt,
-          tags: sequence.musicTags,
-          durationSeconds: Math.round(totalDuration),
-          status: 'failed',
         });
+        // Mark the pre-stamped row failed so the model can be re-added. Guard
+        // the compensating write so its own failure can't mask the original
+        // trigger error (which is what we want to surface to the user).
+        try {
+          await scopedDb.sequenceVariants.upsertMusicPrimary({
+            sequenceId: sequence.id,
+            model,
+            prompt: sequence.musicPrompt,
+            tags: sequence.musicTags,
+            durationSeconds: Math.round(totalDuration),
+            status: 'failed',
+          });
+        } catch (cleanupError) {
+          logger.error('add-model: failed to mark music row failed', {
+            err: cleanupError,
+            sequenceId: sequence.id,
+            model,
+          });
+        }
         throw error;
       }
     }
@@ -595,13 +662,9 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         sequence.id,
         'video'
       );
-      if (existing.some((v) => v.model === model && v.status !== 'failed')) {
-        throw new Error('That video model is already on this sequence');
-      }
+      assertModelNotAlreadyAdded(existing, model, 'video');
       const allFrames = await scopedDb.frames.listBySequence(sequence.id);
-      const eligible = allFrames.filter(
-        (f) => f.thumbnailStatus === 'completed' && f.thumbnailUrl
-      );
+      const eligible = selectEligibleVideoFrames(allFrames);
       if (eligible.length === 0) {
         throw new Error('No frames have a completed image to animate yet');
       }
@@ -650,17 +713,44 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
             label: buildWorkflowLabel(sequence.id),
           }
         );
-        return { workflowRunId, variantType, model, count: eligible.length };
+        return {
+          workflowRunId,
+          variantType,
+          model,
+          count: eligible.length,
+          failed: 0,
+        } satisfies AddModelResult;
       } catch (error) {
+        logger.error('add-model: failed to trigger motion batch', {
+          err: error,
+          sequenceId: sequence.id,
+          model,
+          frames: eligible.length,
+        });
         // Mark the pre-stamped pending rows failed so the model can be re-added.
-        await Promise.all(
-          eligible.map((f) =>
-            scopedDb.frameVariants.updateByFrameAndModel(f.id, 'video', model, {
-              status: 'failed',
-              error: 'Failed to trigger motion batch',
-            })
-          )
-        );
+        // Guard the compensating writes so they can't mask the original trigger
+        // error that we re-throw to the user.
+        try {
+          await Promise.all(
+            eligible.map((f) =>
+              scopedDb.frameVariants.updateByFrameAndModel(
+                f.id,
+                'video',
+                model,
+                {
+                  status: 'failed',
+                  error: 'Failed to trigger motion batch',
+                }
+              )
+            )
+          );
+        } catch (cleanupError) {
+          logger.error('add-model: failed to mark video rows failed', {
+            err: cleanupError,
+            sequenceId: sequence.id,
+            model,
+          });
+        }
         throw error;
       }
     }
@@ -673,9 +763,7 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
       sequence.id,
       'image'
     );
-    if (existingImage.some((v) => v.model === model && v.status !== 'failed')) {
-      throw new Error('That image model is already on this sequence');
-    }
+    assertModelNotAlreadyAdded(existingImage, model, 'image');
     const allFrames = await scopedDb.frames.listBySequence(sequence.id);
     const [characters, locations, elements] = await Promise.all([
       scopedDb.characters.listWithSheets(sequence.id),
@@ -739,6 +827,15 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         });
         triggered++;
       } catch (error) {
+        // Log every per-frame trigger failure so a systemic cause (e.g. a
+        // transient binding issue hitting half the batch) leaves an aggregated
+        // Sentry trace rather than only a row's `error` column.
+        logger.error('add-model: failed to trigger image workflow for frame', {
+          err: error,
+          sequenceId: sequence.id,
+          frameId: input.frameId,
+          model,
+        });
         if (input.frameId) {
           await scopedDb.frameVariants.updateByFrameAndModel(
             input.frameId,
@@ -758,8 +855,62 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
     if (triggered === 0) {
       throw new Error('Failed to start image generation for any frame');
     }
-    return { workflowRunId, variantType, model, count: triggered };
+    return {
+      workflowRunId,
+      variantType,
+      model,
+      count: triggered,
+      failed: inputs.length - triggered,
+    } satisfies AddModelResult;
   });
+
+/**
+ * Select the variant rows eligible to be promoted to the live primary for
+ * `model` (#547). A row qualifies only when it is this model's LIVE completed
+ * output: `status === 'completed'` with a `url`, and neither a divergent
+ * (`divergedAt`) nor a user-discarded (`discardedAt`) alternate. Excluding
+ * divergent/discarded is load-bearing — promoting one would resurrect an output
+ * the user explicitly rejected onto the primary across the whole sequence.
+ */
+export function selectPromotableVariants(
+  variants: readonly FrameVariant[],
+  model: string
+): FrameVariant[] {
+  return variants.filter(
+    (v) =>
+      v.model === model &&
+      v.status === 'completed' &&
+      Boolean(v.url) &&
+      v.divergedAt === null &&
+      v.discardedAt === null
+  );
+}
+
+/**
+ * Build the primary-column update that promotes `variant` to the live primary
+ * (#547). Reuses `buildPromoteUpdate` (which matches the per-scene
+ * `setImageFromVariantFn` exactly for image, incl. clearing the now-stale
+ * video). `buildPromoteUpdate`'s video case omits the motion-model / duration /
+ * generated-at that `setVideoFromVariantFn` records, so layer those on for
+ * parity. `now` is injectable for deterministic tests.
+ */
+export function buildSequencePromoteUpdate(
+  variant: FrameVariant,
+  variantType: 'image' | 'video',
+  model: string,
+  now: () => Date = () => new Date()
+): Partial<NewFrame> {
+  const { update } = buildPromoteUpdate(variant);
+  if (variantType === 'video') {
+    return {
+      ...update,
+      motionModel: model,
+      durationMs: variant.durationMs,
+      videoGeneratedAt: now(),
+    };
+  }
+  return update;
+}
 
 /**
  * Promote a model to the live primary across the WHOLE sequence (#547) — the
@@ -797,34 +948,18 @@ export const setSequenceModelFn = createServerFn({ method: 'POST' })
       sequence.id,
       variantType
     );
-    const promotable = variants.filter(
-      (v) =>
-        v.model === model &&
-        v.status === 'completed' &&
-        v.url &&
-        v.divergedAt === null &&
-        v.discardedAt === null
-    );
+    const promotable = selectPromotableVariants(variants, model);
     if (promotable.length === 0) {
       throw new Error('That model has not generated anything to set');
     }
 
     let count = 0;
     for (const variant of promotable) {
-      // `buildPromoteUpdate` matches `setImageFromVariantFn` exactly for image
-      // (incl. clearing the now-stale video). Its video case omits the
-      // motion-model / duration / timestamp that `setVideoFromVariantFn`
-      // records, so layer those on for parity.
-      const { update } = buildPromoteUpdate(variant);
-      const frameUpdate =
-        variantType === 'video'
-          ? {
-              ...update,
-              motionModel: model,
-              durationMs: variant.durationMs,
-              videoGeneratedAt: new Date(),
-            }
-          : update;
+      const frameUpdate = buildSequencePromoteUpdate(
+        variant,
+        variantType,
+        model
+      );
       const updated = await scopedDb.frames.update(
         variant.frameId,
         frameUpdate,
@@ -833,6 +968,20 @@ export const setSequenceModelFn = createServerFn({ method: 'POST' })
         }
       );
       if (updated) count++;
+    }
+
+    // A frame deleted mid-promotion is benign (throwOnMissing:false skips it),
+    // but a promoted count short of the promotable set otherwise points at a
+    // real problem (e.g. a scoping mismatch) — surface it rather than letting
+    // the lower count pass silently.
+    if (count !== promotable.length) {
+      logger.warn('set-model: promoted fewer frames than promotable', {
+        sequenceId: sequence.id,
+        model,
+        variantType,
+        promotable: promotable.length,
+        promoted: count,
+      });
     }
 
     return { count, variantType, model };

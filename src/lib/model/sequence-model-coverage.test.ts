@@ -88,6 +88,57 @@ describe('computeSequenceModelCoverage', () => {
     expect(coverage.get('flux_pro')?.completed).toBe(0);
   });
 
+  it('reports failed when an added model has only failed rows', () => {
+    const variants = [
+      variant({ id: 'a1', frameId: 'f1', model: 'nano_banana_2' }),
+      variant({
+        id: 'b1',
+        frameId: 'f1',
+        model: 'flux_pro',
+        status: 'failed',
+        url: null,
+      }),
+    ];
+
+    const coverage = computeSequenceModelCoverage({
+      variants,
+      variantType: 'image',
+      primaryModel: 'nano_banana_2',
+    });
+
+    expect(coverage.get('flux_pro')?.status).toBe('failed');
+    expect(coverage.get('flux_pro')?.completed).toBe(0);
+  });
+
+  it('reports completed (not generating) when a model has both completed and in-flight rows', () => {
+    const variants = [
+      variant({ id: 'a1', frameId: 'f1', model: 'nano_banana_2' }),
+      variant({ id: 'a2', frameId: 'f2', model: 'nano_banana_2' }),
+      // flux_pro: one scene done, another still generating.
+      variant({ id: 'b1', frameId: 'f1', model: 'flux_pro' }),
+      variant({
+        id: 'b2',
+        frameId: 'f2',
+        model: 'flux_pro',
+        status: 'generating',
+        url: null,
+      }),
+    ];
+
+    const coverage = computeSequenceModelCoverage({
+      variants,
+      variantType: 'image',
+      primaryModel: 'nano_banana_2',
+    });
+
+    // At least one completed scene wins over a concurrent generating row.
+    expect(coverage.get('flux_pro')).toEqual({
+      status: 'completed',
+      completed: 1,
+      total: 2,
+    });
+  });
+
   it('ignores divergent and discarded alternates', () => {
     const variants = [
       variant({ id: 'a1', frameId: 'f1', model: 'nano_banana_2' }),

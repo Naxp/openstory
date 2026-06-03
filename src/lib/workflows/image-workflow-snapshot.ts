@@ -309,6 +309,7 @@ export async function persistImageResult(opts: {
       status: 'pending' | 'completed';
       model: string;
       thumbnailUrl?: string;
+      variantOnly?: boolean;
     }
   ) => Promise<void>;
   /**
@@ -357,6 +358,8 @@ export async function persistImageResult(opts: {
       status: 'completed',
       thumbnailUrl: upload.url,
       model,
+      // Alternate model — the cache updater must not repoint the primary.
+      variantOnly: true,
     });
 
     return { status: 'variant-only', imageUrl: upload.url };

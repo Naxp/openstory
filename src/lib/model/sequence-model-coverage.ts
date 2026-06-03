@@ -10,15 +10,18 @@ import type { VariantType } from '@/lib/db/schema/frame-variants';
 export type ModelCoverage = {
   /**
    * Per-model marker: `set` (live primary), `completed` (generated for ≥1
-   * scene), `generating`, `failed`, or `pending` (nothing yet).
+   * scene), `generating` (≥1 row pending or in flight, none completed yet —
+   * `pending` rows fold into this so a just-added model reads as generating),
+   * `failed`, or `pending` (nothing yet).
    */
   status: ModelGenerationStatus;
   /** Distinct scenes with a completed variant for this model. */
   completed: number;
   /**
-   * Coverage denominator: scenes covered by ANY model of this type (the union
-   * of every model's completed scenes). A model is "fully generated" when
-   * `completed === total`.
+   * Coverage denominator: scenes covered by ANY model of this type — the union
+   * of every model's *completed* scenes (in-flight/failed rows don't count, so
+   * `total` is 0 until at least one model completes a scene). A model is "fully
+   * generated" when `completed === total`.
    */
   total: number;
 };

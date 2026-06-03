@@ -236,7 +236,14 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
         try {
           await getGenerationChannel(input.sequenceId).emit(
             'generation.video:progress',
-            { frameId: input.frameId, status: 'generating', model }
+            {
+              frameId: input.frameId,
+              status: 'generating',
+              model,
+              // Variant-only (#547): don't flip the primary frame to
+              // "generating" in cache — this run only fills a variant row.
+              variantOnly: input.variantOnly,
+            }
           );
         } catch (emitError) {
           logger.error(

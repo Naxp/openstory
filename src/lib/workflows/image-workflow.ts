@@ -177,7 +177,14 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
 
           await getGenerationChannel(input.sequenceId).emit(
             'generation.image:progress',
-            { frameId: input.frameId, status: 'generating', model }
+            {
+              frameId: input.frameId,
+              status: 'generating',
+              model,
+              // Variant-only (#547): don't flip the primary frame to
+              // "generating" in cache — this run only fills a variant row.
+              variantOnly: input.variantOnly,
+            }
           );
         }
 
@@ -361,7 +368,15 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
       try {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.image:progress',
-          { frameId: input.frameId, status: 'failed', model }
+          {
+            frameId: input.frameId,
+            status: 'failed',
+            model,
+            // Variant-only (#547): a failed alternate must not flip the primary
+            // thumbnail to "failed" in cache (the DB write above is already
+            // guarded on variantOnly).
+            variantOnly: input.variantOnly,
+          }
         );
       } catch (emitError) {
         logger.error(

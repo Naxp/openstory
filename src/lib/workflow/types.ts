@@ -83,10 +83,11 @@ export interface ImageWorkflowInput extends SequenceWorkflowContext {
   userEditedPrompt?: boolean;
   /**
    * Variant-only mode (#547). When true, the run NEVER touches the live primary
-   * columns (`frames.imageModel` / `thumbnailUrl` / `thumbnailStatus` /
-   * `thumbnailInputHash` / video*) — it writes only this model's
-   * `frame_variants` row. Used by "add a model to an existing sequence" so a
-   * new model lands as a selectable alternate without repointing the primary,
+   * `frames.*` image/video columns — it writes only this model's
+   * `frame_variants` row. (See `persistImageResult`'s `variantOnly` branch and
+   * the workflow's set-generating/onFailure guards for the authoritative set of
+   * skipped columns.) Used by "add a model to an existing sequence" so a new
+   * model lands as a selectable alternate without repointing the primary,
    * tripping staleness, or invalidating the frame's video. Promotion to primary
    * happens later via an explicit "Set". Skips divergence detection entirely
    * (there is no primary to protect).

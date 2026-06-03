@@ -156,7 +156,11 @@ export const AddModelMenuSection = ({
                 { sequenceId, variantType, model: key },
                 {
                   onSuccess: (r) =>
-                    toast.success(`Generating ${name} (${r.count})…`),
+                    toast.success(
+                      r.failed > 0
+                        ? `Generating ${name} (${r.count}) — ${r.failed} failed to start`
+                        : `Generating ${name} (${r.count})…`
+                    ),
                   onError: (e) => toast.error(e.message),
                 }
               );

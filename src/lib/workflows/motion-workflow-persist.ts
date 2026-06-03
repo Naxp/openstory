@@ -50,8 +50,16 @@ export type PersistMotionScopedDb = {
  * emitter so the workflow can forward it directly.
  */
 export type MotionVideoProgressPayload =
-  | { frameId: string; status: 'completed'; videoUrl: string; model: string }
-  | { frameId: string; status: 'failed'; model: string };
+  | {
+      frameId: string;
+      status: 'completed';
+      videoUrl: string;
+      model: string;
+      // Variant-only (#547): added model — cache updater must not repoint the
+      // primary video.
+      variantOnly?: boolean;
+    }
+  | { frameId: string; status: 'failed'; model: string; variantOnly?: boolean };
 
 export type MotionEmit = (
   event: 'generation.video:progress',
@@ -192,6 +200,8 @@ export async function persistMotionCompletion(opts: {
       status: 'completed',
       videoUrl: upload.url,
       model,
+      // Alternate model — the cache updater must not repoint the primary.
+      variantOnly: true,
     });
 
     return { status: 'completed', videoUrl: upload.url };
@@ -281,5 +291,11 @@ export async function persistMotionFailure(opts: {
     });
   }
 
-  await emit('generation.video:progress', { frameId, status: 'failed', model });
+  await emit('generation.video:progress', {
+    frameId,
+    status: 'failed',
+    model,
+    // A failed alternate must not flip the primary video to `failed` in cache.
+    variantOnly,
+  });
 }

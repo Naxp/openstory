@@ -129,21 +129,29 @@ export function updateQueryCacheFromEvent(
         'previewThumbnailUrl'
       );
       const status = data.status;
-      queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
-        old?.map((f) =>
-          f.id === frameId
-            ? {
-                ...f,
-                thumbnailUrl: thumbnailUrl ?? f.thumbnailUrl,
-                previewThumbnailUrl:
-                  previewThumbnailUrl ?? f.previewThumbnailUrl,
-                thumbnailStatus: isValidFrameStatus(status)
-                  ? status
-                  : f.thumbnailStatus,
-              }
-            : f
-        )
-      );
+      // Variant-only (#547): an added (alternate) model finished — its output
+      // belongs in `frame_variants`, NOT on the live primary. Skip the
+      // primary frames-list write (which would flip the displayed thumbnail to
+      // the alternate) and only refresh the per-model variant/model-list
+      // queries below so the new model appears in the dropdown.
+      const variantOnly = data.variantOnly === true;
+      if (!variantOnly) {
+        queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
+          old?.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  thumbnailUrl: thumbnailUrl ?? f.thumbnailUrl,
+                  previewThumbnailUrl:
+                    previewThumbnailUrl ?? f.previewThumbnailUrl,
+                  thumbnailStatus: isValidFrameStatus(status)
+                    ? status
+                    : f.thumbnailStatus,
+                }
+              : f
+          )
+        );
+      }
       // Refresh variant data so model switcher and variant overlay stay current
       if (status === 'completed') {
         debouncedInvalidate(
@@ -163,19 +171,27 @@ export function updateQueryCacheFromEvent(
     case 'generation.video:progress': {
       const videoUrl = getOptionalString(data, 'videoUrl');
       const status = data.status;
-      queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
-        old?.map((f) =>
-          f.id === frameId
-            ? {
-                ...f,
-                videoUrl: videoUrl ?? f.videoUrl,
-                videoStatus: isValidFrameStatus(status)
-                  ? status
-                  : f.videoStatus,
-              }
-            : f
-        )
-      );
+      // Variant-only (#547): an added (alternate) video model finished/failed —
+      // its output belongs in `frame_variants`, NOT the live primary. Skip the
+      // primary frames-list write (which would flip the displayed video to the
+      // alternate) and only refresh the per-model variant/model-list queries
+      // below so the new model appears in the dropdown.
+      const variantOnly = data.variantOnly === true;
+      if (!variantOnly) {
+        queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
+          old?.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  videoUrl: videoUrl ?? f.videoUrl,
+                  videoStatus: isValidFrameStatus(status)
+                    ? status
+                    : f.videoStatus,
+                }
+              : f
+          )
+        );
+      }
       // Refresh video variant data so the model switcher and per-model overlay
       // stay current (#545). Unlike the image handler, refresh on `failed` too:
       // motion-workflow.onFailure writes a `failed` variant row, and the

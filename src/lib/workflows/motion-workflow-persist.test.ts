@@ -360,6 +360,8 @@ describe('variant-only (#547)', () => {
         status: 'completed',
         videoUrl: upload.url,
         model: 'veo3',
+        // Flags the cache updater not to repoint the primary video (#547).
+        variantOnly: true,
       },
     ]);
   });
