@@ -3,13 +3,14 @@
  * Reusable middleware for authentication, team access, and resource validation
  */
 
+import { scheduleFlushTracing } from '#flush-scheduler';
 import {
   requireTeamAdminAccess,
   requireTeamMemberAccess,
   requireTeamOwnerAccess,
 } from '@/lib/auth/action-utils';
-import { getAuth } from '@/lib/auth/config';
 import type { Session, User } from '@/lib/auth/config';
+import { getAuth } from '@/lib/auth/config';
 import { isSystemAdmin, requireSystemAdmin } from '@/lib/auth/system-admin';
 import { isStripeEnabled } from '@/lib/billing/constants';
 import { getStripeOrThrow, getStripeWebhookSecret } from '@/lib/billing/stripe';
@@ -22,7 +23,6 @@ import {
   type ScopedDb,
 } from '@/lib/db/scoped';
 import { NotFoundError } from '@/lib/errors';
-import { scheduleFlushTracing } from '#flush-scheduler';
 import { getLogger, toErrorPayload } from '@/lib/observability/logger';
 import { withTraceContextAsync } from '@/lib/observability/tracer';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
@@ -169,7 +169,12 @@ export const loggerMiddleware = createMiddleware({ type: 'function' }).server(
 export const authRequestMiddleware = createMiddleware().server(
   async ({ next, request }) => {
     const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
+    // The apiKey plugin validates a key header inside getSession and *throws*
+    // (APIError) for a disabled/expired/unknown key rather than returning null,
+    // so treat any throw as unauthenticated → 401, never a 500.
+    const session = await auth.api
+      .getSession({ headers: request.headers })
+      .catch(() => null);
 
     if (!session?.user) {
       throw new Response('Unauthorized', { status: 401 });
@@ -192,7 +197,12 @@ export const authRequestMiddleware = createMiddleware().server(
 export const authWithTeamRequestMiddleware = createMiddleware().server(
   async ({ next, request }) => {
     const auth = getAuth();
-    const session = await auth.api.getSession({ headers: request.headers });
+    // See authRequestMiddleware: a bad API key makes getSession throw, so
+    // swallow to null → 401 instead of a 500. Also serves the public `/api/v1`
+    // routes, where the apiKey plugin resolves the key's owner into the session.
+    const session = await auth.api
+      .getSession({ headers: request.headers })
+      .catch(() => null);
 
     if (!session?.user) {
       throw new Response('Unauthorized', { status: 401 });

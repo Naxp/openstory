@@ -278,85 +278,120 @@ const enhanceScriptInputSchema = z.object({
     .optional(),
 });
 
+export type EnhanceScriptInput = z.infer<typeof enhanceScriptInputSchema>;
+
+/**
+ * Core script-enhancement generator, shared by the streaming server function
+ * (which yields deltas to the browser) and the public API's one-shot create
+ * flow (which drains it to a full string before generating). Single source of
+ * truth so rate-limiting, billing, sanitization, and the prompt/model choice
+ * never drift between the two callers.
+ */
+export async function* streamScriptEnhancement(
+  data: EnhanceScriptInput,
+  ctx: { scopedDb: ScopedDb; userId: string; teamId: string }
+): AsyncGenerator<{ delta: string }> {
+  enforceRateLimit(scriptEnhancementRateLimiter, getClientIP());
+
+  const deduct = await prepareBilling(ctx.scopedDb, 'Script enhancement');
+
+  if (checkForInjectionAttempts(data.script)) {
+    logger.warn('Script enhancement: Potential injection attempt detected');
+  }
+
+  const sanitized = sanitizeScriptContent(data.script);
+  const { prompt, compiled } = await getPrompt('script/enhance');
+  const elements = data.elements ?? [];
+  const userPrompt = createUserPrompt(sanitized, {
+    styleConfig: data.styleConfig,
+    aspectRatio: data.aspectRatio,
+    targetDuration: data.targetDuration,
+    elements: elements.length > 0 ? elements : undefined,
+  });
+
+  const model =
+    data.analysisModel && isValidAnalysisModelId(data.analysisModel)
+      ? data.analysisModel
+      : RECOMMENDED_MODELS.creative;
+
+  const systemMessage = `${compiled}\n\nReturn ONLY the enhanced script text. No JSON, no markdown formatting, no explanations.`;
+
+  const userContent: string | ChatMessageContentPart[] =
+    elements.length > 0
+      ? [
+          { type: 'text', content: userPrompt },
+          ...elements.map<ChatMessageContentPart>((el) => ({
+            type: 'image',
+            source: { type: 'url', value: el.imageUrl },
+          })),
+        ]
+      : userPrompt;
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: systemMessage },
+    { role: 'user', content: userContent },
+  ];
+
+  const promptRef = prompt
+    ? {
+        name: prompt.name,
+        version: prompt.version,
+        isFallback: false,
+      }
+    : undefined;
+
+  // Web search runs as OpenRouter's server tool — the model decides when to
+  // search and OpenRouter executes it server-side within the agent loop.
+  // Gate it out of E2E entirely (record + replay): live search results would
+  // make the recorded OpenRouter request/response non-deterministic.
+  const useWebSearch = getEnv().E2E_TEST !== 'true';
+  for await (const chunk of callLLMStream({
+    model,
+    messages,
+    max_tokens: 4000,
+    temperature: 0.7,
+    ...(useWebSearch && { webSearch: true }),
+    observationName: 'script-enhance',
+    prompt: promptRef,
+    tags: ['script-enhance', model],
+    userId: ctx.userId,
+    metadata: {
+      teamId: ctx.teamId,
+      elementCount: elements.length,
+      targetDuration: data.targetDuration,
+      aspectRatio: data.aspectRatio,
+    },
+  })) {
+    if (chunk.delta) {
+      yield { delta: chunk.delta };
+    }
+  }
+
+  await deduct?.();
+}
+
+/**
+ * Run script enhancement to completion and return the full enhanced text.
+ * Used by the public API where there is no client streaming channel.
+ */
+export async function enhanceScriptToString(
+  data: EnhanceScriptInput,
+  ctx: { scopedDb: ScopedDb; userId: string; teamId: string }
+): Promise<string> {
+  let enhanced = '';
+  for await (const { delta } of streamScriptEnhancement(data, ctx)) {
+    enhanced += delta;
+  }
+  return enhanced.trim();
+}
+
 export const enhanceScriptStreamFn = createServerFn({ method: 'POST' })
   .middleware([authWithTeamMiddleware])
   .inputValidator(zodValidator(enhanceScriptInputSchema))
   .handler(async function* ({ data, context }) {
-    enforceRateLimit(scriptEnhancementRateLimiter, getClientIP());
-
-    const deduct = await prepareBilling(context.scopedDb, 'Script enhancement');
-
-    if (checkForInjectionAttempts(data.script)) {
-      logger.warn('Script enhancement: Potential injection attempt detected');
-    }
-
-    const sanitized = sanitizeScriptContent(data.script);
-    const { prompt, compiled } = await getPrompt('script/enhance');
-    const elements = data.elements ?? [];
-    const userPrompt = createUserPrompt(sanitized, {
-      styleConfig: data.styleConfig,
-      aspectRatio: data.aspectRatio,
-      targetDuration: data.targetDuration,
-      elements: elements.length > 0 ? elements : undefined,
-    });
-
-    const model =
-      data.analysisModel && isValidAnalysisModelId(data.analysisModel)
-        ? data.analysisModel
-        : RECOMMENDED_MODELS.creative;
-
-    const systemMessage = `${compiled}\n\nReturn ONLY the enhanced script text. No JSON, no markdown formatting, no explanations.`;
-
-    const userContent: string | ChatMessageContentPart[] =
-      elements.length > 0
-        ? [
-            { type: 'text', content: userPrompt },
-            ...elements.map<ChatMessageContentPart>((el) => ({
-              type: 'image',
-              source: { type: 'url', value: el.imageUrl },
-            })),
-          ]
-        : userPrompt;
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userContent },
-    ];
-
-    const promptRef = prompt
-      ? {
-          name: prompt.name,
-          version: prompt.version,
-          isFallback: false,
-        }
-      : undefined;
-
-    // Web search runs as OpenRouter's server tool — the model decides when to
-    // search and OpenRouter executes it server-side within the agent loop.
-    // Gate it out of E2E entirely (record + replay): live search results would
-    // make the recorded OpenRouter request/response non-deterministic.
-    const useWebSearch = getEnv().E2E_TEST !== 'true';
-    for await (const chunk of callLLMStream({
-      model,
-      messages,
-      max_tokens: 4000,
-      temperature: 0.7,
-      ...(useWebSearch && { webSearch: true }),
-      observationName: 'script-enhance',
-      prompt: promptRef,
-      tags: ['script-enhance', model],
+    yield* streamScriptEnhancement(data, {
+      scopedDb: context.scopedDb,
       userId: context.user.id,
-      metadata: {
-        teamId: context.teamId,
-        elementCount: elements.length,
-        targetDuration: data.targetDuration,
-        aspectRatio: data.aspectRatio,
-      },
-    })) {
-      if (chunk.delta) {
-        yield { delta: chunk.delta };
-      }
-    }
-
-    await deduct?.();
+      teamId: context.teamId,
+    });
   });
