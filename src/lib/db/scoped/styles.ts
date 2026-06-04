@@ -39,8 +39,17 @@ export function createStylesReadMethods(db: Database, teamId: string) {
         .limit(1);
       return result[0] ?? null;
     },
+  };
+}
 
-    getPublic: async (): Promise<Style[]> => {
+/**
+ * Public (anonymous) styles reads. Takes no team scope at all, so this code
+ * path cannot express a team-scoped query — the isPublic filter is the entire
+ * data boundary for the unauthenticated style-catalogue endpoint.
+ */
+export function createPublicStylesReadMethods(db: Database) {
+  return {
+    list: async (): Promise<Style[]> => {
       return await db
         .select()
         .from(styles)

@@ -20,7 +20,7 @@ import { asc, desc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { generateId } from '@/lib/db/id';
-import { createStylesReadMethods } from '@/lib/db/scoped/styles';
+import { createPublicStylesReadMethods } from '@/lib/db/scoped/styles';
 import type { Database } from '@/lib/db/client';
 import {
   styles,
@@ -225,11 +225,10 @@ describe("createStylesMethods.list({ orderBy: 'popular' })", () => {
   });
 });
 
-describe('createStylesReadMethods.getPublic', () => {
+describe('createPublicStylesReadMethods', () => {
   // Uses the REAL production read methods (not the inline mirror above):
-  // getPublic() backs getPublicStylesFn, an endpoint with no auth middleware,
-  // so its isPublic filter is the entire data-leak barrier. The empty-string
-  // teamId mirrors how listPublicStyles() scopes the anonymous call.
+  // this factory backs getPublicStylesFn, an endpoint with no auth
+  // middleware, so its isPublic filter is the entire data-leak barrier.
   it('returns only public styles, never private team styles', async () => {
     const methods = makeStylesMethods(db, team.id, userRow.id);
 
@@ -245,7 +244,7 @@ describe('createStylesReadMethods.getPublic', () => {
       sortOrder: 2,
     });
 
-    const visible = await createStylesReadMethods(db, '').getPublic();
+    const visible = await createPublicStylesReadMethods(db).list();
     const ids = visible.map((s) => s.id);
     expect(ids).toContain(pub.id);
     expect(ids).not.toContain(priv.id);

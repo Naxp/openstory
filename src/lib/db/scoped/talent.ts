@@ -16,16 +16,25 @@ import type {
   TalentWithSheets,
 } from '@/lib/db/schema';
 
-function createTalentReadMethods(db: Database, teamId: string) {
+/**
+ * Shared implementation for team-scoped and public (anonymous) talent reads.
+ * A null teamId means public-only scope: every query filters on isPublic with
+ * no team arm, so the anonymous code path cannot express a team-scoped query.
+ */
+function createTalentReadMethodsScoped(db: Database, teamId: string | null) {
+  const scope =
+    teamId === null
+      ? eq(talent.isPublic, true)
+      : or(eq(talent.teamId, teamId), eq(talent.isPublic, true));
+  const queryScope =
+    teamId === null
+      ? { isPublic: true }
+      : { OR: [{ teamId }, { isPublic: true }] };
+
   return {
     list: async (options?: {
       favoritesOnly?: boolean;
-      /** Restrict to public ("system") talent only, ignoring team scope. */
-      publicOnly?: boolean;
     }): Promise<TalentWithSheets[]> => {
-      const scope = options?.publicOnly
-        ? eq(talent.isPublic, true)
-        : or(eq(talent.teamId, teamId), eq(talent.isPublic, true));
       const conditions = [scope];
       if (options?.favoritesOnly) {
         conditions.push(eq(talent.isFavorite, true));
@@ -116,7 +125,7 @@ function createTalentReadMethods(db: Database, teamId: string) {
         .from(talent)
         .where(
           and(
-            or(eq(talent.teamId, teamId), eq(talent.isPublic, true)),
+            scope,
             sql`${talent.id} IN (${sql.join(
               ids.map((id) => sql`${id}`),
               sql`, `
@@ -181,19 +190,13 @@ function createTalentReadMethods(db: Database, teamId: string) {
 
     getById: async (talentId: string): Promise<Talent | undefined> => {
       return db.query.talent.findFirst({
-        where: {
-          id: talentId,
-          OR: [{ teamId }, { isPublic: true }],
-        },
+        where: { id: talentId, ...queryScope },
       });
     },
 
     getWithRelations: async (talentId: string) => {
       return db.query.talent.findFirst({
-        where: {
-          id: talentId,
-          OR: [{ teamId }, { isPublic: true }],
-        },
+        where: { id: talentId, ...queryScope },
         with: {
           sheets: {
             orderBy: { isDefault: 'desc', createdAt: 'desc' },
@@ -242,7 +245,18 @@ function createTalentReadMethods(db: Database, teamId: string) {
   };
 }
 
-export { createTalentReadMethods };
+export function createTalentReadMethods(db: Database, teamId: string) {
+  return createTalentReadMethodsScoped(db, teamId);
+}
+
+/**
+ * Public (anonymous) talent reads — list and detail only, public-only scope.
+ * The entire data boundary for the unauthenticated talent endpoints.
+ */
+export function createPublicTalentReadMethods(db: Database) {
+  const { list, getWithRelations } = createTalentReadMethodsScoped(db, null);
+  return { list, getWithRelations };
+}
 
 export function createTalentMethods(
   db: Database,
