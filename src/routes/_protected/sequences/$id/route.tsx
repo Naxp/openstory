@@ -15,6 +15,7 @@ import { getSequenceFn } from '@/functions/sequences';
 import { sequenceKeys, useSequence } from '@/hooks/use-sequences';
 import { useSwipeNavigation } from '@/hooks/use-swipe-navigation';
 import { useUser } from '@/hooks/use-user';
+import { requireSessionOrRedirect } from '@/lib/auth/route-guards';
 import { isValidId } from '@/lib/db/id';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -31,6 +32,9 @@ function SequenceCrumbLabel({ id }: { id: string }) {
 
 export const Route = createFileRoute('/_protected/sequences/$id')({
   component: SequenceLayout,
+  beforeLoad: async ({ context: { queryClient }, location }) => {
+    await requireSessionOrRedirect(queryClient, location.href);
+  },
   loader: async ({ params, context: { queryClient } }) => {
     if (!isValidId(params.id)) {
       throw notFound();

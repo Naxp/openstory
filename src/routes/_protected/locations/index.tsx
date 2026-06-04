@@ -1,3 +1,4 @@
+import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { AddLocationDialog } from '@/components/location-library/add-location-dialog';
 import { LocationLibraryFilters } from '@/components/location-library/location-library-filters';
 import { LocationLibraryList } from '@/components/location-library/location-library-list';
@@ -6,6 +7,7 @@ import { PageDescription } from '@/components/typography/page-description';
 import { PageHeader } from '@/components/typography/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useLibraryLocations } from '@/hooks/use-sequence-locations';
+import { useUser } from '@/hooks/use-user';
 import { createFileRoute } from '@tanstack/react-router';
 import { MapPin } from 'lucide-react';
 import { z } from 'zod';
@@ -21,6 +23,27 @@ export const Route = createFileRoute('/_protected/locations/')({
 });
 
 function LocationsPage() {
+  const { data: user } = useUser();
+
+  return (
+    <div className="h-full overflow-auto">
+      <PageContainer>
+        <h1 className="sr-only">Location Library</h1>
+        {user ? (
+          <LocationLibraryContent />
+        ) : (
+          <SignInPrompt
+            icon={<MapPin className="h-12 w-12" />}
+            title="Sign in to manage locations"
+            description="Keep a library of location references to maintain visual consistency across your sequences."
+          />
+        )}
+      </PageContainer>
+    </div>
+  );
+}
+
+function LocationLibraryContent() {
   const { search } = Route.useSearch();
   const { data: locations, isLoading, error } = useLibraryLocations();
 
@@ -39,33 +62,30 @@ function LocationsPage() {
   });
 
   return (
-    <div className="h-full overflow-auto">
-      <PageContainer>
-        <h1 className="sr-only">Location Library</h1>
-        <PageHeader actions={<AddLocationDialog />}>
-          <PageDescription>
-            Browse and manage location references across all your sequences.
-            Upload custom references to maintain visual consistency.
-          </PageDescription>
-        </PageHeader>
+    <>
+      <PageHeader actions={<AddLocationDialog />}>
+        <PageDescription>
+          Browse and manage location references across all your sequences.
+          Upload custom references to maintain visual consistency.
+        </PageDescription>
+      </PageHeader>
 
-        <LocationLibraryFilters currentSearch={search} />
+      <LocationLibraryFilters currentSearch={search} />
 
-        {!isLoading && filteredLocations && filteredLocations.length === 0 ? (
-          <EmptyState
-            icon={<MapPin className="h-12 w-12" />}
-            title="No locations yet"
-            description="Add locations to your library to maintain visual consistency across your sequences."
-            action={<AddLocationDialog />}
-          />
-        ) : (
-          <LocationLibraryList
-            locations={filteredLocations}
-            isLoading={isLoading}
-            error={error}
-          />
-        )}
-      </PageContainer>
-    </div>
+      {!isLoading && filteredLocations && filteredLocations.length === 0 ? (
+        <EmptyState
+          icon={<MapPin className="h-12 w-12" />}
+          title="No locations yet"
+          description="Add locations to your library to maintain visual consistency across your sequences."
+          action={<AddLocationDialog />}
+        />
+      ) : (
+        <LocationLibraryList
+          locations={filteredLocations}
+          isLoading={isLoading}
+          error={error}
+        />
+      )}
+    </>
   );
 }

@@ -1,6 +1,9 @@
+import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { EvalView } from '@/components/eval/eval-view';
 import { PageContainer } from '@/components/layout/page-container';
+import { useUser } from '@/hooks/use-user';
 import { createFileRoute } from '@tanstack/react-router';
+import { Video } from 'lucide-react';
 import { z } from 'zod';
 
 const searchSchema = z.object({
@@ -15,6 +18,8 @@ export const Route = createFileRoute('/_protected/sequences/')({
 
 function SequencesPage() {
   const { user } = Route.useSearch();
+  const { data: currentUser } = useUser();
+
   return (
     <PageContainer
       maxWidth="full"
@@ -22,7 +27,15 @@ function SequencesPage() {
       className="flex-1 flex flex-col overflow-hidden"
     >
       <h1 className="sr-only">Your Sequences</h1>
-      <EvalView initialUserFilter={user} />
+      {currentUser ? (
+        <EvalView initialUserFilter={user} />
+      ) : (
+        <SignInPrompt
+          icon={<Video className="h-12 w-12" />}
+          title="Sign in to see your sequences"
+          description="Your generated sequences live here once you create an account."
+        />
+      )}
     </PageContainer>
   );
 }

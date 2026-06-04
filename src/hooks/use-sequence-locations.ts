@@ -10,6 +10,7 @@ import {
   recastLocationFn,
 } from '@/functions/sequence-locations';
 import { getTeamLibraryLocationsFn } from '@/functions/location-library';
+import { useSession } from '@/lib/auth/client';
 import type { LibraryLocation, SequenceLocation } from '@/lib/db/schema';
 
 // Re-export for backwards compatibility
@@ -77,12 +78,16 @@ export function useTeamSequenceLocations() {
  * These are user-created location templates
  */
 export function useLibraryLocations() {
+  // Team-scoped; skip for anonymous visitors (e.g. the suggestion picker on the
+  // public new-sequence screen).
+  const { data: session } = useSession();
   return useQuery<LibraryLocation[]>({
     queryKey: libraryLocationKeys.list,
     queryFn: async () => {
       return getTeamLibraryLocationsFn();
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: !!session,
   });
 }
 

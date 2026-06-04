@@ -127,6 +127,17 @@ export async function getUserTeamMembership(
 }
 
 /**
+ * List publicly-shared styles without any team scoping or auth.
+ * Used to populate the style picker for anonymous (logged-out) visitors so
+ * they can compose a sequence before being prompted to sign in.
+ */
+export async function listPublicStyles() {
+  const db = getDb();
+  // teamId is irrelevant for getPublic(); pass an empty scope marker.
+  return createStylesReadMethods(db, '').getPublic();
+}
+
+/**
  * Get a sequence by ID without team scoping.
  * Only for admin operations where team context isn't available yet.
  */

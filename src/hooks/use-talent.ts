@@ -12,6 +12,7 @@ import {
   updateTalentFn,
   deleteTalentMediaFn,
 } from '@/functions/talent';
+import { useSession } from '@/lib/auth/client';
 import { putToR2 } from '@/lib/utils/upload';
 import type {
   CreateTalentInput,
@@ -34,9 +35,13 @@ export const talentKeys = {
  * Hook to fetch all talent for the current team
  */
 export function useTalent(options?: { favoritesOnly?: boolean }) {
+  // Talent is team-scoped; skip the request entirely for anonymous visitors
+  // (e.g. the suggestion picker on the public new-sequence screen).
+  const { data: session } = useSession();
   return useQuery({
     queryKey: talentKeys.list(options ?? {}),
     queryFn: () => getTalentFn({ data: options }),
+    enabled: !!session,
   });
 }
 

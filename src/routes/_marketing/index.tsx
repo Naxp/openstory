@@ -1,5 +1,4 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { sessionQueryOptions } from '@/lib/auth/session-query';
 import { HeroSection } from '@/components/marketing/hero-section';
 import { ManifestoSection } from '@/components/marketing/manifesto-section';
 import { TopTierFeatures } from '@/components/marketing/feature-cards';
@@ -14,12 +13,11 @@ const description =
 
 export const Route = createFileRoute('/_marketing/')({
   component: HomePage,
-  beforeLoad: async ({ context }) => {
-    const session =
-      await context.queryClient.ensureQueryData(sessionQueryOptions);
-    if (session?.user) {
-      throw redirect({ to: '/sequences/new' });
-    }
+  beforeLoad: async () => {
+    // The app itself is the front page now: everyone — logged in or not —
+    // lands directly in the new-sequence composer. Anonymous visitors can
+    // compose freely; actions prompt a login (see AuthGateProvider).
+    throw redirect({ to: '/sequences/new' });
   },
   head: () => ({
     meta: [

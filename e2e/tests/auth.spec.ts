@@ -8,14 +8,40 @@ import { expect, test } from '../fixtures/auth.fixture';
 
 // Route Protection Tests (no auth fixture needed)
 baseTest.describe('Route Protection', () => {
-  baseTest('unauthenticated user is redirected to login', async ({ page }) => {
-    // Try to access protected route directly
-    await page.goto('/sequences');
+  baseTest(
+    'anonymous visitor lands in the app, not a marketing page',
+    async ({ page }) => {
+      await page.goto('/');
 
-    // Should be redirected to login
-    await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByLabel('Email')).toBeVisible();
-  });
+      // The app itself is the front page now — anonymous visitors land directly
+      // in the new-sequence composer rather than a marketing landing page.
+      await expect(page).toHaveURL(/\/sequences\/new/);
+    }
+  );
+
+  baseTest(
+    'anonymous visitor can browse the shell without being redirected',
+    async ({ page }) => {
+      // Browsable, account-data pages show a sign-in prompt in place of data
+      // rather than bouncing to /login.
+      await page.goto('/sequences');
+
+      await expect(page).toHaveURL(/\/sequences/);
+      await expect(page).not.toHaveURL(/\/login/);
+      await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    }
+  );
+
+  baseTest(
+    'account-bound routes redirect anonymous users to login',
+    async ({ page }) => {
+      // Settings is genuinely account-only — it redirects.
+      await page.goto('/settings');
+
+      await expect(page).toHaveURL(/\/login/);
+      await expect(page.getByLabel('Email')).toBeVisible();
+    }
+  );
 
   baseTest('login page is accessible', async ({ page }) => {
     await page.goto('/login');

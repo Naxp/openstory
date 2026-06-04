@@ -1,10 +1,12 @@
 import {
   createStyleFn,
   deleteStyleFn,
+  getPublicStylesFn,
   getStyleFn,
   getStylesFn,
   updateStyleFn,
 } from '@/functions/styles';
+import { useSession } from '@/lib/auth/client';
 import type { StyleConfig } from '@/lib/db/schema/libraries';
 import type { Style } from '@/types/database';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,16 +28,23 @@ export const styleKeys = {
   all: ['styles'] as const,
   lists: () => [...styleKeys.all, 'list'] as const,
   list: (teamId?: string) => [...styleKeys.lists(), teamId] as const,
+  public: () => [...styleKeys.lists(), 'public'] as const,
   details: () => [...styleKeys.all, 'detail'] as const,
   detail: (id: string) => [...styleKeys.details(), id] as const,
 };
 
-// Hook for listing styles
+// Hook for listing styles.
+// Anonymous (logged-out) visitors get the public style catalogue so they can
+// compose a sequence before signing in; authenticated users get their team's
+// styles plus public ones.
 export function useStyles(teamId?: string, enabled = true) {
+  const { data: session } = useSession();
+  const isAuthenticated = !!session;
+
   return useQuery<Style[]>({
-    queryKey: styleKeys.list(teamId),
+    queryKey: isAuthenticated ? styleKeys.list(teamId) : styleKeys.public(),
     queryFn: async () => {
-      return getStylesFn();
+      return isAuthenticated ? getStylesFn() : getPublicStylesFn();
     },
     staleTime: 10 * 60 * 1000, // 10 minutes (styles change less frequently)
     enabled,

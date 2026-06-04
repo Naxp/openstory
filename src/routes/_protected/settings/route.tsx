@@ -5,6 +5,7 @@
 
 import { RouteErrorFallback } from '@/components/error/route-error-fallback';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { requireSessionOrRedirect } from '@/lib/auth/route-guards';
 import {
   createFileRoute,
   Link,
@@ -15,6 +16,9 @@ import { Fingerprint, Key } from 'lucide-react';
 
 export const Route = createFileRoute('/_protected/settings')({
   component: SettingsLayout,
+  beforeLoad: async ({ context: { queryClient }, location }) => {
+    await requireSessionOrRedirect(queryClient, location.href);
+  },
   staticData: { breadcrumb: { label: 'Settings', to: '/settings' } },
   errorComponent: (props) => (
     <RouteErrorFallback {...props} heading="Settings error" />
