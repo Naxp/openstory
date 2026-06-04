@@ -200,7 +200,11 @@ export function AuthForm({
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          <Button
+            type="submit"
+            className={email.trim() ? 'w-full' : 'hidden'}
+            disabled={isLoading}
+          >
             {isLoading ? 'Sending…' : 'Continue with email'}
           </Button>
         </form>
