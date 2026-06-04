@@ -21,7 +21,17 @@ export const getSessionFn = createIsomorphicFn()
     return sessionData ?? null;
   })
   .client(async () => {
-    const { data: sessionData } = await authClient.getSession();
+    const { data: sessionData, error } = await authClient.getSession();
+
+    // A *failed* session lookup must not be conflated with "no session" —
+    // returning null here would make every consumer treat a signed-in user
+    // as anonymous (wrong data, bogus /login redirects) and hide the error.
+    if (error) {
+      throw new Error(
+        `Failed to fetch session: ${error.message ?? error.statusText}`,
+        { cause: error }
+      );
+    }
 
     return sessionData ?? null;
   });

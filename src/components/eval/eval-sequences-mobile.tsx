@@ -9,7 +9,7 @@ import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import type { ViewMode } from './eval-view';
 import { getAspectRatioData } from '@/lib/constants/aspect-ratios';
 import { getAnalysisModelById } from '@/lib/ai/models.config';
-import { Route as sequencesScenesRoute } from '@/routes/_protected/sequences/$id/scenes';
+import { Route as sequencesScenesRoute } from '@/routes/_app/sequences/$id/scenes';
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, Mail, User } from 'lucide-react';
 import { getCreatorIdentity } from './creator-identity';

@@ -2,6 +2,8 @@
  * Scoped styles tests:
  *   - incrementUsage atomically bumps usageCount.
  *   - list({ orderBy: 'popular' }) sorts by usageCount desc.
+ *   - getPublic() never leaks private team styles (guards the unauthenticated
+ *     public-catalogue endpoint).
  */
 
 import {
@@ -18,6 +20,7 @@ import { asc, desc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import { generateId } from '@/lib/db/id';
+import { createStylesReadMethods } from '@/lib/db/scoped/styles';
 import type { Database } from '@/lib/db/client';
 import {
   styles,
@@ -219,6 +222,33 @@ describe("createStylesMethods.list({ orderBy: 'popular' })", () => {
     expect(ids).toContain(mine.id);
     expect(ids).toContain(theirsPublic.id);
     expect(ids).not.toContain(theirsPrivate.id);
+  });
+});
+
+describe('createStylesReadMethods.getPublic', () => {
+  // Uses the REAL production read methods (not the inline mirror above):
+  // getPublic() backs getPublicStylesFn, an endpoint with no auth middleware,
+  // so its isPublic filter is the entire data-leak barrier. The empty-string
+  // teamId mirrors how listPublicStyles() scopes the anonymous call.
+  it('returns only public styles, never private team styles', async () => {
+    const methods = makeStylesMethods(db, team.id, userRow.id);
+
+    const pub = await methods.create({
+      name: 'Public',
+      config: baseConfig,
+      sortOrder: 1,
+      isPublic: true,
+    });
+    const priv = await methods.create({
+      name: 'Private',
+      config: baseConfig,
+      sortOrder: 2,
+    });
+
+    const visible = await createStylesReadMethods(db, '').getPublic();
+    const ids = visible.map((s) => s.id);
+    expect(ids).toContain(pub.id);
+    expect(ids).not.toContain(priv.id);
   });
 });
 

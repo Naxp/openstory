@@ -3,7 +3,7 @@ import { sessionQueryOptions } from '@/lib/auth/session-query';
 
 /**
  * Hook for client components that need user data. Reads from the session cache
- * populated by `_protected/route.tsx` `beforeLoad` so SSR and client agree on
+ * populated by `_app/route.tsx` `beforeLoad` so SSR and client agree on
  * the auth state — see `getSessionFn` (isomorphic, reads cookies via
  * `getRequestHeaders()` on the server).
  */

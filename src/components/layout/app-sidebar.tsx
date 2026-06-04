@@ -16,10 +16,10 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useLowBalanceWarning } from '@/hooks/use-low-balance-warning';
-import { Route as locationsRoute } from '@/routes/_protected/locations/index';
-import { Route as sequencesRoute } from '@/routes/_protected/sequences/index';
-import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
-import { Route as talentRoute } from '@/routes/_protected/talent/index';
+import { Route as locationsRoute } from '@/routes/_app/locations/index';
+import { Route as sequencesRoute } from '@/routes/_app/sequences/index';
+import { Route as sequencesNewRoute } from '@/routes/_app/sequences/new';
+import { Route as talentRoute } from '@/routes/_app/talent/index';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { LifeBuoy, MapPin, Plus, Users, Video } from 'lucide-react';

@@ -5,7 +5,7 @@ import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import { getImageModelById } from '@/lib/ai/models';
 import { getAspectRatioData } from '@/lib/constants/aspect-ratios';
 import { formatDistanceToNow } from '@/lib/format-date';
-import { Route as sequencesScenesRoute } from '@/routes/_protected/sequences/$id/scenes';
+import { Route as sequencesScenesRoute } from '@/routes/_app/sequences/$id/scenes';
 import { Link } from '@tanstack/react-router';
 import { AlertTriangle, Calendar, ImageIcon, Mail, User } from 'lucide-react';
 import { getCreatorIdentity } from './creator-identity';

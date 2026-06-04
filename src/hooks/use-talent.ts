@@ -36,12 +36,21 @@ export const talentKeys = {
  */
 export function useTalent(options?: { favoritesOnly?: boolean }) {
   // Talent is team-scoped; skip the request entirely for anonymous visitors
-  // (e.g. the suggestion picker on the public new-sequence screen).
-  const { data: session } = useSession();
+  // (e.g. the suggestion picker on the public new-sequence screen). Only a
+  // *settled* null session counts as anonymous — a failed session lookup
+  // surfaces as a query error instead of silently showing empty talent.
+  const { data: session, error: sessionError } = useSession();
   return useQuery({
     queryKey: talentKeys.list(options ?? {}),
-    queryFn: () => getTalentFn({ data: options }),
-    enabled: !!session,
+    queryFn: () => {
+      if (sessionError) {
+        throw new Error(`Failed to fetch session: ${sessionError.message}`, {
+          cause: sessionError,
+        });
+      }
+      return getTalentFn({ data: options });
+    },
+    enabled: !!session || !!sessionError,
   });
 }
 

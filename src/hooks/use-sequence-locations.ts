@@ -79,15 +79,22 @@ export function useTeamSequenceLocations() {
  */
 export function useLibraryLocations() {
   // Team-scoped; skip for anonymous visitors (e.g. the suggestion picker on the
-  // public new-sequence screen).
-  const { data: session } = useSession();
+  // public new-sequence screen). Only a *settled* null session counts as
+  // anonymous — a failed session lookup surfaces as a query error instead of
+  // silently showing empty locations.
+  const { data: session, error: sessionError } = useSession();
   return useQuery<LibraryLocation[]>({
     queryKey: libraryLocationKeys.list,
     queryFn: async () => {
+      if (sessionError) {
+        throw new Error(`Failed to fetch session: ${sessionError.message}`, {
+          cause: sessionError,
+        });
+      }
       return getTeamLibraryLocationsFn();
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
-    enabled: !!session,
+    enabled: !!session || !!sessionError,
   });
 }
 
