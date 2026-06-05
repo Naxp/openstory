@@ -421,9 +421,13 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     setVideoModelOverride(null);
   }, [curSelectedFrameId]);
 
-  // Derive variant preview state from model override + variants
+  // Derive variant preview state from model override + variants. The
+  // sequence-level header pin (#547) sits below an explicit per-scene override
+  // but above the frame's own model, so the previewed variant + Set/Generate
+  // state track whatever the header switched to.
   const effectiveImageModel =
     imageModelOverride ??
+    activeImageModel ??
     safeTextToImageModel(selectedFrame?.imageModel, DEFAULT_IMAGE_MODEL);
 
   const variantForSelectedModel = useMemo(() => {
@@ -439,6 +443,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   // (which would attribute a model the scene was never generated with).
   const effectiveVideoModel =
     videoModelOverride ??
+    activeVideoModel ??
     (selectedFrame?.motionModel
       ? safeImageToVideoModel(selectedFrame.motionModel, DEFAULT_VIDEO_MODEL)
       : null);

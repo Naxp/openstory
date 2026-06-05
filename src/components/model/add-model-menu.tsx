@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAddModelToSequence, useSequence } from '@/hooks/use-sequences';
 import { useFramesBySequence } from '@/hooks/use-frames';
+import { useStyle } from '@/hooks/use-styles';
 import {
   AUDIO_MODELS,
   IMAGE_MODELS,
@@ -58,7 +59,12 @@ export const AddModelMenuSection = ({
   const addModel = useAddModelToSequence();
   const { data: frames } = useFramesBySequence(sequenceId);
   const { data: sequence } = useSequence(sequenceId);
+  const { data: style } = useStyle(sequence?.styleId ?? '');
   const aspectRatio = sequence?.aspectRatio ?? DEFAULT_ASPECT_RATIO;
+  // Style-category gating (mirrors motion-model-selector): a model declaring a
+  // `requiredStyleCategory` (e.g. Seedance 2 → 'animation') is only offered when
+  // the sequence's style matches — otherwise it isn't a valid choice here.
+  const styleCategory = style?.category ?? undefined;
 
   const candidates = useMemo<Candidate[]>(() => {
     const used = new Set(usedModels);
@@ -94,12 +100,18 @@ export const AddModelMenuSection = ({
       ).length;
       return Object.keys(IMAGE_TO_VIDEO_MODELS)
         .filter(isValidImageToVideoModel)
-        .filter(
-          (key) =>
-            !used.has(key) &&
-            !('hidden' in IMAGE_TO_VIDEO_MODELS[key]) &&
-            isModelCompatibleWithAspectRatio(key, aspectRatio)
-        )
+        .filter((key) => {
+          const model = IMAGE_TO_VIDEO_MODELS[key];
+          if (used.has(key) || 'hidden' in model) return false;
+          // Exclude models gated to a different style category (e.g. Seedance 2
+          // is animation-only) — same rule as the motion-model selector.
+          if (
+            'requiredStyleCategory' in model &&
+            model.requiredStyleCategory !== styleCategory
+          )
+            return false;
+          return isModelCompatibleWithAspectRatio(key, aspectRatio);
+        })
         .sort(
           (a, b) =>
             IMAGE_TO_VIDEO_MODELS[a].qualityRank -
@@ -136,7 +148,7 @@ export const AddModelMenuSection = ({
         cost: estimateAudioCost(key, totalDurationSecs),
         scope: '1 track',
       }));
-  }, [variantType, usedModels, frames, aspectRatio]);
+  }, [variantType, usedModels, frames, aspectRatio, styleCategory]);
 
   if (candidates.length === 0) return null;
 

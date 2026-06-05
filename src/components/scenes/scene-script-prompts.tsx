@@ -22,6 +22,8 @@ import { updateFrameFn } from '@/functions/frames';
 import { generateFrameImageFn } from '@/functions/frame-image';
 import { generateFrameMotionFn } from '@/functions/motion-functions';
 import { regenerateFramePromptFn } from '@/functions/prompt-variants';
+import { useActiveImageModel } from '@/hooks/use-active-image-model';
+import { useActiveVideoModel } from '@/hooks/use-active-video-model';
 import { BILLING_BALANCE_KEY } from '@/hooks/use-billing-balance';
 import { useFalBillingGate } from '@/hooks/use-billing-gate';
 import {
@@ -172,6 +174,11 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     [frameDivergentVariants]
   );
   const [copiedTab, setCopiedTab] = useState<string | null>(null);
+  // Sequence-level model pins from the header dropdowns (#547). Fold them into
+  // the per-scene effective model below so switching a header model also moves
+  // this scene's image/video tab selector.
+  const { activeImageModel } = useActiveImageModel(sequenceId);
+  const { activeVideoModel } = useActiveVideoModel(sequenceId);
   const [historyOpen, setHistoryOpen] = useState<'visual' | 'motion' | null>(
     null
   );
@@ -495,6 +502,34 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     frame?.imageModel,
     DEFAULT_IMAGE_MODEL
   );
+  // The model this scene's image tab targets, mirroring scenes-view's
+  // effectiveImageModel so the selector, the Generate/Set state, and the
+  // previewed image all agree. Precedence: explicit per-scene pick → the
+  // sequence-level header pin (#547) → the frame's own model. `regenImageModel`
+  // is the same minus the frame fallback, so "nothing chosen" still passes
+  // undefined and lets the server default rather than re-asserting a model.
+  const effectiveImageModel =
+    selectedImageModel ?? activeImageModel ?? imageModel;
+  const regenImageModel = selectedImageModel ?? activeImageModel ?? undefined;
+  // Resolved motion model for this scene. Precedence:
+  //   1. user picked one in the dropdown right now
+  //   2. sequence-level header pin (#547) — switching it moves this selector
+  //   3. frame already has completed motion → show what it was generated with
+  //   4. sequence-level model (reflects most recent batch pick or creation)
+  //   5. global default
+  // Without (3) and (4) the per-frame label would just show DEFAULT_VIDEO_MODEL
+  // regardless of what was actually used or what batch-generate just selected.
+  const effectiveMotionModel: ImageToVideoModel =
+    selectedMotionModel ||
+    activeVideoModel ||
+    (frame?.videoStatus === 'completed' && frame.motionModel
+      ? safeImageToVideoModel(frame.motionModel, DEFAULT_VIDEO_MODEL)
+      : undefined) ||
+    sequenceMotionModel ||
+    DEFAULT_VIDEO_MODEL;
+  // Regen target (mirror of regenImageModel): explicit pick → header pin, else
+  // undefined so the server defaults rather than re-asserting a model.
+  const regenMotionModel = selectedMotionModel ?? activeVideoModel ?? undefined;
   const imagePrompt =
     frame?.imagePrompt || frame?.metadata?.prompts?.visual?.fullPrompt;
 
@@ -511,24 +546,23 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   // thumbnail but no variant row.
   const imageModelGenerated =
     !!variantForSelectedModel ||
-    (!!frame?.thumbnailUrl &&
-      (selectedImageModel || imageModel) === imageModel);
+    (!!frame?.thumbnailUrl && effectiveImageModel === imageModel);
 
   const handleSetImageFromVariant = useCallback(async () => {
-    if (!frame?.id || !frame.sequenceId || !selectedImageModel) return;
+    if (!frame?.id || !frame.sequenceId) return;
 
     try {
       await setImageFromVariant.mutateAsync({
         sequenceId: frame.sequenceId,
         frameId: frame.id,
-        model: selectedImageModel,
+        model: effectiveImageModel,
       });
     } catch (error) {
       toast.error('Failed to set image', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [frame, selectedImageModel, setImageFromVariant]);
+  }, [frame, effectiveImageModel, setImageFromVariant]);
 
   // Video equivalents (#545): drive the "Set Video" action from the selected
   // scene's video variant for the picked model.
@@ -542,20 +576,20 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     videoVariantForSelectedModel.url === frame?.videoUrl;
 
   const handleSetVideoFromVariant = useCallback(async () => {
-    if (!frame?.id || !frame.sequenceId || !selectedMotionModel) return;
+    if (!frame?.id || !frame.sequenceId) return;
 
     try {
       await setVideoFromVariant.mutateAsync({
         sequenceId: frame.sequenceId,
         frameId: frame.id,
-        model: selectedMotionModel,
+        model: effectiveMotionModel,
       });
     } catch (error) {
       toast.error('Failed to set video', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [frame, selectedMotionModel, setVideoFromVariant]);
+  }, [frame, effectiveMotionModel, setVideoFromVariant]);
 
   const handleShortenPrompt = useCallback(async () => {
     setShortenStatus({ loading: false, error: null, success: null });
@@ -606,7 +640,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 ...f,
                 thumbnailStatus: 'generating' as const,
                 imagePrompt: editedImagePrompt || f.imagePrompt,
-                imageModel: selectedImageModel || f.imageModel,
+                imageModel: regenImageModel ?? f.imageModel,
               }
             : f
         );
@@ -620,7 +654,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         ...oldFrame,
         thumbnailStatus: 'generating' as const,
         imagePrompt: editedImagePrompt || oldFrame.imagePrompt,
-        imageModel: selectedImageModel || oldFrame.imageModel,
+        imageModel: regenImageModel ?? oldFrame.imageModel,
       };
     });
 
@@ -629,7 +663,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         data: {
           sequenceId: frame.sequenceId,
           frameId: frame.id,
-          model: selectedImageModel,
+          model: regenImageModel,
           prompt: editedImagePrompt || undefined,
         },
       });
@@ -659,7 +693,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     }
   }, [
     frame,
-    selectedImageModel,
+    regenImageModel,
     editedImagePrompt,
     queryClient,
     onRegenerateStart,
@@ -682,7 +716,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 ...f,
                 videoStatus: 'generating' as const,
                 motionPrompt: editedMotionPrompt || f.motionPrompt,
-                motionModel: selectedMotionModel || f.motionModel,
+                motionModel: regenMotionModel ?? f.motionModel,
               }
             : f
         );
@@ -696,11 +730,11 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         ...oldFrame,
         videoStatus: 'generating' as const,
         motionPrompt: editedMotionPrompt || oldFrame.motionPrompt,
-        motionModel: selectedMotionModel || oldFrame.motionModel,
+        motionModel: regenMotionModel ?? oldFrame.motionModel,
       };
     });
 
-    const motionModelForCall = selectedMotionModel || DEFAULT_VIDEO_MODEL;
+    const motionModelForCall = regenMotionModel || DEFAULT_VIDEO_MODEL;
     const supportsAudio = videoModelSupportsAudio(motionModelForCall);
 
     try {
@@ -708,7 +742,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
         data: {
           sequenceId: frame.sequenceId,
           frameId: frame.id,
-          model: selectedMotionModel,
+          model: regenMotionModel,
           prompt: editedMotionPrompt || undefined,
           generateAudio: supportsAudio ? generateAudio : undefined,
         },
@@ -737,7 +771,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     }
   }, [
     frame,
-    selectedMotionModel,
+    regenMotionModel,
     editedMotionPrompt,
     generateAudio,
     queryClient,
@@ -754,14 +788,14 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
       await generateVariants.mutateAsync({
         sequenceId: frame.sequenceId,
         frameId: frame.id,
-        model: selectedImageModel,
+        model: regenImageModel,
       });
     } catch (error) {
       toast.error('Scene variants generation failed', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [frame, generateVariants, selectedImageModel, onRegenerateStart]);
+  }, [frame, generateVariants, regenImageModel, onRegenerateStart]);
 
   const handleVariantSelect = useCallback(
     async (index: number) => {
@@ -786,21 +820,6 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   // Raw prompt for editing (just motion direction, no dialogue/audio)
   const rawMotionPrompt =
     frame?.motionPrompt || motionPromptData?.fullPrompt || '';
-
-  // Resolved motion model for this scene. Precedence:
-  //   1. user picked one in the dropdown right now
-  //   2. frame already has completed motion → show what it was generated with
-  //   3. sequence-level model (reflects most recent batch pick or creation)
-  //   4. global default
-  // Without (2) and (3) the per-frame label would just show DEFAULT_VIDEO_MODEL
-  // regardless of what was actually used or what batch-generate just selected.
-  const effectiveMotionModel: ImageToVideoModel =
-    selectedMotionModel ||
-    (frame?.videoStatus === 'completed' && frame.motionModel
-      ? safeImageToVideoModel(frame.motionModel, DEFAULT_VIDEO_MODEL)
-      : undefined) ||
-    sequenceMotionModel ||
-    DEFAULT_VIDEO_MODEL;
 
   // Assembled preview: exactly what resolveMotionPrompt produces on the server
   const assembledPrompt = useMemo(() => {
@@ -977,7 +996,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           frame={frame}
           sequenceId={sequenceId}
           scriptText={scriptText}
-          motionModel={selectedMotionModel || DEFAULT_VIDEO_MODEL}
+          motionModel={effectiveMotionModel}
           editedScript={editedScript}
           onEditedScriptChange={setEditedScript}
           editedDurationSeconds={editedDurationSeconds}
@@ -1041,7 +1060,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           <div className="space-y-2">
             <span className="text-sm font-medium">Model</span>
             <ImageModelSelector
-              selectedModel={selectedImageModel || imageModel}
+              selectedModel={effectiveImageModel}
               onModelChange={handleImageModelChange}
               disabled={isGenerating}
               recommendedImageModel={recommendedImageModel}
@@ -1325,9 +1344,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           )}
 
           {/* SFX/dialogue toggle — only for audio-capable models */}
-          {videoModelSupportsAudio(
-            selectedMotionModel || DEFAULT_VIDEO_MODEL
-          ) && (
+          {videoModelSupportsAudio(effectiveMotionModel) && (
             <label
               htmlFor="scene-generate-audio"
               className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -1428,7 +1445,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           <div className="space-y-2">
             <span className="text-sm font-medium">Model</span>
             <ImageModelSelector
-              selectedModel={selectedImageModel || imageModel}
+              selectedModel={effectiveImageModel}
               onModelChange={handleImageModelChange}
               disabled={isGenerating || isGeneratingSceneVariants}
               recommendedImageModel={recommendedImageModel}

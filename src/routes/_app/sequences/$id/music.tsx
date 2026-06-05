@@ -20,7 +20,11 @@ import {
   useUndiscardSequenceMusicVariant,
 } from '@/hooks/use-sequence-variants';
 import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
-import { type AudioModel } from '@/lib/ai/models';
+import {
+  DEFAULT_MUSIC_MODEL,
+  safeAudioModel,
+  type AudioModel,
+} from '@/lib/ai/models';
 import type { SequenceMusicVariant } from '@/lib/db/schema';
 import { useGenerationStream } from '@/lib/realtime/use-generation-stream';
 import { useSequenceStaleDetected } from '@/lib/realtime/use-sequence-stale-detected';
@@ -46,7 +50,8 @@ function MusicPage() {
   // Resolve the music tab through the viewer's active audio model (#546). When
   // a model is pinned in the header, play that model's track instead of the
   // live `sequences.music*` primary; unpinned (null) follows the primary.
-  const { activeAudioModel } = useActiveAudioModel(sequenceId);
+  const { activeAudioModel, selectAudioModel } =
+    useActiveAudioModel(sequenceId);
   const { data: audioVariants } = useSequenceAudioVariants(sequenceId);
   const resolvedSequence = useMemo<Sequence | undefined>(() => {
     if (!sequence || !activeAudioModel || !audioVariants) return sequence;
@@ -280,6 +285,22 @@ function MusicPage() {
     },
   });
 
+  // The music-tab model selector is controlled by the viewer's active audio
+  // model (#546) so it stays in sync with the sequence-header dropdown — both
+  // read/write the same useActiveAudioModel store. Null (no pin) follows the
+  // live primary; picking the primary clears the pin.
+  const primaryAudioModel = safeAudioModel(
+    sequence?.musicModel,
+    DEFAULT_MUSIC_MODEL
+  );
+  const selectedAudioModel = activeAudioModel ?? primaryAudioModel;
+  const handleSelectModel = useCallback(
+    (model: AudioModel) => {
+      selectAudioModel(model === primaryAudioModel ? null : model);
+    },
+    [selectAudioModel, primaryAudioModel]
+  );
+
   if (isLoading || !sequence) {
     return (
       <div className="flex-1 p-4">
@@ -297,6 +318,8 @@ function MusicPage() {
           sequence={resolvedSequence ?? sequence}
           videoDuration={videoDuration}
           audioModelStatuses={audioModelStatuses}
+          selectedModel={selectedAudioModel}
+          onModelChange={handleSelectModel}
           onSetModel={handleSetModel}
           isSettingModel={setMusicModel.isPending}
           onGenerateMusic={(args) => generateMusic.mutate(args)}

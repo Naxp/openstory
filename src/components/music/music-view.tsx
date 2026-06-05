@@ -7,12 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  DEFAULT_MUSIC_MODEL,
-  getAudioModelDurationLimits,
-  safeAudioModel,
-  type AudioModel,
-} from '@/lib/ai/models';
+import { getAudioModelDurationLimits, type AudioModel } from '@/lib/ai/models';
 import type { Sequence } from '@/types/database';
 import {
   AlertCircle,
@@ -43,6 +38,14 @@ type MusicViewProps = {
    * Drives the model markers and the Set/Regenerate/Generate action button.
    */
   audioModelStatuses?: Map<string, ModelGenerationStatus>;
+  /**
+   * The viewer's active audio model, owned by `useActiveAudioModel` in the
+   * route (#546). Controlled here (not local state) so the music-tab selector
+   * and the sequence-header dropdown stay in sync — switching either one moves
+   * both, and the player remaps to the picked model's track.
+   */
+  selectedModel: AudioModel;
+  onModelChange: (model: AudioModel) => void;
   /** Promote the selected model's track to the sequence primary ("Set Music"). */
   onSetModel: (model: AudioModel) => void;
   isSettingModel?: boolean;
@@ -145,6 +148,8 @@ export const MusicView: React.FC<MusicViewProps> = ({
   onGenerateMusic,
   isGeneratingMusic,
   audioModelStatuses,
+  selectedModel,
+  onModelChange,
   onSetModel,
   isSettingModel = false,
   divergentBanner,
@@ -152,19 +157,10 @@ export const MusicView: React.FC<MusicViewProps> = ({
   onRegenerateMusicPrompt,
   isRegeneratingMusicPrompt,
 }) => {
-  const {
-    musicStatus,
-    musicUrl,
-    musicError,
-    musicModel,
-    musicPrompt,
-    musicTags,
-  } = sequence;
+  const { musicStatus, musicUrl, musicError, musicPrompt, musicTags } =
+    sequence;
 
   const [editPrompt, setEditPrompt] = useState(musicPrompt ?? '');
-  const [editModel, setEditModel] = useState<AudioModel>(() =>
-    safeAudioModel(musicModel, DEFAULT_MUSIC_MODEL)
-  );
   const [editDuration, setEditDuration] = useState<number | undefined>(
     () => videoDuration
   );
@@ -220,7 +216,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
     setEditDuration(videoDuration);
   }
 
-  const durationLimits = getAudioModelDurationLimits(editModel);
+  const durationLimits = getAudioModelDurationLimits(selectedModel);
   const effectiveDuration =
     editDuration ?? videoDuration ?? durationLimits.default;
   const durationExceedsMax = effectiveDuration > durationLimits.max;
@@ -229,7 +225,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
     onGenerateMusic({
       prompt: editPrompt || undefined,
       tags: musicTags || undefined,
-      model: editModel,
+      model: selectedModel,
       duration: editDuration,
     });
   }
@@ -237,13 +233,13 @@ export const MusicView: React.FC<MusicViewProps> = ({
   // Action for the selected model, mirroring the video/image scene-detail
   // button: a completed alternate promotes ("Set Music"); the live primary
   // regenerates; anything without a track generates for the first time.
-  const selectedStatus = audioModelStatuses?.get(editModel);
+  const selectedStatus = audioModelStatuses?.get(selectedModel);
   const selectedIsSet = selectedStatus === 'set';
   const selectedIsCompletedAlternate = selectedStatus === 'completed';
 
   const actionButton = selectedIsCompletedAlternate ? (
     <LoadingButton
-      onClick={() => onSetModel(editModel)}
+      onClick={() => onSetModel(selectedModel)}
       isLoading={isSettingModel}
       loadingText="Setting…"
     >
@@ -279,8 +275,8 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
         <FormField label="Model" muted>
           <MusicModelSelector
-            selectedModel={editModel}
-            onModelChange={setEditModel}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
             generatedStatuses={audioModelStatuses}
           />
         </FormField>
@@ -323,8 +319,8 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
         <FormField label="Model" muted>
           <MusicModelSelector
-            selectedModel={editModel}
-            onModelChange={setEditModel}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
             generatedStatuses={audioModelStatuses}
           />
         </FormField>
@@ -367,8 +363,8 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
       <FormField label="Model">
         <MusicModelSelector
-          selectedModel={editModel}
-          onModelChange={setEditModel}
+          selectedModel={selectedModel}
+          onModelChange={onModelChange}
           generatedStatuses={audioModelStatuses}
         />
       </FormField>
@@ -385,7 +381,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
         {durationExceedsMax && (
           <p className="flex items-center gap-1.5 text-xs text-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
-            Video is {Math.round(effectiveDuration)}s but {editModel} max is{' '}
+            Video is {Math.round(effectiveDuration)}s but {selectedModel} max is{' '}
             {durationLimits.max}s — music will be clamped.
           </p>
         )}
