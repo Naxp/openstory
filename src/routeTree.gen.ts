@@ -33,6 +33,7 @@ import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as ApiTestRouteRouteImport } from './routes/api/test/route'
 import { Route as ProtectedSettingsRouteRouteImport } from './routes/_protected/settings/route'
 import { Route as ProtectedAdminRouteRouteImport } from './routes/_protected/admin/route'
+import { Route as ApiV1IndexRouteImport } from './routes/api/v1/index'
 import { Route as ProtectedTalentIndexRouteImport } from './routes/_protected/talent/index'
 import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/settings/index'
 import { Route as ProtectedSequencesIndexRouteImport } from './routes/_protected/sequences/index'
@@ -189,6 +190,11 @@ const ProtectedAdminRouteRoute = ProtectedAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
   getParentRoute: () => ProtectedRouteRoute,
+} as any)
+const ApiV1IndexRoute = ApiV1IndexRouteImport.update({
+  id: '/api/v1/',
+  path: '/api/v1/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ProtectedTalentIndexRoute = ProtectedTalentIndexRouteImport.update({
   id: '/talent/',
@@ -451,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/sequences/': typeof ProtectedSequencesIndexRoute
   '/settings/': typeof ProtectedSettingsIndexRoute
   '/talent/': typeof ProtectedTalentIndexRoute
+  '/api/v1/': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
   '/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
   '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
@@ -511,6 +518,7 @@ export interface FileRoutesByTo {
   '/sequences': typeof ProtectedSequencesIndexRoute
   '/settings': typeof ProtectedSettingsIndexRoute
   '/talent': typeof ProtectedTalentIndexRoute
+  '/api/v1': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
   '/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
   '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
@@ -577,6 +585,7 @@ export interface FileRoutesById {
   '/_protected/sequences/': typeof ProtectedSequencesIndexRoute
   '/_protected/settings/': typeof ProtectedSettingsIndexRoute
   '/_protected/talent/': typeof ProtectedTalentIndexRoute
+  '/api/v1/': typeof ApiV1IndexRoute
   '/_protected/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
   '/_protected/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
   '/_protected/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
@@ -641,6 +650,7 @@ export interface FileRouteTypes {
     | '/sequences/'
     | '/settings/'
     | '/talent/'
+    | '/api/v1/'
     | '/sequences/$id/elements'
     | '/sequences/$id/music'
     | '/sequences/$id/scenes'
@@ -701,6 +711,7 @@ export interface FileRouteTypes {
     | '/sequences'
     | '/settings'
     | '/talent'
+    | '/api/v1'
     | '/sequences/$id/elements'
     | '/sequences/$id/music'
     | '/sequences/$id/scenes'
@@ -766,6 +777,7 @@ export interface FileRouteTypes {
     | '/_protected/sequences/'
     | '/_protected/settings/'
     | '/_protected/talent/'
+    | '/api/v1/'
     | '/_protected/sequences/$id/elements'
     | '/_protected/sequences/$id/music'
     | '/_protected/sequences/$id/scenes'
@@ -799,6 +811,7 @@ export interface RootRouteChildren {
   ApiStorageMultipartRoute: typeof ApiStorageMultipartRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiV1SequencesRoute: typeof ApiV1SequencesRouteWithChildren
+  ApiV1IndexRoute: typeof ApiV1IndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -970,6 +983,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin'
       preLoaderRoute: typeof ProtectedAdminRouteRouteImport
       parentRoute: typeof ProtectedRouteRoute
+    }
+    '/api/v1/': {
+      id: '/api/v1/'
+      path: '/api/v1'
+      fullPath: '/api/v1/'
+      preLoaderRoute: typeof ApiV1IndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_protected/talent/': {
       id: '/_protected/talent/'
@@ -1448,6 +1468,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStorageMultipartRoute: ApiStorageMultipartRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiV1SequencesRoute: ApiV1SequencesRouteWithChildren,
+  ApiV1IndexRoute: ApiV1IndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

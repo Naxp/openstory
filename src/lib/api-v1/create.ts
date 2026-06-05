@@ -19,6 +19,8 @@ import { createSequenceSchema } from '@/lib/schemas/sequence.schemas';
 import { createSequences } from '@/lib/sequences/create-sequences';
 import { STORAGE_BUCKETS, type StorageBucket } from '@/lib/storage/buckets';
 import { createLibraryTalent } from '@/lib/talent/create-library-talent';
+import { createSequenceLink } from './discovery';
+import { API_V1_BASE, type HalLinks, getLink, waitLink } from './hal';
 import type { ApiCreateSequenceInput } from './input-schema';
 import {
   ingestElements,
@@ -40,8 +42,12 @@ export type OneShotResult = {
     status: string;
     workflowRunId: string;
     statusUrl: string;
+    /** Affordances for this sequence: read status, or long-poll it. */
+    _links: HalLinks;
   }>;
   enhancedScript?: string;
+  /** Affordances available from the create response itself. */
+  _links: HalLinks;
 };
 
 /** Ingest hosted reference image URLs into a bucket's temp area → temp URLs. */
@@ -165,12 +171,23 @@ export async function runOneShotCreate(
   const { entries } = await createSequences(parsed, ctx);
 
   return {
-    sequences: entries.map(({ sequence, workflowRunId }) => ({
-      id: sequence.id,
-      status: sequence.status,
-      workflowRunId,
-      statusUrl: `/api/v1/sequences/${sequence.id}`,
-    })),
+    sequences: entries.map(({ sequence, workflowRunId }) => {
+      const statusUrl = `${API_V1_BASE}/sequences/${sequence.id}`;
+      return {
+        id: sequence.id,
+        status: sequence.status,
+        workflowRunId,
+        statusUrl,
+        _links: {
+          self: getLink(statusUrl, 'Sequence status'),
+          poll: waitLink(statusUrl, 'Long-poll this sequence (e.g. ?wait=60s)'),
+        } satisfies HalLinks,
+      };
+    }),
     enhancedScript,
+    _links: {
+      self: createSequenceLink(),
+      root: getLink(API_V1_BASE, 'API root / instructions'),
+    },
   };
 }

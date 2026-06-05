@@ -9,8 +9,12 @@
 
 import type { ScopedDb } from '@/lib/db/scoped';
 import type { Sequence } from '@/types/database';
+import { API_V1_BASE, type HalResource, waitLink, withLinks } from './hal';
 
 type FrameGenStatus = 'pending' | 'generating' | 'completed' | 'failed';
+
+/** Sequence statuses past which no further generation happens. */
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
 
 type SequenceStateFrame = {
   id: string;
@@ -83,4 +87,39 @@ export async function buildSequenceState(
         .length,
     },
   };
+}
+
+/** True once a sequence can no longer change (completed / failed / archived). */
+export function isTerminalSequenceState(state: SequenceState): boolean {
+  return TERMINAL_STATUSES.has(state.status);
+}
+
+/**
+ * A compact change-detection key for `?wait=` long-polling. It folds in every
+ * field an agent polls for progress on, so the poll returns the instant any of
+ * them advances — overall status, music, poster, and per-kind ready counts.
+ */
+export function sequenceStateCursor(state: SequenceState): string {
+  return [
+    state.status,
+    state.updatedAt,
+    state.music.status,
+    state.poster ? '1' : '0',
+    state.counts.imagesReady,
+    state.counts.videosReady,
+  ].join('|');
+}
+
+/** Attach the HAL affordance catalog (self + long-poll) to a sequence state. */
+export function withSequenceStateLinks(
+  state: SequenceState
+): HalResource<SequenceState> {
+  const href = `${API_V1_BASE}/sequences/${state.id}`;
+  return withLinks(state, {
+    self: { href, method: 'GET', title: 'Sequence status' },
+    poll: waitLink(
+      href,
+      'Long-poll until this sequence changes (e.g. ?wait=60s)'
+    ),
+  });
 }
