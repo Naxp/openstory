@@ -31,6 +31,8 @@ type CompleteOAuthParams = {
   csrfState: string | null;
   /** Whether the request arrived over HTTPS (selects the cookie name). */
   secureCookies: boolean;
+  /** Delay before re-checking for a concurrent winner (test override). */
+  recheckDelayMs?: number;
 };
 
 /**
@@ -41,7 +43,13 @@ type CompleteOAuthParams = {
  * the route clears the cookie on every outcome.
  */
 export async function completeOpenRouterOAuth(
-  { teamId, code, csrfState, secureCookies }: CompleteOAuthParams,
+  {
+    teamId,
+    code,
+    csrfState,
+    secureCookies,
+    recheckDelayMs = 3000,
+  }: CompleteOAuthParams,
   scopedDb: OAuthScopedDb
 ): Promise<void> {
   const sealed = getCookie(getOAuthCookieName(secureCookies));
@@ -68,6 +76,11 @@ export async function completeOpenRouterOAuth(
     // single-use code and saves the key; this one then fails the exchange
     // with "Invalid code". If a fresh OAuth key exists, the flow actually
     // succeeded — don't overwrite the user's outcome with an error.
+    if (await wasJustConnected(scopedDb)) return;
+    // The hits can also run concurrently: the winner may still be mid-save
+    // when this request's exchange fails (observed in the pr-825 tail).
+    // One delayed re-check covers the winner's ~2s exchange+save.
+    await new Promise((resolve) => setTimeout(resolve, recheckDelayMs));
     if (await wasJustConnected(scopedDb)) return;
     throw error;
   }

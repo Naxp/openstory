@@ -252,11 +252,37 @@ describe('completeOpenRouterOAuth', () => {
               code: 'auth-code',
               csrfState: validState.csrfState,
               secureCookies: true,
+              recheckDelayMs: 5,
             },
             scopedDb
           )
         ).rejects.toThrow('OpenRouter key exchange failed');
       }
     );
+
+    it('treats the failure as success when the winning request saves during the re-check delay', async () => {
+      await setStateCookie(validState);
+      exchangeCodeForKeyMock.mockRejectedValue(
+        new Error('OpenRouter key exchange failed (403): Invalid code')
+      );
+      // No key on the first check; the winner saves while this one waits
+      const { scopedDb, listKeys, saveKey } = makeScopedDb([]);
+      listKeys.mockResolvedValueOnce([]).mockResolvedValueOnce([makeKeyInfo()]);
+
+      await expect(
+        completeOpenRouterOAuth(
+          {
+            teamId: TEAM_ID,
+            code: 'auth-code',
+            csrfState: validState.csrfState,
+            secureCookies: true,
+            recheckDelayMs: 5,
+          },
+          scopedDb
+        )
+      ).resolves.toBeUndefined();
+      expect(listKeys).toHaveBeenCalledTimes(2);
+      expect(saveKey).not.toHaveBeenCalled();
+    });
   });
 });
