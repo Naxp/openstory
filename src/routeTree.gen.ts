@@ -39,6 +39,7 @@ import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/
 import { Route as ProtectedSequencesIndexRouteImport } from './routes/_protected/sequences/index'
 import { Route as ProtectedLocationsIndexRouteImport } from './routes/_protected/locations/index'
 import { Route as ApiV1SequencesRouteImport } from './routes/api/v1/sequences'
+import { Route as ApiV1OpenapiDotjsonRouteImport } from './routes/api/v1/openapi[.]json'
 import { Route as ApiTestVerifyRouteImport } from './routes/api/test/verify'
 import { Route as ApiTestUserRouteImport } from './routes/api/test/user'
 import { Route as ApiTestTalentRouteImport } from './routes/api/test/talent'
@@ -219,6 +220,11 @@ const ProtectedLocationsIndexRoute = ProtectedLocationsIndexRouteImport.update({
 const ApiV1SequencesRoute = ApiV1SequencesRouteImport.update({
   id: '/api/v1/sequences',
   path: '/api/v1/sequences',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiV1OpenapiDotjsonRoute = ApiV1OpenapiDotjsonRouteImport.update({
+  id: '/api/v1/openapi.json',
+  path: '/api/v1/openapi.json',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTestVerifyRoute = ApiTestVerifyRouteImport.update({
@@ -452,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/api/test/talent': typeof ApiTestTalentRoute
   '/api/test/user': typeof ApiTestUserRoute
   '/api/test/verify': typeof ApiTestVerifyRoute
+  '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
   '/locations/': typeof ProtectedLocationsIndexRoute
   '/sequences/': typeof ProtectedSequencesIndexRoute
@@ -513,6 +520,7 @@ export interface FileRoutesByTo {
   '/api/test/talent': typeof ApiTestTalentRoute
   '/api/test/user': typeof ApiTestUserRoute
   '/api/test/verify': typeof ApiTestVerifyRoute
+  '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
   '/locations': typeof ProtectedLocationsIndexRoute
   '/sequences': typeof ProtectedSequencesIndexRoute
@@ -580,6 +588,7 @@ export interface FileRoutesById {
   '/api/test/talent': typeof ApiTestTalentRoute
   '/api/test/user': typeof ApiTestUserRoute
   '/api/test/verify': typeof ApiTestVerifyRoute
+  '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
   '/_protected/locations/': typeof ProtectedLocationsIndexRoute
   '/_protected/sequences/': typeof ProtectedSequencesIndexRoute
@@ -645,6 +654,7 @@ export interface FileRouteTypes {
     | '/api/test/talent'
     | '/api/test/user'
     | '/api/test/verify'
+    | '/api/v1/openapi.json'
     | '/api/v1/sequences'
     | '/locations/'
     | '/sequences/'
@@ -706,6 +716,7 @@ export interface FileRouteTypes {
     | '/api/test/talent'
     | '/api/test/user'
     | '/api/test/verify'
+    | '/api/v1/openapi.json'
     | '/api/v1/sequences'
     | '/locations'
     | '/sequences'
@@ -772,6 +783,7 @@ export interface FileRouteTypes {
     | '/api/test/talent'
     | '/api/test/user'
     | '/api/test/verify'
+    | '/api/v1/openapi.json'
     | '/api/v1/sequences'
     | '/_protected/locations/'
     | '/_protected/sequences/'
@@ -810,6 +822,7 @@ export interface RootRouteChildren {
   ApiOpenrouterCallbackRoute: typeof ApiOpenrouterCallbackRoute
   ApiStorageMultipartRoute: typeof ApiStorageMultipartRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
+  ApiV1OpenapiDotjsonRoute: typeof ApiV1OpenapiDotjsonRoute
   ApiV1SequencesRoute: typeof ApiV1SequencesRouteWithChildren
   ApiV1IndexRoute: typeof ApiV1IndexRoute
 }
@@ -1024,6 +1037,13 @@ declare module '@tanstack/react-router' {
       path: '/api/v1/sequences'
       fullPath: '/api/v1/sequences'
       preLoaderRoute: typeof ApiV1SequencesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/openapi.json': {
+      id: '/api/v1/openapi.json'
+      path: '/api/v1/openapi.json'
+      fullPath: '/api/v1/openapi.json'
+      preLoaderRoute: typeof ApiV1OpenapiDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/test/verify': {
@@ -1467,6 +1487,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOpenrouterCallbackRoute: ApiOpenrouterCallbackRoute,
   ApiStorageMultipartRoute: ApiStorageMultipartRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,
+  ApiV1OpenapiDotjsonRoute: ApiV1OpenapiDotjsonRoute,
   ApiV1SequencesRoute: ApiV1SequencesRouteWithChildren,
   ApiV1IndexRoute: ApiV1IndexRoute,
 }

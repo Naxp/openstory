@@ -1,7 +1,11 @@
 import type { Frame } from '@/lib/db/schema/frames';
 import type { Sequence } from '@/lib/db/schema/sequences';
 import { describe, expect, it } from 'vitest';
-import { buildSequenceState } from './state';
+import {
+  buildSequenceState,
+  isTerminalSequenceState,
+  sequenceStateCursor,
+} from './state';
 
 function makeFrame(overrides: Partial<Frame> = {}): Frame {
   return {
@@ -112,7 +116,12 @@ describe('buildSequenceState', () => {
       music: { status: 'completed', url: 'https://cdn/music.mp3' },
     });
     expect(state.createdAt).toBe('2026-01-01T00:00:00.000Z');
-    expect(state.counts).toEqual({ frames: 0, imagesReady: 0, videosReady: 0 });
+    expect(state.counts).toEqual({
+      frames: 0,
+      imagesReady: 0,
+      videosReady: 0,
+      videosFailed: 0,
+    });
     expect(state.poster).not.toBeNull();
   });
 
@@ -165,6 +174,7 @@ describe('buildSequenceState', () => {
       frames: 2,
       imagesReady: 1,
       videosReady: 1,
+      videosFailed: 0,
     });
   });
 
@@ -182,5 +192,112 @@ describe('buildSequenceState', () => {
       status: 'completed',
       url: 'https://cdn/p.png',
     });
+  });
+
+  it('counts failed videos so a terminal-but-partial result is legible', async () => {
+    const state = await buildSequenceState(
+      depsWithFrames([
+        makeFrame({ id: 'f1', videoStatus: 'failed' }),
+        makeFrame({
+          id: 'f2',
+          orderIndex: 1,
+          videoStatus: 'completed',
+          videoUrl: 'https://cdn/v.mp4',
+        }),
+      ]),
+      makeSequence()
+    );
+    expect(state.counts).toEqual({
+      frames: 2,
+      imagesReady: 0,
+      videosReady: 1,
+      videosFailed: 1,
+    });
+  });
+});
+
+describe('isTerminalSequenceState', () => {
+  it('treats completed / failed / archived as terminal', async () => {
+    for (const status of ['completed', 'failed', 'archived'] as const) {
+      const state = await buildSequenceState(
+        depsWithFrames([]),
+        makeSequence({ status })
+      );
+      expect(isTerminalSequenceState(state)).toBe(true);
+    }
+  });
+
+  it('treats draft / processing as non-terminal', async () => {
+    for (const status of ['draft', 'processing'] as const) {
+      const state = await buildSequenceState(
+        depsWithFrames([]),
+        makeSequence({ status })
+      );
+      expect(isTerminalSequenceState(state)).toBe(false);
+    }
+  });
+});
+
+describe('sequenceStateCursor', () => {
+  // The cursor is the entire long-poll contract: it must change the instant any
+  // pollable field advances, and stay stable otherwise. In production any row
+  // touch also bumps `updatedAt` (itself in the cursor), so we PIN `updatedAt`
+  // here to prove each remaining term is load-bearing on its own — otherwise a
+  // dropped term would be dead code that `?wait` silently relies on.
+  const updatedAt = new Date('2026-01-02T00:00:00Z');
+
+  it('is stable for identical state', async () => {
+    const seq = makeSequence({ updatedAt });
+    const a = await buildSequenceState(depsWithFrames([]), seq);
+    const b = await buildSequenceState(depsWithFrames([]), seq);
+    expect(sequenceStateCursor(a)).toBe(sequenceStateCursor(b));
+  });
+
+  it('changes when each polled field advances independently', async () => {
+    const baseline = sequenceStateCursor(
+      await buildSequenceState(depsWithFrames([]), makeSequence({ updatedAt }))
+    );
+
+    const cursorFor = async (
+      frames: Parameters<typeof depsWithFrames>[0],
+      seqOverrides: Parameters<typeof makeSequence>[0]
+    ) =>
+      sequenceStateCursor(
+        await buildSequenceState(
+          depsWithFrames(frames),
+          makeSequence({ updatedAt, ...seqOverrides })
+        )
+      );
+
+    // overall status
+    expect(await cursorFor([], { status: 'completed' })).not.toBe(baseline);
+    // music status
+    expect(await cursorFor([], { musicStatus: 'completed' })).not.toBe(
+      baseline
+    );
+    // poster appears
+    expect(await cursorFor([], { posterUrl: 'https://cdn/p.png' })).not.toBe(
+      baseline
+    );
+    // an image becomes ready
+    expect(
+      await cursorFor([makeFrame({ thumbnailUrl: 'https://cdn/t.png' })], {})
+    ).not.toBe(baseline);
+    // a video becomes ready
+    expect(
+      await cursorFor(
+        [
+          makeFrame({
+            videoStatus: 'completed',
+            videoUrl: 'https://cdn/v.mp4',
+          }),
+        ],
+        {}
+      )
+    ).not.toBe(baseline);
+    // a video fails — must wake the poll, not stall it until the deadline
+    expect(
+      await cursorFor([makeFrame({ videoStatus: 'failed' })], {})
+    ).not.toBe(baseline);
   });
 });

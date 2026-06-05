@@ -99,6 +99,20 @@ const SIZE_WARNING_BYTES = 6 * 1024 * 1024; // 6 MB
 const SLOW_THRESHOLD_MS = 500;
 const VERY_SLOW_THRESHOLD_MS = 2000;
 const serverFnLogger = getLogger(['openstory', 'serverFn']);
+const apiAuthLogger = getLogger(['openstory', 'api', 'auth']);
+
+/**
+ * JSON error envelope for request-middleware rejections, matching the
+ * `/api/v1` `{ error: { code, message } }` contract. Programmatic callers parse
+ * this; a plain-text 401/403 would crash their JSON parser.
+ */
+function authErrorResponse(
+  status: number,
+  code: string,
+  message: string
+): Response {
+  return Response.json({ error: { code, message } }, { status });
+}
 
 export const loggerMiddleware = createMiddleware({ type: 'function' }).server(
   async ({ next, serverFnMeta }) => {
@@ -167,8 +181,12 @@ export const loggerMiddleware = createMiddleware({ type: 'function' }).server(
  * inside `getSession` and *throws* an APIError rather than returning null:
  *   - a 429 (key over its per-key rate limit) is surfaced as a JSON 429 with a
  *     `Retry-After` header (programmatic callers need this);
- *   - any other throw (disabled/expired/unknown key) is treated as
- *     unauthenticated → null (the caller turns that into a 401), never a 500.
+ *   - a genuine auth rejection (disabled/expired/unknown key → 401/403) is
+ *     treated as unauthenticated → null (the caller turns that into a 401);
+ *   - anything else (D1 down, auth-backend 5xx, programmer error) is logged and
+ *     surfaced as a JSON 500. It must NOT be flattened to a 401 "bad key": that
+ *     tells a caller with a perfectly valid key to rotate/abandon it, and hides
+ *     the real incident.
  */
 async function resolveRequestSession(request: Request) {
   const auth = getAuth();
@@ -189,7 +207,21 @@ async function resolveRequestSession(request: Request) {
         { status: 429, headers: { 'Retry-After': String(retryAfter) } }
       );
     }
-    return null;
+    if (
+      error instanceof APIError &&
+      (error.statusCode === 401 || error.statusCode === 403)
+    ) {
+      return null;
+    }
+    apiAuthLogger.error('session resolution failed: {message}', {
+      message: error instanceof Error ? error.message : String(error),
+      err: toErrorPayload(error),
+    });
+    throw authErrorResponse(
+      500,
+      'INTERNAL_ERROR',
+      'Authentication could not be processed. Please retry.'
+    );
   }
 }
 
@@ -203,7 +235,11 @@ export const authRequestMiddleware = createMiddleware().server(
     const session = await resolveRequestSession(request);
 
     if (!session?.user) {
-      throw new Response('Unauthorized', { status: 401 });
+      throw authErrorResponse(
+        401,
+        'UNAUTHORIZED',
+        'Valid authentication required. Provide an API key via "Authorization: Bearer <key>" or "x-api-key".'
+      );
     }
 
     return next({
@@ -225,13 +261,21 @@ export const authWithTeamRequestMiddleware = createMiddleware().server(
     const session = await resolveRequestSession(request);
 
     if (!session?.user) {
-      throw new Response('Unauthorized', { status: 401 });
+      throw authErrorResponse(
+        401,
+        'UNAUTHORIZED',
+        'Valid authentication required. Provide an API key via "Authorization: Bearer <key>" or "x-api-key".'
+      );
     }
 
     const team = await resolveUserTeam(session.user.id);
 
     if (!team) {
-      throw new Response('No team found for user', { status: 403 });
+      throw authErrorResponse(
+        403,
+        'NO_TEAM',
+        'No team is associated with this account.'
+      );
     }
 
     return next({

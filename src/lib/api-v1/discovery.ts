@@ -44,7 +44,10 @@ Conventions (apply to every endpoint):
     not via a 4xx. No v1 endpoint sets these today; they are forward-looking.
 
 Errors are always JSON: { "error": { "code", "message", "details"? } } with the
-matching HTTP status — never an HTML page or redirect.`;
+matching HTTP status — never an HTML page or redirect.
+
+Machine-readable spec: GET /api/v1/openapi.json returns the full OpenAPI 3.1
+document (generated from the same schema this API validates against).`;
 
 /** A representative `POST /api/v1/sequences` body (schema defaults applied). */
 function exampleCreateBody(): unknown {
@@ -99,6 +102,11 @@ export function buildRootDocument(): RootDocument {
         method: 'GET',
         templated: true,
         title: 'Get sequence status (supports ?wait long-polling)',
+      },
+      'openapi-spec': {
+        href: `${API_V1_BASE}/openapi.json`,
+        method: 'GET',
+        title: 'OpenAPI 3.1 specification (JSON)',
       },
     },
   };

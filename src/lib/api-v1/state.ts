@@ -36,7 +36,18 @@ export type SequenceState = {
   poster: { url: string } | null;
   music: { status: string; url: string | null };
   frames: SequenceStateFrame[];
-  counts: { frames: number; imagesReady: number; videosReady: number };
+  counts: {
+    frames: number;
+    imagesReady: number;
+    videosReady: number;
+    /**
+     * Frames whose video generation failed. A sequence can reach the terminal
+     * `completed` status with `videosFailed > 0` (per-frame motion failures
+     * don't fail the run), so an agent must check this to know a terminal
+     * result actually succeeded end-to-end.
+     */
+    videosFailed: number;
+  };
 };
 
 export async function buildSequenceState(
@@ -85,6 +96,8 @@ export async function buildSequenceState(
         .length,
       videosReady: stateFrames.filter((f) => f.video.status === 'completed')
         .length,
+      videosFailed: stateFrames.filter((f) => f.video.status === 'failed')
+        .length,
     },
   };
 }
@@ -97,7 +110,9 @@ export function isTerminalSequenceState(state: SequenceState): boolean {
 /**
  * A compact change-detection key for `?wait=` long-polling. It folds in every
  * field an agent polls for progress on, so the poll returns the instant any of
- * them advances — overall status, music, poster, and per-kind ready counts.
+ * them advances — overall status, music, poster, per-kind ready counts, and
+ * video failures (so a failing frame wakes the poll instead of stalling it
+ * until the deadline).
  */
 export function sequenceStateCursor(state: SequenceState): string {
   return [
@@ -107,6 +122,7 @@ export function sequenceStateCursor(state: SequenceState): string {
     state.poster ? '1' : '0',
     state.counts.imagesReady,
     state.counts.videosReady,
+    state.counts.videosFailed,
   ].join('|');
 }
 

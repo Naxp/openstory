@@ -25,7 +25,10 @@ import {
   withSequenceStateLinks,
 } from '@/lib/api-v1/state';
 import { getWaitMs, longPoll } from '@/lib/api-v1/wait';
+import { getLogger } from '@/lib/observability/logger';
 import { createFileRoute } from '@tanstack/react-router';
+
+const logger = getLogger(['openstory', 'api-v1']);
 
 export const Route = createFileRoute('/api/v1/sequences')({
   server: {
@@ -52,30 +55,48 @@ export const Route = createFileRoute('/api/v1/sequences')({
           });
 
           // When `?wait` is set, share the create deadline across all new
-          // sequences and embed the first progress snapshot of each.
+          // sequences and embed the first progress snapshot of each. The
+          // embedded `state` is authoritative (live, with its own `_links`), so
+          // we drop the now-redundant top-level status/statusUrl/_links from the
+          // entry to avoid handing an agent a stale duplicate `status`.
           const waitMs = getWaitMs(request);
           if (waitMs > 0) {
             const sequences = await Promise.all(
               result.sequences.map(async (entry) => {
-                const { value } = await longPoll({
+                const { value, changed, done } = await longPoll({
                   waitMs,
                   signal: request.signal,
                   load: async () => {
                     const sequence = await context.scopedDb.sequences.getById(
                       entry.id
                     );
-                    // The row was just created in this request; treat a
-                    // (theoretical) miss as "no snapshot yet" rather than 404.
-                    return sequence
-                      ? await buildSequenceState(context.scopedDb, sequence)
-                      : null;
+                    if (!sequence) {
+                      // The row was just created in THIS request and is scoped
+                      // to this same key — a miss is a real anomaly (scoping /
+                      // read-after-write), not "still pending". Surface it
+                      // rather than silently returning an empty snapshot.
+                      logger.error(
+                        'api/v1 created sequence not readable back: {id}',
+                        { id: entry.id }
+                      );
+                      return null;
+                    }
+                    return buildSequenceState(context.scopedDb, sequence);
                   },
                   cursor: (state) => (state ? sequenceStateCursor(state) : ''),
-                  done: (state) => !!state && isTerminalSequenceState(state),
+                  // A null snapshot (logged anomaly above) is terminal for the
+                  // poll so we don't spin re-reading nothing for the full wait.
+                  done: (state) =>
+                    state === null || isTerminalSequenceState(state),
                 });
                 return {
-                  ...entry,
+                  id: entry.id,
+                  workflowRunId: entry.workflowRunId,
                   state: value ? withSequenceStateLinks(value) : null,
+                  // Let the agent distinguish "advanced", "reached a terminal
+                  // state", and "timed out unchanged" without diffing the body.
+                  waitChanged: changed,
+                  waitDone: done,
                 };
               })
             );
