@@ -21,7 +21,7 @@ import {
   estimateVideoCost,
 } from '@/lib/billing/cost-estimation';
 import {
-  microsToUsd,
+  microsToDisplayUsd,
   multiplyMicros,
   type Microdollars,
 } from '@/lib/billing/money';
@@ -35,6 +35,8 @@ type Candidate = {
   cost: Microdollars;
   scope: string;
 };
+
+const scenes = (n: number) => `${n} scene${n === 1 ? '' : 's'}`;
 
 /**
  * "Add a model" section for the header model dropdowns (#547). Lists models of
@@ -61,15 +63,6 @@ export const AddModelMenuSection = ({
   const candidates = useMemo<Candidate[]>(() => {
     const used = new Set(usedModels);
     const frameList = frames ?? [];
-    const totalDurationSecs =
-      frameList.reduce(
-        (sum, f) =>
-          sum +
-          (f.durationMs
-            ? f.durationMs / 1000
-            : (f.metadata?.metadata?.durationSeconds ?? 10)),
-        0
-      ) || 30;
 
     if (variantType === 'image') {
       const count = frameList.filter(
@@ -91,7 +84,7 @@ export const AddModelMenuSection = ({
             estimateImageCost(key, aspectRatio, 1),
             count || 1
           ),
-          scope: `${count || 'all'} scene${count === 1 ? '' : 's'}`,
+          scope: count ? scenes(count) : 'all scenes',
         }));
     }
 
@@ -116,11 +109,20 @@ export const AddModelMenuSection = ({
           key,
           name: IMAGE_TO_VIDEO_MODELS[key].name,
           cost: multiplyMicros(estimateVideoCost(key, 5), count || 1),
-          scope: `${count || 0} scene${count === 1 ? '' : 's'}`,
+          scope: scenes(count),
         }));
     }
 
-    // audio — one track for the whole sequence
+    // audio — one track for the whole sequence; cost scales with total runtime.
+    const totalDurationSecs =
+      frameList.reduce(
+        (sum, f) =>
+          sum +
+          (f.durationMs
+            ? f.durationMs / 1000
+            : (f.metadata?.metadata?.durationSeconds ?? 10)),
+        0
+      ) || 30;
     return Object.keys(AUDIO_MODELS)
       .filter(isValidAudioModel)
       .filter(
@@ -142,11 +144,11 @@ export const AddModelMenuSection = ({
   const audioBlocked =
     variantType === 'audio' && !(sequence?.musicPrompt && sequence.musicTags);
 
-  const handleAdd = (key: string, name: string, cost: Microdollars) => {
+  const handleAdd = ({ key, name, cost }: Candidate) => {
     toast(`Add ${name}?`, {
       description: audioBlocked
         ? 'Generate music once before adding another audio model.'
-        : `Generates ~$${microsToUsd(cost).toFixed(2)} of content using the existing prompts.`,
+        : `Generates ~${microsToDisplayUsd(cost)} of content using the existing prompts.`,
       action: audioBlocked
         ? undefined
         : {
@@ -181,13 +183,13 @@ export const AddModelMenuSection = ({
           disabled={addModel.isPending}
           onSelect={(e) => {
             e.preventDefault();
-            handleAdd(c.key, c.name, c.cost);
+            handleAdd(c);
           }}
           className="cursor-pointer flex items-center justify-between gap-3"
         >
           <span className="truncate">{c.name}</span>
           <span className="shrink-0 text-[10px] text-muted-foreground">
-            {c.scope} · ~${microsToUsd(c.cost).toFixed(2)}
+            {c.scope} · ~{microsToDisplayUsd(c.cost)}
           </span>
         </DropdownMenuItem>
       ))}
