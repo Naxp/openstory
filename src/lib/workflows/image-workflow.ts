@@ -91,15 +91,22 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
         const model = input.model ?? DEFAULT_IMAGE_MODEL;
 
         if (input.frameId) {
-          const frame = await scopedDb.frames.update(
-            input.frameId,
-            {
-              thumbnailStatus: 'generating',
-              thumbnailWorkflowRunId: workflowRunId,
-              imageModel: model,
-            },
-            { throwOnMissing: false }
-          );
+          // Variant-only (#547) must not touch the live primary columns — read
+          // the frame instead of stamping `imageModel`/`thumbnailStatus`, so
+          // adding a model can't flip the primary or trip staleness. The
+          // per-model `frame_variants` row (opened below) carries the in-flight
+          // state instead.
+          const frame = input.variantOnly
+            ? await scopedDb.frames.getById(input.frameId)
+            : await scopedDb.frames.update(
+                input.frameId,
+                {
+                  thumbnailStatus: 'generating',
+                  thumbnailWorkflowRunId: workflowRunId,
+                  imageModel: model,
+                },
+                { throwOnMissing: false }
+              );
 
           if (!frame) {
             logger.info(
@@ -170,7 +177,14 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
 
           await getGenerationChannel(input.sequenceId).emit(
             'generation.image:progress',
-            { frameId: input.frameId, status: 'generating', model }
+            {
+              frameId: input.frameId,
+              status: 'generating',
+              model,
+              // Variant-only (#547): don't flip the primary frame to
+              // "generating" in cache — this run only fills a variant row.
+              variantOnly: input.variantOnly,
+            }
           );
         }
 
@@ -262,6 +276,7 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
           snapshotHash,
           currentHash,
           promptHash,
+          variantOnly: input.variantOnly,
           emit: async (event2, payload) => {
             await getGenerationChannel(sequenceId).emit(event2, payload);
           },
@@ -331,11 +346,15 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
 
     if (!input.frameId || !input.teamId) return;
 
-    await scopedDb.frames.update(
-      input.frameId,
-      { thumbnailStatus: 'failed', thumbnailError: error },
-      { throwOnMissing: false }
-    );
+    // Variant-only (#547): leave the primary columns untouched on failure too —
+    // only this model's variant row is flipped to `failed` below.
+    if (!input.variantOnly) {
+      await scopedDb.frames.update(
+        input.frameId,
+        { thumbnailStatus: 'failed', thumbnailError: error },
+        { throwOnMissing: false }
+      );
+    }
 
     const model = input.model ?? DEFAULT_IMAGE_MODEL;
     if (input.sequenceId) {
@@ -349,7 +368,15 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
       try {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.image:progress',
-          { frameId: input.frameId, status: 'failed', model }
+          {
+            frameId: input.frameId,
+            status: 'failed',
+            model,
+            // Variant-only (#547): a failed alternate must not flip the primary
+            // thumbnail to "failed" in cache (the DB write above is already
+            // guarded on variantOnly).
+            variantOnly: input.variantOnly,
+          }
         );
       } catch (emitError) {
         logger.error(

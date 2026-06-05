@@ -279,6 +279,7 @@ export function buildImageDivergentWrites(opts: {
 export type PersistImageOutcome =
   | { status: 'divergent'; imageUrl: string; snapshotHash: string }
   | { status: 'convergent'; imageUrl: string }
+  | { status: 'variant-only'; imageUrl: string }
   | { status: 'frame-deleted' };
 
 /**
@@ -308,8 +309,15 @@ export async function persistImageResult(opts: {
       status: 'pending' | 'completed';
       model: string;
       thumbnailUrl?: string;
+      variantOnly?: boolean;
     }
   ) => Promise<void>;
+  /**
+   * Variant-only (#547): write only this model's `frame_variants` row, never
+   * the primary `frames.*`. Skips divergence detection — with no primary to
+   * protect, there is nothing to diverge from.
+   */
+  variantOnly?: boolean;
   now?: () => Date;
 }): Promise<PersistImageOutcome> {
   const {
@@ -322,8 +330,40 @@ export async function persistImageResult(opts: {
     currentHash,
     promptHash,
     emit,
+    variantOnly,
     now = () => new Date(),
   } = opts;
+
+  if (variantOnly) {
+    // Reuse the convergent variant payload (url/path/status/hashes), but apply
+    // it ONLY to the variant row — the primary `frames.*` stay exactly as they
+    // were. A null update means the frame (and its cascade-deleted variant) is
+    // gone.
+    const { variant } = buildImageConvergentWrites({
+      upload,
+      snapshotHash,
+      promptHash,
+      generatedAt: now(),
+    });
+    const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+      frameId,
+      'image',
+      model,
+      variant
+    );
+    if (!updated) return { status: 'frame-deleted' };
+
+    await emit('generation.image:progress', {
+      frameId,
+      status: 'completed',
+      thumbnailUrl: upload.url,
+      model,
+      // Alternate model — the cache updater must not repoint the primary.
+      variantOnly: true,
+    });
+
+    return { status: 'variant-only', imageUrl: upload.url };
+  }
 
   if (snapshotHash && currentHash !== snapshotHash) {
     const writes = buildImageDivergentWrites({

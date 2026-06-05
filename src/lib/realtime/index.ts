@@ -115,6 +115,12 @@ export const realtimeSchema = {
       thumbnailUrl: z.string().optional(),
       previewThumbnailUrl: z.string().optional(),
       model: z.string().optional(),
+      // Variant-only (#547): this update belongs to an added (alternate) model,
+      // not the live primary. The cache updater must NOT write it onto the
+      // primary `thumbnailUrl`/`thumbnailStatus` — it only refreshes the
+      // per-model variant/model-list queries so the new model surfaces in the
+      // dropdown without clobbering the displayed primary thumbnail.
+      variantOnly: z.boolean().optional(),
     }),
 
     // Fast preview frames replaced by AI-analyzed frames
@@ -138,6 +144,12 @@ export const realtimeSchema = {
       // with emitters that predate multi-model video (#545); the model-aware
       // cache invalidation and scenes-view variant switcher key off it.
       model: z.string().optional(),
+      // Variant-only (#547): this update belongs to an added (alternate) model,
+      // not the live primary. The cache updater must NOT write it onto the
+      // primary `videoUrl`/`videoStatus` — it only refreshes the per-model
+      // variant/model-list queries so the new model surfaces in the dropdown
+      // without clobbering the displayed primary video.
+      variantOnly: z.boolean().optional(),
     }),
 
     // Audio/music generation progress (frameId optional for sequence-level music)

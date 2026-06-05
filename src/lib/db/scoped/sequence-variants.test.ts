@@ -228,6 +228,54 @@ describe('createSequenceVariantsMethods — music', () => {
   });
 });
 
+describe('createSequenceVariantsMethods — markMusicFailed (#547)', () => {
+  it('flips a pre-stamped pending variant row to failed', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    await methods.upsertMusicPrimary({
+      sequenceId,
+      model: 'cassette',
+      prompt: 'p',
+      tags: 't',
+      durationSeconds: 60,
+      status: 'pending',
+    });
+
+    await methods.markMusicFailed(sequenceId, 'cassette', 'boom');
+
+    const row = await methods.getMusicPrimary(sequenceId, 'cassette');
+    expect(row?.status).toBe('failed');
+    expect(row?.error).toBe('boom');
+  });
+
+  it('is update-only — never inserts a row for a model that has none', async () => {
+    const methods = createSequenceVariantsMethods(db);
+
+    await methods.markMusicFailed(sequenceId, 'cassette', 'boom');
+
+    const rows = await methods.listMusicBySequence(sequenceId);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('never overwrites a completed alternate', async () => {
+    const methods = createSequenceVariantsMethods(db);
+    await methods.upsertMusicPrimary({
+      sequenceId,
+      model: 'cassette',
+      url: 'https://example.com/done.mp3',
+      prompt: 'p',
+      tags: 't',
+      durationSeconds: 60,
+      status: 'completed',
+    });
+
+    await methods.markMusicFailed(sequenceId, 'cassette', 'boom');
+
+    const row = await methods.getMusicPrimary(sequenceId, 'cassette');
+    expect(row?.status).toBe('completed');
+    expect(row?.error).toBeNull();
+  });
+});
+
 describe('listDivergentByTeam', () => {
   it('excludes variants belonging to a different team and excludes discarded rows', async () => {
     const methods = createSequenceVariantsMethods(db);

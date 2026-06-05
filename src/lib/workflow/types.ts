@@ -81,6 +81,18 @@ export interface ImageWorkflowInput extends SequenceWorkflowContext {
    * workflow appends a `user-edit` variant row.
    */
   userEditedPrompt?: boolean;
+  /**
+   * Variant-only mode (#547). When true, the run NEVER touches the live primary
+   * `frames.*` image/video columns — it writes only this model's
+   * `frame_variants` row. (See `persistImageResult`'s `variantOnly` branch and
+   * the workflow's set-generating/onFailure guards for the authoritative set of
+   * skipped columns.) Used by "add a model to an existing sequence" so a new
+   * model lands as a selectable alternate without repointing the primary,
+   * tripping staleness, or invalidating the frame's video. Promotion to primary
+   * happens later via an explicit "Set". Skips divergence detection entirely
+   * (there is no primary to protect).
+   */
+  variantOnly?: boolean;
 }
 
 /**
@@ -210,6 +222,14 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    * the workflow appends a `user-edit` variant row.
    */
   userEditedPrompt?: boolean;
+  /**
+   * Variant-only mode (#547). When true, the run NEVER touches the legacy
+   * `frames.video*` / `motionModel` columns — it writes only this model's
+   * `frame_variants` row. Used by "add a video model to an existing sequence"
+   * so the new model lands as a selectable alternate without repointing the
+   * primary video. Promotion happens later via an explicit "Set".
+   */
+  variantOnly?: boolean;
 }
 
 /**
@@ -778,6 +798,13 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
    * (single-model behaviour). Each model reuses `music.prompt/tags/duration`.
    */
   audioModels?: (keyof typeof AUDIO_MODELS)[];
+  /**
+   * Variant-only mode (#547), threaded onto every per-frame motion child. When
+   * true, no frame writes its video to the legacy `frames.video*` columns —
+   * each model lands only in `frame_variants`. Used by "add a video model to an
+   * existing sequence" so it never repoints the primary video.
+   */
+  variantOnly?: boolean;
 }
 
 /**

@@ -1,14 +1,18 @@
 import {
+  addModelToSequenceFn,
   archiveSequenceFn,
   createSequenceFn,
   getSequenceAudioModelsFn,
   getSequenceAudioVariantsFn,
   getSequenceFn,
   getSequencesFn,
+  setSequenceModelFn,
   updateSequenceFn,
+  type AddModelResult,
 } from '@/functions/sequences';
 import { DEFAULT_ANALYSIS_MODEL } from '@/lib/ai/models.config';
 import type { SequenceMusicVariant } from '@/lib/db/schema';
+import type { VariantType } from '@/lib/db/schema/frame-variants';
 import {
   type CreateSequenceInput,
   type UpdateSequenceInput,
@@ -55,6 +59,72 @@ export function useSequenceAudioVariants(sequenceId?: string) {
     },
     enabled: !!sequenceId,
     staleTime: 30_000,
+  });
+}
+
+const MODEL_LIST_KEY: Record<VariantType, (id: string) => string[]> = {
+  image: (id) => ['sequence-image-models', id],
+  video: (id) => ['sequence-video-models', id],
+  audio: (id) => ['sequence-audio-models', id],
+};
+const VARIANTS_KEY: Record<VariantType, (id: string) => string[]> = {
+  image: (id) => ['sequence-image-variants', id],
+  video: (id) => ['sequence-video-variants', id],
+  audio: (id) => ['sequence-audio-variants', id],
+};
+
+// Add a new model to an existing sequence (#547): generates its output for
+// every frame (image/video) or the whole sequence (audio) using existing
+// prompts. Invalidates the matching model-list + variants queries so the new
+// model surfaces in the header dropdown immediately (pre-stamped pending).
+export function useAddModelToSequence() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    AddModelResult,
+    Error,
+    { sequenceId: string; variantType: VariantType; model: string }
+  >({
+    mutationFn: async (input) => addModelToSequenceFn({ data: input }),
+    onSuccess: async (_, { sequenceId, variantType }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: MODEL_LIST_KEY[variantType](sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: VARIANTS_KEY[variantType](sequenceId),
+        }),
+      ]);
+    },
+  });
+}
+
+/**
+ * Promote a model to the live primary across the whole sequence (#547) — the
+ * sequence-wide "Set". Invalidates the model list + variants (so the dropdown's
+ * ⊙ primary marker moves) and the frames list (the primary image/video changed,
+ * and an image Set also reset each frame's video).
+ */
+export function useSetSequenceModel() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { count: number; variantType: 'image' | 'video'; model: string },
+    Error,
+    { sequenceId: string; variantType: 'image' | 'video'; model: string }
+  >({
+    mutationFn: async (input) => setSequenceModelFn({ data: input }),
+    onSuccess: async (_, { sequenceId, variantType }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: MODEL_LIST_KEY[variantType](sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: VARIANTS_KEY[variantType](sequenceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['frames', 'list', sequenceId],
+        }),
+      ]);
+    },
   });
 }
 
