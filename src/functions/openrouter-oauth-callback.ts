@@ -3,30 +3,52 @@
  * Server-only — completes the OAuth PKCE flow after redirect.
  */
 
+import { getCookie } from '@tanstack/react-start/server';
 import { exchangeCodeForKey } from '@/lib/byok/openrouter-oauth';
-import type { OAuthState } from '@/lib/byok/openrouter-oauth';
+import {
+  getOAuthCookieName,
+  unsealOAuthState,
+} from '@/lib/byok/openrouter-oauth-cookie';
 import type { ScopedDb } from '@/lib/db/scoped';
-import { getOAuthRedis, OAUTH_STATE_PREFIX } from './openrouter-oauth-utils';
+
+/** The slice of ScopedDb this flow needs — keeps tests cast-free. */
+type OAuthScopedDb = { apiKeys: Pick<ScopedDb['apiKeys'], 'saveKey'> };
+
+type CompleteOAuthParams = {
+  /** Team resolved from the authenticated session on the callback request. */
+  teamId: string;
+  /** Authorization code from OpenRouter's redirect. */
+  code: string;
+  /** CSRF `state` query param echoed back via the callback URL. */
+  csrfState: string | null;
+  /** Whether the request arrived over HTTPS (selects the cookie name). */
+  secureCookies: boolean;
+};
 
 /**
  * Complete the OpenRouter OAuth PKCE flow.
  * Called by the callback route after OpenRouter redirects back.
- * Throws on failure.
+ * Reads the encrypted PKCE state cookie set during initiation and verifies
+ * it against the session team and the echoed CSRF state. Throws on failure;
+ * the route clears the cookie on every outcome.
  */
 export async function completeOpenRouterOAuth(
-  teamId: string,
-  code: string,
-  scopedDb: ScopedDb
+  { teamId, code, csrfState, secureCookies }: CompleteOAuthParams,
+  scopedDb: OAuthScopedDb
 ): Promise<void> {
-  const redis = getOAuthRedis();
-  const stateKey = `${OAUTH_STATE_PREFIX}${teamId}`;
-
-  // Retrieve and delete PKCE state
-  const state = await redis.get<OAuthState>(stateKey);
+  const sealed = getCookie(getOAuthCookieName(secureCookies));
+  const state = sealed ? await unsealOAuthState(sealed) : null;
   if (!state) {
     throw new Error('OAuth session expired or not found');
   }
-  await redis.del(stateKey);
+
+  if (state.teamId !== teamId) {
+    throw new Error('OAuth state does not match the active team');
+  }
+
+  if (!csrfState || state.csrfState !== csrfState) {
+    throw new Error('OAuth state mismatch');
+  }
 
   // Exchange code for API key
   const { apiKey } = await exchangeCodeForKey(code, state.codeVerifier);
