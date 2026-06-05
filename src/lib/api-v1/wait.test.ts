@@ -10,13 +10,20 @@ describe('parseWaitParam', () => {
     expect(parseWaitParam('1500ms')).toBe(1_500);
   });
 
-  it('clamps to the 90s cap and treats garbage/empty as 0', () => {
+  it('clamps to the 90s cap and treats absent/0 as 0', () => {
     expect(parseWaitParam('600s')).toBe(90_000);
     expect(parseWaitParam('0')).toBe(0);
     expect(parseWaitParam('')).toBe(0);
+    expect(parseWaitParam('   ')).toBe(0);
     expect(parseWaitParam(null)).toBe(0);
-    expect(parseWaitParam('soon')).toBe(0);
-    expect(parseWaitParam('-5')).toBe(0);
+    expect(parseWaitParam(undefined)).toBe(0);
+  });
+
+  it('returns null for a present-but-malformed value (caller 400s)', () => {
+    expect(parseWaitParam('soon')).toBeNull();
+    expect(parseWaitParam('-5')).toBeNull();
+    expect(parseWaitParam('30x')).toBeNull();
+    expect(parseWaitParam('1.5s')).toBeNull();
   });
 });
 

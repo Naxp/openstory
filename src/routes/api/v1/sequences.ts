@@ -15,7 +15,7 @@
  */
 
 import { authWithTeamRequestMiddleware } from '@/functions/middleware';
-import { runOneShotCreate } from '@/lib/api-v1/create';
+import { type OneShotWaitResult, runOneShotCreate } from '@/lib/api-v1/create';
 import { apiJsonError, runApiV1Handler } from '@/lib/api-v1/errors';
 import { apiCreateSequenceSchema } from '@/lib/api-v1/input-schema';
 import {
@@ -61,7 +61,7 @@ export const Route = createFileRoute('/api/v1/sequences')({
           // entry to avoid handing an agent a stale duplicate `status`.
           const waitMs = getWaitMs(request);
           if (waitMs > 0) {
-            const sequences = await Promise.all(
+            const sequences: OneShotWaitResult['sequences'] = await Promise.all(
               result.sequences.map(async (entry) => {
                 const { value, changed, done } = await longPoll({
                   waitMs,
@@ -100,7 +100,10 @@ export const Route = createFileRoute('/api/v1/sequences')({
                 };
               })
             );
-            return Response.json({ ...result, sequences }, { status: 202 });
+            return Response.json(
+              { ...result, sequences } satisfies OneShotWaitResult,
+              { status: 202 }
+            );
           }
 
           return Response.json(result, { status: 202 });

@@ -14,8 +14,8 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as MarketingRouteImport } from './routes/_marketing'
-import { Route as ProtectedRouteRouteImport } from './routes/_protected/route'
 import { Route as AuthRouteRouteImport } from './routes/_auth/route'
+import { Route as AppRouteRouteImport } from './routes/_app/route'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as MarketingIndexRouteImport } from './routes/_marketing/index'
 import { Route as MetaOgLinkedinRouteImport } from './routes/meta/og-linkedin'
@@ -25,19 +25,19 @@ import { Route as GiftCodeRouteImport } from './routes/gift/$code'
 import { Route as DocsLlmsDotmdRouteImport } from './routes/docs/llms[.]md'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as ApiRealtimeRouteImport } from './routes/api/realtime'
-import { Route as ProtectedCreditsRouteImport } from './routes/_protected/credits'
 import { Route as MarketingTermsRouteImport } from './routes/_marketing/terms'
 import { Route as MarketingPrivacyRouteImport } from './routes/_marketing/privacy'
 import { Route as AuthVerifyRouteImport } from './routes/_auth/verify'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
+import { Route as AppCreditsRouteImport } from './routes/_app/credits'
 import { Route as ApiTestRouteRouteImport } from './routes/api/test/route'
-import { Route as ProtectedSettingsRouteRouteImport } from './routes/_protected/settings/route'
-import { Route as ProtectedAdminRouteRouteImport } from './routes/_protected/admin/route'
+import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/route'
+import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as ApiV1IndexRouteImport } from './routes/api/v1/index'
-import { Route as ProtectedTalentIndexRouteImport } from './routes/_protected/talent/index'
-import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/settings/index'
-import { Route as ProtectedSequencesIndexRouteImport } from './routes/_protected/sequences/index'
-import { Route as ProtectedLocationsIndexRouteImport } from './routes/_protected/locations/index'
+import { Route as AppTalentIndexRouteImport } from './routes/_app/talent/index'
+import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
+import { Route as AppSequencesIndexRouteImport } from './routes/_app/sequences/index'
+import { Route as AppLocationsIndexRouteImport } from './routes/_app/locations/index'
 import { Route as ApiV1SequencesRouteImport } from './routes/api/v1/sequences'
 import { Route as ApiV1OpenapiDotjsonRouteImport } from './routes/api/v1/openapi[.]json'
 import { Route as ApiTestVerifyRouteImport } from './routes/api/test/verify'
@@ -56,24 +56,24 @@ import { Route as ApiOpenrouterCallbackRouteImport } from './routes/api/openrout
 import { Route as ApiDevMemoryRouteImport } from './routes/api/dev/memory'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ProtectedTalentIdRouteImport } from './routes/_protected/talent/$id'
-import { Route as ProtectedSettingsPasskeysRouteImport } from './routes/_protected/settings/passkeys'
-import { Route as ProtectedSettingsDeveloperRouteImport } from './routes/_protected/settings/developer'
-import { Route as ProtectedSettingsApiKeysRouteImport } from './routes/_protected/settings/api-keys'
-import { Route as ProtectedSequencesNewRouteImport } from './routes/_protected/sequences/new'
-import { Route as ProtectedLocationsLocationIdRouteImport } from './routes/_protected/locations/$locationId'
-import { Route as ProtectedAdminUsageRouteImport } from './routes/_protected/admin/usage'
-import { Route as ProtectedSequencesIdRouteRouteImport } from './routes/_protected/sequences/$id/route'
+import { Route as AppTalentIdRouteImport } from './routes/_app/talent/$id'
+import { Route as AppSettingsPasskeysRouteImport } from './routes/_app/settings/passkeys'
+import { Route as AppSettingsDeveloperRouteImport } from './routes/_app/settings/developer'
+import { Route as AppSettingsApiKeysRouteImport } from './routes/_app/settings/api-keys'
+import { Route as AppSequencesNewRouteImport } from './routes/_app/sequences/new'
+import { Route as AppLocationsLocationIdRouteImport } from './routes/_app/locations/$locationId'
+import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
+import { Route as AppSequencesIdRouteRouteImport } from './routes/_app/sequences/$id/route'
 import { Route as ApiV1SequencesIdRouteImport } from './routes/api/v1/sequences.$id'
-import { Route as ProtectedSequencesIdTheatreRouteImport } from './routes/_protected/sequences/$id/theatre'
-import { Route as ProtectedSequencesIdScriptRouteImport } from './routes/_protected/sequences/$id/script'
-import { Route as ProtectedSequencesIdScenesRouteImport } from './routes/_protected/sequences/$id/scenes'
-import { Route as ProtectedSequencesIdMusicRouteImport } from './routes/_protected/sequences/$id/music'
-import { Route as ProtectedSequencesIdElementsRouteImport } from './routes/_protected/sequences/$id/elements'
-import { Route as ProtectedSequencesIdLocationsIndexRouteImport } from './routes/_protected/sequences/$id/locations/index'
-import { Route as ProtectedSequencesIdCastIndexRouteImport } from './routes/_protected/sequences/$id/cast/index'
-import { Route as ProtectedSequencesIdLocationsLocationIdRouteImport } from './routes/_protected/sequences/$id/locations/$locationId'
-import { Route as ProtectedSequencesIdCastCharacterIdRouteImport } from './routes/_protected/sequences/$id/cast/$characterId'
+import { Route as AppSequencesIdTheatreRouteImport } from './routes/_app/sequences/$id/theatre'
+import { Route as AppSequencesIdScriptRouteImport } from './routes/_app/sequences/$id/script'
+import { Route as AppSequencesIdScenesRouteImport } from './routes/_app/sequences/$id/scenes'
+import { Route as AppSequencesIdMusicRouteImport } from './routes/_app/sequences/$id/music'
+import { Route as AppSequencesIdElementsRouteImport } from './routes/_app/sequences/$id/elements'
+import { Route as AppSequencesIdLocationsIndexRouteImport } from './routes/_app/sequences/$id/locations/index'
+import { Route as AppSequencesIdCastIndexRouteImport } from './routes/_app/sequences/$id/cast/index'
+import { Route as AppSequencesIdLocationsLocationIdRouteImport } from './routes/_app/sequences/$id/locations/$locationId'
+import { Route as AppSequencesIdCastCharacterIdRouteImport } from './routes/_app/sequences/$id/cast/$characterId'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -99,12 +99,12 @@ const MarketingRoute = MarketingRouteImport.update({
   id: '/_marketing',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedRouteRoute = ProtectedRouteRouteImport.update({
-  id: '/_protected',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthRouteRoute = AuthRouteRouteImport.update({
   id: '/_auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRouteRoute = AppRouteRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsIndexRoute = DocsIndexRouteImport.update({
@@ -152,11 +152,6 @@ const ApiRealtimeRoute = ApiRealtimeRouteImport.update({
   path: '/api/realtime',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedCreditsRoute = ProtectedCreditsRouteImport.update({
-  id: '/credits',
-  path: '/credits',
-  getParentRoute: () => ProtectedRouteRoute,
-} as any)
 const MarketingTermsRoute = MarketingTermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -177,45 +172,50 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/login',
   getParentRoute: () => AuthRouteRoute,
 } as any)
+const AppCreditsRoute = AppCreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const ApiTestRouteRoute = ApiTestRouteRouteImport.update({
   id: '/api/test',
   path: '/api/test',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedSettingsRouteRoute = ProtectedSettingsRouteRouteImport.update({
+const AppSettingsRouteRoute = AppSettingsRouteRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
-const ProtectedAdminRouteRoute = ProtectedAdminRouteRouteImport.update({
+const AppAdminRouteRoute = AppAdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const ApiV1IndexRoute = ApiV1IndexRouteImport.update({
   id: '/api/v1/',
   path: '/api/v1/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedTalentIndexRoute = ProtectedTalentIndexRouteImport.update({
+const AppTalentIndexRoute = AppTalentIndexRouteImport.update({
   id: '/talent/',
   path: '/talent/',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
-const ProtectedSettingsIndexRoute = ProtectedSettingsIndexRouteImport.update({
+const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ProtectedSettingsRouteRoute,
+  getParentRoute: () => AppSettingsRouteRoute,
 } as any)
-const ProtectedSequencesIndexRoute = ProtectedSequencesIndexRouteImport.update({
+const AppSequencesIndexRoute = AppSequencesIndexRouteImport.update({
   id: '/sequences/',
   path: '/sequences/',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
-const ProtectedLocationsIndexRoute = ProtectedLocationsIndexRouteImport.update({
+const AppLocationsIndexRoute = AppLocationsIndexRouteImport.update({
   id: '/locations/',
   path: '/locations/',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
 const ApiV1SequencesRoute = ApiV1SequencesRouteImport.update({
   id: '/api/v1/sequences',
@@ -307,109 +307,98 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProtectedTalentIdRoute = ProtectedTalentIdRouteImport.update({
+const AppTalentIdRoute = AppTalentIdRouteImport.update({
   id: '/talent/$id',
   path: '/talent/$id',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
-const ProtectedSettingsPasskeysRoute =
-  ProtectedSettingsPasskeysRouteImport.update({
-    id: '/passkeys',
-    path: '/passkeys',
-    getParentRoute: () => ProtectedSettingsRouteRoute,
-  } as any)
-const ProtectedSettingsDeveloperRoute =
-  ProtectedSettingsDeveloperRouteImport.update({
-    id: '/developer',
-    path: '/developer',
-    getParentRoute: () => ProtectedSettingsRouteRoute,
-  } as any)
-const ProtectedSettingsApiKeysRoute =
-  ProtectedSettingsApiKeysRouteImport.update({
-    id: '/api-keys',
-    path: '/api-keys',
-    getParentRoute: () => ProtectedSettingsRouteRoute,
-  } as any)
-const ProtectedSequencesNewRoute = ProtectedSequencesNewRouteImport.update({
+const AppSettingsPasskeysRoute = AppSettingsPasskeysRouteImport.update({
+  id: '/passkeys',
+  path: '/passkeys',
+  getParentRoute: () => AppSettingsRouteRoute,
+} as any)
+const AppSettingsDeveloperRoute = AppSettingsDeveloperRouteImport.update({
+  id: '/developer',
+  path: '/developer',
+  getParentRoute: () => AppSettingsRouteRoute,
+} as any)
+const AppSettingsApiKeysRoute = AppSettingsApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => AppSettingsRouteRoute,
+} as any)
+const AppSequencesNewRoute = AppSequencesNewRouteImport.update({
   id: '/sequences/new',
   path: '/sequences/new',
-  getParentRoute: () => ProtectedRouteRoute,
+  getParentRoute: () => AppRouteRoute,
 } as any)
-const ProtectedLocationsLocationIdRoute =
-  ProtectedLocationsLocationIdRouteImport.update({
-    id: '/locations/$locationId',
-    path: '/locations/$locationId',
-    getParentRoute: () => ProtectedRouteRoute,
-  } as any)
-const ProtectedAdminUsageRoute = ProtectedAdminUsageRouteImport.update({
+const AppLocationsLocationIdRoute = AppLocationsLocationIdRouteImport.update({
+  id: '/locations/$locationId',
+  path: '/locations/$locationId',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppAdminUsageRoute = AppAdminUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
-  getParentRoute: () => ProtectedAdminRouteRoute,
+  getParentRoute: () => AppAdminRouteRoute,
 } as any)
-const ProtectedSequencesIdRouteRoute =
-  ProtectedSequencesIdRouteRouteImport.update({
-    id: '/sequences/$id',
-    path: '/sequences/$id',
-    getParentRoute: () => ProtectedRouteRoute,
-  } as any)
+const AppSequencesIdRouteRoute = AppSequencesIdRouteRouteImport.update({
+  id: '/sequences/$id',
+  path: '/sequences/$id',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const ApiV1SequencesIdRoute = ApiV1SequencesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ApiV1SequencesRoute,
 } as any)
-const ProtectedSequencesIdTheatreRoute =
-  ProtectedSequencesIdTheatreRouteImport.update({
-    id: '/theatre',
-    path: '/theatre',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdScriptRoute =
-  ProtectedSequencesIdScriptRouteImport.update({
-    id: '/script',
-    path: '/script',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdScenesRoute =
-  ProtectedSequencesIdScenesRouteImport.update({
-    id: '/scenes',
-    path: '/scenes',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdMusicRoute =
-  ProtectedSequencesIdMusicRouteImport.update({
-    id: '/music',
-    path: '/music',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdElementsRoute =
-  ProtectedSequencesIdElementsRouteImport.update({
-    id: '/elements',
-    path: '/elements',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdLocationsIndexRoute =
-  ProtectedSequencesIdLocationsIndexRouteImport.update({
+const AppSequencesIdTheatreRoute = AppSequencesIdTheatreRouteImport.update({
+  id: '/theatre',
+  path: '/theatre',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdScriptRoute = AppSequencesIdScriptRouteImport.update({
+  id: '/script',
+  path: '/script',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdScenesRoute = AppSequencesIdScenesRouteImport.update({
+  id: '/scenes',
+  path: '/scenes',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdMusicRoute = AppSequencesIdMusicRouteImport.update({
+  id: '/music',
+  path: '/music',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdElementsRoute = AppSequencesIdElementsRouteImport.update({
+  id: '/elements',
+  path: '/elements',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdLocationsIndexRoute =
+  AppSequencesIdLocationsIndexRouteImport.update({
     id: '/locations/',
     path: '/locations/',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
+    getParentRoute: () => AppSequencesIdRouteRoute,
   } as any)
-const ProtectedSequencesIdCastIndexRoute =
-  ProtectedSequencesIdCastIndexRouteImport.update({
-    id: '/cast/',
-    path: '/cast/',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
-  } as any)
-const ProtectedSequencesIdLocationsLocationIdRoute =
-  ProtectedSequencesIdLocationsLocationIdRouteImport.update({
+const AppSequencesIdCastIndexRoute = AppSequencesIdCastIndexRouteImport.update({
+  id: '/cast/',
+  path: '/cast/',
+  getParentRoute: () => AppSequencesIdRouteRoute,
+} as any)
+const AppSequencesIdLocationsLocationIdRoute =
+  AppSequencesIdLocationsLocationIdRouteImport.update({
     id: '/locations/$locationId',
     path: '/locations/$locationId',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
+    getParentRoute: () => AppSequencesIdRouteRoute,
   } as any)
-const ProtectedSequencesIdCastCharacterIdRoute =
-  ProtectedSequencesIdCastCharacterIdRouteImport.update({
+const AppSequencesIdCastCharacterIdRoute =
+  AppSequencesIdCastCharacterIdRouteImport.update({
     id: '/cast/$characterId',
     path: '/cast/$characterId',
-    getParentRoute: () => ProtectedSequencesIdRouteRoute,
+    getParentRoute: () => AppSequencesIdRouteRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -418,14 +407,14 @@ export interface FileRoutesByFullPath {
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin': typeof ProtectedAdminRouteRouteWithChildren
-  '/settings': typeof ProtectedSettingsRouteRouteWithChildren
+  '/admin': typeof AppAdminRouteRouteWithChildren
+  '/settings': typeof AppSettingsRouteRouteWithChildren
   '/api/test': typeof ApiTestRouteRouteWithChildren
+  '/credits': typeof AppCreditsRoute
   '/login': typeof AuthLoginRoute
   '/verify': typeof AuthVerifyRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
-  '/credits': typeof ProtectedCreditsRoute
   '/api/realtime': typeof ApiRealtimeRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/llms.md': typeof DocsLlmsDotmdRoute
@@ -434,14 +423,14 @@ export interface FileRoutesByFullPath {
   '/meta/og-github': typeof MetaOgGithubRoute
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/docs/': typeof DocsIndexRoute
-  '/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
-  '/admin/usage': typeof ProtectedAdminUsageRoute
-  '/locations/$locationId': typeof ProtectedLocationsLocationIdRoute
-  '/sequences/new': typeof ProtectedSequencesNewRoute
-  '/settings/api-keys': typeof ProtectedSettingsApiKeysRoute
-  '/settings/developer': typeof ProtectedSettingsDeveloperRoute
-  '/settings/passkeys': typeof ProtectedSettingsPasskeysRoute
-  '/talent/$id': typeof ProtectedTalentIdRoute
+  '/sequences/$id': typeof AppSequencesIdRouteRouteWithChildren
+  '/admin/usage': typeof AppAdminUsageRoute
+  '/locations/$locationId': typeof AppLocationsLocationIdRoute
+  '/sequences/new': typeof AppSequencesNewRoute
+  '/settings/api-keys': typeof AppSettingsApiKeysRoute
+  '/settings/developer': typeof AppSettingsDeveloperRoute
+  '/settings/passkeys': typeof AppSettingsPasskeysRoute
+  '/talent/$id': typeof AppTalentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
@@ -460,34 +449,34 @@ export interface FileRoutesByFullPath {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
-  '/locations/': typeof ProtectedLocationsIndexRoute
-  '/sequences/': typeof ProtectedSequencesIndexRoute
-  '/settings/': typeof ProtectedSettingsIndexRoute
-  '/talent/': typeof ProtectedTalentIndexRoute
+  '/locations/': typeof AppLocationsIndexRoute
+  '/sequences/': typeof AppSequencesIndexRoute
+  '/settings/': typeof AppSettingsIndexRoute
+  '/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
-  '/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
-  '/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
-  '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
-  '/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
-  '/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
+  '/sequences/$id/music': typeof AppSequencesIdMusicRoute
+  '/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
+  '/sequences/$id/script': typeof AppSequencesIdScriptRoute
+  '/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
-  '/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
-  '/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
-  '/sequences/$id/cast/': typeof ProtectedSequencesIdCastIndexRoute
-  '/sequences/$id/locations/': typeof ProtectedSequencesIdLocationsIndexRoute
+  '/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
+  '/sequences/$id/locations/$locationId': typeof AppSequencesIdLocationsLocationIdRoute
+  '/sequences/$id/cast/': typeof AppSequencesIdCastIndexRoute
+  '/sequences/$id/locations/': typeof AppSequencesIdLocationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof MarketingIndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/admin': typeof ProtectedAdminRouteRouteWithChildren
+  '/admin': typeof AppAdminRouteRouteWithChildren
   '/api/test': typeof ApiTestRouteRouteWithChildren
+  '/credits': typeof AppCreditsRoute
   '/login': typeof AuthLoginRoute
   '/verify': typeof AuthVerifyRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
-  '/credits': typeof ProtectedCreditsRoute
   '/api/realtime': typeof ApiRealtimeRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/llms.md': typeof DocsLlmsDotmdRoute
@@ -496,14 +485,14 @@ export interface FileRoutesByTo {
   '/meta/og-github': typeof MetaOgGithubRoute
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/docs': typeof DocsIndexRoute
-  '/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
-  '/admin/usage': typeof ProtectedAdminUsageRoute
-  '/locations/$locationId': typeof ProtectedLocationsLocationIdRoute
-  '/sequences/new': typeof ProtectedSequencesNewRoute
-  '/settings/api-keys': typeof ProtectedSettingsApiKeysRoute
-  '/settings/developer': typeof ProtectedSettingsDeveloperRoute
-  '/settings/passkeys': typeof ProtectedSettingsPasskeysRoute
-  '/talent/$id': typeof ProtectedTalentIdRoute
+  '/sequences/$id': typeof AppSequencesIdRouteRouteWithChildren
+  '/admin/usage': typeof AppAdminUsageRoute
+  '/locations/$locationId': typeof AppLocationsLocationIdRoute
+  '/sequences/new': typeof AppSequencesNewRoute
+  '/settings/api-keys': typeof AppSettingsApiKeysRoute
+  '/settings/developer': typeof AppSettingsDeveloperRoute
+  '/settings/passkeys': typeof AppSettingsPasskeysRoute
+  '/talent/$id': typeof AppTalentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
@@ -522,39 +511,39 @@ export interface FileRoutesByTo {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
-  '/locations': typeof ProtectedLocationsIndexRoute
-  '/sequences': typeof ProtectedSequencesIndexRoute
-  '/settings': typeof ProtectedSettingsIndexRoute
-  '/talent': typeof ProtectedTalentIndexRoute
+  '/locations': typeof AppLocationsIndexRoute
+  '/sequences': typeof AppSequencesIndexRoute
+  '/settings': typeof AppSettingsIndexRoute
+  '/talent': typeof AppTalentIndexRoute
   '/api/v1': typeof ApiV1IndexRoute
-  '/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
-  '/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
-  '/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
-  '/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
-  '/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
+  '/sequences/$id/music': typeof AppSequencesIdMusicRoute
+  '/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
+  '/sequences/$id/script': typeof AppSequencesIdScriptRoute
+  '/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
-  '/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
-  '/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
-  '/sequences/$id/cast': typeof ProtectedSequencesIdCastIndexRoute
-  '/sequences/$id/locations': typeof ProtectedSequencesIdLocationsIndexRoute
+  '/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
+  '/sequences/$id/locations/$locationId': typeof AppSequencesIdLocationsLocationIdRoute
+  '/sequences/$id/cast': typeof AppSequencesIdCastIndexRoute
+  '/sequences/$id/locations': typeof AppSequencesIdLocationsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/_app': typeof AppRouteRouteWithChildren
   '/_auth': typeof AuthRouteRouteWithChildren
-  '/_protected': typeof ProtectedRouteRouteWithChildren
   '/_marketing': typeof MarketingRouteWithChildren
   '/docs': typeof DocsRouteWithChildren
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/_protected/admin': typeof ProtectedAdminRouteRouteWithChildren
-  '/_protected/settings': typeof ProtectedSettingsRouteRouteWithChildren
+  '/_app/admin': typeof AppAdminRouteRouteWithChildren
+  '/_app/settings': typeof AppSettingsRouteRouteWithChildren
   '/api/test': typeof ApiTestRouteRouteWithChildren
+  '/_app/credits': typeof AppCreditsRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/verify': typeof AuthVerifyRoute
   '/_marketing/privacy': typeof MarketingPrivacyRoute
   '/_marketing/terms': typeof MarketingTermsRoute
-  '/_protected/credits': typeof ProtectedCreditsRoute
   '/api/realtime': typeof ApiRealtimeRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/llms.md': typeof DocsLlmsDotmdRoute
@@ -564,14 +553,14 @@ export interface FileRoutesById {
   '/meta/og-linkedin': typeof MetaOgLinkedinRoute
   '/_marketing/': typeof MarketingIndexRoute
   '/docs/': typeof DocsIndexRoute
-  '/_protected/sequences/$id': typeof ProtectedSequencesIdRouteRouteWithChildren
-  '/_protected/admin/usage': typeof ProtectedAdminUsageRoute
-  '/_protected/locations/$locationId': typeof ProtectedLocationsLocationIdRoute
-  '/_protected/sequences/new': typeof ProtectedSequencesNewRoute
-  '/_protected/settings/api-keys': typeof ProtectedSettingsApiKeysRoute
-  '/_protected/settings/developer': typeof ProtectedSettingsDeveloperRoute
-  '/_protected/settings/passkeys': typeof ProtectedSettingsPasskeysRoute
-  '/_protected/talent/$id': typeof ProtectedTalentIdRoute
+  '/_app/sequences/$id': typeof AppSequencesIdRouteRouteWithChildren
+  '/_app/admin/usage': typeof AppAdminUsageRoute
+  '/_app/locations/$locationId': typeof AppLocationsLocationIdRoute
+  '/_app/sequences/new': typeof AppSequencesNewRoute
+  '/_app/settings/api-keys': typeof AppSettingsApiKeysRoute
+  '/_app/settings/developer': typeof AppSettingsDeveloperRoute
+  '/_app/settings/passkeys': typeof AppSettingsPasskeysRoute
+  '/_app/talent/$id': typeof AppTalentIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
@@ -590,21 +579,21 @@ export interface FileRoutesById {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
-  '/_protected/locations/': typeof ProtectedLocationsIndexRoute
-  '/_protected/sequences/': typeof ProtectedSequencesIndexRoute
-  '/_protected/settings/': typeof ProtectedSettingsIndexRoute
-  '/_protected/talent/': typeof ProtectedTalentIndexRoute
+  '/_app/locations/': typeof AppLocationsIndexRoute
+  '/_app/sequences/': typeof AppSequencesIndexRoute
+  '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
-  '/_protected/sequences/$id/elements': typeof ProtectedSequencesIdElementsRoute
-  '/_protected/sequences/$id/music': typeof ProtectedSequencesIdMusicRoute
-  '/_protected/sequences/$id/scenes': typeof ProtectedSequencesIdScenesRoute
-  '/_protected/sequences/$id/script': typeof ProtectedSequencesIdScriptRoute
-  '/_protected/sequences/$id/theatre': typeof ProtectedSequencesIdTheatreRoute
+  '/_app/sequences/$id/elements': typeof AppSequencesIdElementsRoute
+  '/_app/sequences/$id/music': typeof AppSequencesIdMusicRoute
+  '/_app/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
+  '/_app/sequences/$id/script': typeof AppSequencesIdScriptRoute
+  '/_app/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
-  '/_protected/sequences/$id/cast/$characterId': typeof ProtectedSequencesIdCastCharacterIdRoute
-  '/_protected/sequences/$id/locations/$locationId': typeof ProtectedSequencesIdLocationsLocationIdRoute
-  '/_protected/sequences/$id/cast/': typeof ProtectedSequencesIdCastIndexRoute
-  '/_protected/sequences/$id/locations/': typeof ProtectedSequencesIdLocationsIndexRoute
+  '/_app/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
+  '/_app/sequences/$id/locations/$locationId': typeof AppSequencesIdLocationsLocationIdRoute
+  '/_app/sequences/$id/cast/': typeof AppSequencesIdCastIndexRoute
+  '/_app/sequences/$id/locations/': typeof AppSequencesIdLocationsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -617,11 +606,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/settings'
     | '/api/test'
+    | '/credits'
     | '/login'
     | '/verify'
     | '/privacy'
     | '/terms'
-    | '/credits'
     | '/api/realtime'
     | '/docs/$'
     | '/docs/llms.md'
@@ -679,11 +668,11 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/admin'
     | '/api/test'
+    | '/credits'
     | '/login'
     | '/verify'
     | '/privacy'
     | '/terms'
-    | '/credits'
     | '/api/realtime'
     | '/docs/$'
     | '/docs/llms.md'
@@ -735,21 +724,21 @@ export interface FileRouteTypes {
     | '/sequences/$id/locations'
   id:
     | '__root__'
+    | '/_app'
     | '/_auth'
-    | '/_protected'
     | '/_marketing'
     | '/docs'
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
-    | '/_protected/admin'
-    | '/_protected/settings'
+    | '/_app/admin'
+    | '/_app/settings'
     | '/api/test'
+    | '/_app/credits'
     | '/_auth/login'
     | '/_auth/verify'
     | '/_marketing/privacy'
     | '/_marketing/terms'
-    | '/_protected/credits'
     | '/api/realtime'
     | '/docs/$'
     | '/docs/llms.md'
@@ -759,14 +748,14 @@ export interface FileRouteTypes {
     | '/meta/og-linkedin'
     | '/_marketing/'
     | '/docs/'
-    | '/_protected/sequences/$id'
-    | '/_protected/admin/usage'
-    | '/_protected/locations/$locationId'
-    | '/_protected/sequences/new'
-    | '/_protected/settings/api-keys'
-    | '/_protected/settings/developer'
-    | '/_protected/settings/passkeys'
-    | '/_protected/talent/$id'
+    | '/_app/sequences/$id'
+    | '/_app/admin/usage'
+    | '/_app/locations/$locationId'
+    | '/_app/sequences/new'
+    | '/_app/settings/api-keys'
+    | '/_app/settings/developer'
+    | '/_app/settings/passkeys'
+    | '/_app/talent/$id'
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/dev/memory'
@@ -785,26 +774,26 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
-    | '/_protected/locations/'
-    | '/_protected/sequences/'
-    | '/_protected/settings/'
-    | '/_protected/talent/'
+    | '/_app/locations/'
+    | '/_app/sequences/'
+    | '/_app/settings/'
+    | '/_app/talent/'
     | '/api/v1/'
-    | '/_protected/sequences/$id/elements'
-    | '/_protected/sequences/$id/music'
-    | '/_protected/sequences/$id/scenes'
-    | '/_protected/sequences/$id/script'
-    | '/_protected/sequences/$id/theatre'
+    | '/_app/sequences/$id/elements'
+    | '/_app/sequences/$id/music'
+    | '/_app/sequences/$id/scenes'
+    | '/_app/sequences/$id/script'
+    | '/_app/sequences/$id/theatre'
     | '/api/v1/sequences/$id'
-    | '/_protected/sequences/$id/cast/$characterId'
-    | '/_protected/sequences/$id/locations/$locationId'
-    | '/_protected/sequences/$id/cast/'
-    | '/_protected/sequences/$id/locations/'
+    | '/_app/sequences/$id/cast/$characterId'
+    | '/_app/sequences/$id/locations/$locationId'
+    | '/_app/sequences/$id/cast/'
+    | '/_app/sequences/$id/locations/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  AppRouteRoute: typeof AppRouteRouteWithChildren
   AuthRouteRoute: typeof AuthRouteRouteWithChildren
-  ProtectedRouteRoute: typeof ProtectedRouteRouteWithChildren
   MarketingRoute: typeof MarketingRouteWithChildren
   DocsRoute: typeof DocsRouteWithChildren
   LlmsDottxtRoute: typeof LlmsDottxtRoute
@@ -864,18 +853,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_protected': {
-      id: '/_protected'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof ProtectedRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_auth': {
       id: '/_auth'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AuthRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/': {
@@ -941,13 +930,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRealtimeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_protected/credits': {
-      id: '/_protected/credits'
-      path: '/credits'
-      fullPath: '/credits'
-      preLoaderRoute: typeof ProtectedCreditsRouteImport
-      parentRoute: typeof ProtectedRouteRoute
-    }
     '/_marketing/terms': {
       id: '/_marketing/terms'
       path: '/terms'
@@ -976,6 +958,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof AuthRouteRoute
     }
+    '/_app/credits': {
+      id: '/_app/credits'
+      path: '/credits'
+      fullPath: '/credits'
+      preLoaderRoute: typeof AppCreditsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/api/test': {
       id: '/api/test'
       path: '/api/test'
@@ -983,19 +972,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTestRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_protected/settings': {
-      id: '/_protected/settings'
+    '/_app/settings': {
+      id: '/_app/settings'
       path: '/settings'
       fullPath: '/settings'
-      preLoaderRoute: typeof ProtectedSettingsRouteRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppSettingsRouteRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/admin': {
-      id: '/_protected/admin'
+    '/_app/admin': {
+      id: '/_app/admin'
       path: '/admin'
       fullPath: '/admin'
-      preLoaderRoute: typeof ProtectedAdminRouteRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppAdminRouteRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/api/v1/': {
       id: '/api/v1/'
@@ -1004,33 +993,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_protected/talent/': {
-      id: '/_protected/talent/'
+    '/_app/talent/': {
+      id: '/_app/talent/'
       path: '/talent'
       fullPath: '/talent/'
-      preLoaderRoute: typeof ProtectedTalentIndexRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppTalentIndexRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/settings/': {
-      id: '/_protected/settings/'
+    '/_app/settings/': {
+      id: '/_app/settings/'
       path: '/'
       fullPath: '/settings/'
-      preLoaderRoute: typeof ProtectedSettingsIndexRouteImport
-      parentRoute: typeof ProtectedSettingsRouteRoute
+      preLoaderRoute: typeof AppSettingsIndexRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
     }
-    '/_protected/sequences/': {
-      id: '/_protected/sequences/'
+    '/_app/sequences/': {
+      id: '/_app/sequences/'
       path: '/sequences'
       fullPath: '/sequences/'
-      preLoaderRoute: typeof ProtectedSequencesIndexRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppSequencesIndexRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/locations/': {
-      id: '/_protected/locations/'
+    '/_app/locations/': {
+      id: '/_app/locations/'
       path: '/locations'
       fullPath: '/locations/'
-      preLoaderRoute: typeof ProtectedLocationsIndexRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppLocationsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/api/v1/sequences': {
       id: '/api/v1/sequences'
@@ -1158,61 +1147,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_protected/talent/$id': {
-      id: '/_protected/talent/$id'
+    '/_app/talent/$id': {
+      id: '/_app/talent/$id'
       path: '/talent/$id'
       fullPath: '/talent/$id'
-      preLoaderRoute: typeof ProtectedTalentIdRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppTalentIdRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/settings/passkeys': {
-      id: '/_protected/settings/passkeys'
+    '/_app/settings/passkeys': {
+      id: '/_app/settings/passkeys'
       path: '/passkeys'
       fullPath: '/settings/passkeys'
-      preLoaderRoute: typeof ProtectedSettingsPasskeysRouteImport
-      parentRoute: typeof ProtectedSettingsRouteRoute
+      preLoaderRoute: typeof AppSettingsPasskeysRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
     }
-    '/_protected/settings/developer': {
-      id: '/_protected/settings/developer'
+    '/_app/settings/developer': {
+      id: '/_app/settings/developer'
       path: '/developer'
       fullPath: '/settings/developer'
-      preLoaderRoute: typeof ProtectedSettingsDeveloperRouteImport
-      parentRoute: typeof ProtectedSettingsRouteRoute
+      preLoaderRoute: typeof AppSettingsDeveloperRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
     }
-    '/_protected/settings/api-keys': {
-      id: '/_protected/settings/api-keys'
+    '/_app/settings/api-keys': {
+      id: '/_app/settings/api-keys'
       path: '/api-keys'
       fullPath: '/settings/api-keys'
-      preLoaderRoute: typeof ProtectedSettingsApiKeysRouteImport
-      parentRoute: typeof ProtectedSettingsRouteRoute
+      preLoaderRoute: typeof AppSettingsApiKeysRouteImport
+      parentRoute: typeof AppSettingsRouteRoute
     }
-    '/_protected/sequences/new': {
-      id: '/_protected/sequences/new'
+    '/_app/sequences/new': {
+      id: '/_app/sequences/new'
       path: '/sequences/new'
       fullPath: '/sequences/new'
-      preLoaderRoute: typeof ProtectedSequencesNewRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppSequencesNewRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/locations/$locationId': {
-      id: '/_protected/locations/$locationId'
+    '/_app/locations/$locationId': {
+      id: '/_app/locations/$locationId'
       path: '/locations/$locationId'
       fullPath: '/locations/$locationId'
-      preLoaderRoute: typeof ProtectedLocationsLocationIdRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppLocationsLocationIdRouteImport
+      parentRoute: typeof AppRouteRoute
     }
-    '/_protected/admin/usage': {
-      id: '/_protected/admin/usage'
+    '/_app/admin/usage': {
+      id: '/_app/admin/usage'
       path: '/usage'
       fullPath: '/admin/usage'
-      preLoaderRoute: typeof ProtectedAdminUsageRouteImport
-      parentRoute: typeof ProtectedAdminRouteRoute
+      preLoaderRoute: typeof AppAdminUsageRouteImport
+      parentRoute: typeof AppAdminRouteRoute
     }
-    '/_protected/sequences/$id': {
-      id: '/_protected/sequences/$id'
+    '/_app/sequences/$id': {
+      id: '/_app/sequences/$id'
       path: '/sequences/$id'
       fullPath: '/sequences/$id'
-      preLoaderRoute: typeof ProtectedSequencesIdRouteRouteImport
-      parentRoute: typeof ProtectedRouteRoute
+      preLoaderRoute: typeof AppSequencesIdRouteRouteImport
+      parentRoute: typeof AppRouteRoute
     }
     '/api/v1/sequences/$id': {
       id: '/api/v1/sequences/$id'
@@ -1221,71 +1210,158 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1SequencesIdRouteImport
       parentRoute: typeof ApiV1SequencesRoute
     }
-    '/_protected/sequences/$id/theatre': {
-      id: '/_protected/sequences/$id/theatre'
+    '/_app/sequences/$id/theatre': {
+      id: '/_app/sequences/$id/theatre'
       path: '/theatre'
       fullPath: '/sequences/$id/theatre'
-      preLoaderRoute: typeof ProtectedSequencesIdTheatreRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdTheatreRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/script': {
-      id: '/_protected/sequences/$id/script'
+    '/_app/sequences/$id/script': {
+      id: '/_app/sequences/$id/script'
       path: '/script'
       fullPath: '/sequences/$id/script'
-      preLoaderRoute: typeof ProtectedSequencesIdScriptRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdScriptRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/scenes': {
-      id: '/_protected/sequences/$id/scenes'
+    '/_app/sequences/$id/scenes': {
+      id: '/_app/sequences/$id/scenes'
       path: '/scenes'
       fullPath: '/sequences/$id/scenes'
-      preLoaderRoute: typeof ProtectedSequencesIdScenesRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdScenesRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/music': {
-      id: '/_protected/sequences/$id/music'
+    '/_app/sequences/$id/music': {
+      id: '/_app/sequences/$id/music'
       path: '/music'
       fullPath: '/sequences/$id/music'
-      preLoaderRoute: typeof ProtectedSequencesIdMusicRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdMusicRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/elements': {
-      id: '/_protected/sequences/$id/elements'
+    '/_app/sequences/$id/elements': {
+      id: '/_app/sequences/$id/elements'
       path: '/elements'
       fullPath: '/sequences/$id/elements'
-      preLoaderRoute: typeof ProtectedSequencesIdElementsRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdElementsRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/locations/': {
-      id: '/_protected/sequences/$id/locations/'
+    '/_app/sequences/$id/locations/': {
+      id: '/_app/sequences/$id/locations/'
       path: '/locations'
       fullPath: '/sequences/$id/locations/'
-      preLoaderRoute: typeof ProtectedSequencesIdLocationsIndexRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdLocationsIndexRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/cast/': {
-      id: '/_protected/sequences/$id/cast/'
+    '/_app/sequences/$id/cast/': {
+      id: '/_app/sequences/$id/cast/'
       path: '/cast'
       fullPath: '/sequences/$id/cast/'
-      preLoaderRoute: typeof ProtectedSequencesIdCastIndexRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdCastIndexRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/locations/$locationId': {
-      id: '/_protected/sequences/$id/locations/$locationId'
+    '/_app/sequences/$id/locations/$locationId': {
+      id: '/_app/sequences/$id/locations/$locationId'
       path: '/locations/$locationId'
       fullPath: '/sequences/$id/locations/$locationId'
-      preLoaderRoute: typeof ProtectedSequencesIdLocationsLocationIdRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdLocationsLocationIdRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
-    '/_protected/sequences/$id/cast/$characterId': {
-      id: '/_protected/sequences/$id/cast/$characterId'
+    '/_app/sequences/$id/cast/$characterId': {
+      id: '/_app/sequences/$id/cast/$characterId'
       path: '/cast/$characterId'
       fullPath: '/sequences/$id/cast/$characterId'
-      preLoaderRoute: typeof ProtectedSequencesIdCastCharacterIdRouteImport
-      parentRoute: typeof ProtectedSequencesIdRouteRoute
+      preLoaderRoute: typeof AppSequencesIdCastCharacterIdRouteImport
+      parentRoute: typeof AppSequencesIdRouteRoute
     }
   }
 }
+
+interface AppAdminRouteRouteChildren {
+  AppAdminUsageRoute: typeof AppAdminUsageRoute
+}
+
+const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
+  AppAdminUsageRoute: AppAdminUsageRoute,
+}
+
+const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
+  AppAdminRouteRouteChildren,
+)
+
+interface AppSettingsRouteRouteChildren {
+  AppSettingsApiKeysRoute: typeof AppSettingsApiKeysRoute
+  AppSettingsDeveloperRoute: typeof AppSettingsDeveloperRoute
+  AppSettingsPasskeysRoute: typeof AppSettingsPasskeysRoute
+  AppSettingsIndexRoute: typeof AppSettingsIndexRoute
+}
+
+const AppSettingsRouteRouteChildren: AppSettingsRouteRouteChildren = {
+  AppSettingsApiKeysRoute: AppSettingsApiKeysRoute,
+  AppSettingsDeveloperRoute: AppSettingsDeveloperRoute,
+  AppSettingsPasskeysRoute: AppSettingsPasskeysRoute,
+  AppSettingsIndexRoute: AppSettingsIndexRoute,
+}
+
+const AppSettingsRouteRouteWithChildren =
+  AppSettingsRouteRoute._addFileChildren(AppSettingsRouteRouteChildren)
+
+interface AppSequencesIdRouteRouteChildren {
+  AppSequencesIdElementsRoute: typeof AppSequencesIdElementsRoute
+  AppSequencesIdMusicRoute: typeof AppSequencesIdMusicRoute
+  AppSequencesIdScenesRoute: typeof AppSequencesIdScenesRoute
+  AppSequencesIdScriptRoute: typeof AppSequencesIdScriptRoute
+  AppSequencesIdTheatreRoute: typeof AppSequencesIdTheatreRoute
+  AppSequencesIdCastCharacterIdRoute: typeof AppSequencesIdCastCharacterIdRoute
+  AppSequencesIdLocationsLocationIdRoute: typeof AppSequencesIdLocationsLocationIdRoute
+  AppSequencesIdCastIndexRoute: typeof AppSequencesIdCastIndexRoute
+  AppSequencesIdLocationsIndexRoute: typeof AppSequencesIdLocationsIndexRoute
+}
+
+const AppSequencesIdRouteRouteChildren: AppSequencesIdRouteRouteChildren = {
+  AppSequencesIdElementsRoute: AppSequencesIdElementsRoute,
+  AppSequencesIdMusicRoute: AppSequencesIdMusicRoute,
+  AppSequencesIdScenesRoute: AppSequencesIdScenesRoute,
+  AppSequencesIdScriptRoute: AppSequencesIdScriptRoute,
+  AppSequencesIdTheatreRoute: AppSequencesIdTheatreRoute,
+  AppSequencesIdCastCharacterIdRoute: AppSequencesIdCastCharacterIdRoute,
+  AppSequencesIdLocationsLocationIdRoute:
+    AppSequencesIdLocationsLocationIdRoute,
+  AppSequencesIdCastIndexRoute: AppSequencesIdCastIndexRoute,
+  AppSequencesIdLocationsIndexRoute: AppSequencesIdLocationsIndexRoute,
+}
+
+const AppSequencesIdRouteRouteWithChildren =
+  AppSequencesIdRouteRoute._addFileChildren(AppSequencesIdRouteRouteChildren)
+
+interface AppRouteRouteChildren {
+  AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
+  AppSettingsRouteRoute: typeof AppSettingsRouteRouteWithChildren
+  AppCreditsRoute: typeof AppCreditsRoute
+  AppSequencesIdRouteRoute: typeof AppSequencesIdRouteRouteWithChildren
+  AppLocationsLocationIdRoute: typeof AppLocationsLocationIdRoute
+  AppSequencesNewRoute: typeof AppSequencesNewRoute
+  AppTalentIdRoute: typeof AppTalentIdRoute
+  AppLocationsIndexRoute: typeof AppLocationsIndexRoute
+  AppSequencesIndexRoute: typeof AppSequencesIndexRoute
+  AppTalentIndexRoute: typeof AppTalentIndexRoute
+}
+
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppAdminRouteRoute: AppAdminRouteRouteWithChildren,
+  AppSettingsRouteRoute: AppSettingsRouteRouteWithChildren,
+  AppCreditsRoute: AppCreditsRoute,
+  AppSequencesIdRouteRoute: AppSequencesIdRouteRouteWithChildren,
+  AppLocationsLocationIdRoute: AppLocationsLocationIdRoute,
+  AppSequencesNewRoute: AppSequencesNewRoute,
+  AppTalentIdRoute: AppTalentIdRoute,
+  AppLocationsIndexRoute: AppLocationsIndexRoute,
+  AppSequencesIndexRoute: AppSequencesIndexRoute,
+  AppTalentIndexRoute: AppTalentIndexRoute,
+}
+
+const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
+  AppRouteRouteChildren,
+)
 
 interface AuthRouteRouteChildren {
   AuthLoginRoute: typeof AuthLoginRoute
@@ -1299,100 +1375,6 @@ const AuthRouteRouteChildren: AuthRouteRouteChildren = {
 
 const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
   AuthRouteRouteChildren,
-)
-
-interface ProtectedAdminRouteRouteChildren {
-  ProtectedAdminUsageRoute: typeof ProtectedAdminUsageRoute
-}
-
-const ProtectedAdminRouteRouteChildren: ProtectedAdminRouteRouteChildren = {
-  ProtectedAdminUsageRoute: ProtectedAdminUsageRoute,
-}
-
-const ProtectedAdminRouteRouteWithChildren =
-  ProtectedAdminRouteRoute._addFileChildren(ProtectedAdminRouteRouteChildren)
-
-interface ProtectedSettingsRouteRouteChildren {
-  ProtectedSettingsApiKeysRoute: typeof ProtectedSettingsApiKeysRoute
-  ProtectedSettingsDeveloperRoute: typeof ProtectedSettingsDeveloperRoute
-  ProtectedSettingsPasskeysRoute: typeof ProtectedSettingsPasskeysRoute
-  ProtectedSettingsIndexRoute: typeof ProtectedSettingsIndexRoute
-}
-
-const ProtectedSettingsRouteRouteChildren: ProtectedSettingsRouteRouteChildren =
-  {
-    ProtectedSettingsApiKeysRoute: ProtectedSettingsApiKeysRoute,
-    ProtectedSettingsDeveloperRoute: ProtectedSettingsDeveloperRoute,
-    ProtectedSettingsPasskeysRoute: ProtectedSettingsPasskeysRoute,
-    ProtectedSettingsIndexRoute: ProtectedSettingsIndexRoute,
-  }
-
-const ProtectedSettingsRouteRouteWithChildren =
-  ProtectedSettingsRouteRoute._addFileChildren(
-    ProtectedSettingsRouteRouteChildren,
-  )
-
-interface ProtectedSequencesIdRouteRouteChildren {
-  ProtectedSequencesIdElementsRoute: typeof ProtectedSequencesIdElementsRoute
-  ProtectedSequencesIdMusicRoute: typeof ProtectedSequencesIdMusicRoute
-  ProtectedSequencesIdScenesRoute: typeof ProtectedSequencesIdScenesRoute
-  ProtectedSequencesIdScriptRoute: typeof ProtectedSequencesIdScriptRoute
-  ProtectedSequencesIdTheatreRoute: typeof ProtectedSequencesIdTheatreRoute
-  ProtectedSequencesIdCastCharacterIdRoute: typeof ProtectedSequencesIdCastCharacterIdRoute
-  ProtectedSequencesIdLocationsLocationIdRoute: typeof ProtectedSequencesIdLocationsLocationIdRoute
-  ProtectedSequencesIdCastIndexRoute: typeof ProtectedSequencesIdCastIndexRoute
-  ProtectedSequencesIdLocationsIndexRoute: typeof ProtectedSequencesIdLocationsIndexRoute
-}
-
-const ProtectedSequencesIdRouteRouteChildren: ProtectedSequencesIdRouteRouteChildren =
-  {
-    ProtectedSequencesIdElementsRoute: ProtectedSequencesIdElementsRoute,
-    ProtectedSequencesIdMusicRoute: ProtectedSequencesIdMusicRoute,
-    ProtectedSequencesIdScenesRoute: ProtectedSequencesIdScenesRoute,
-    ProtectedSequencesIdScriptRoute: ProtectedSequencesIdScriptRoute,
-    ProtectedSequencesIdTheatreRoute: ProtectedSequencesIdTheatreRoute,
-    ProtectedSequencesIdCastCharacterIdRoute:
-      ProtectedSequencesIdCastCharacterIdRoute,
-    ProtectedSequencesIdLocationsLocationIdRoute:
-      ProtectedSequencesIdLocationsLocationIdRoute,
-    ProtectedSequencesIdCastIndexRoute: ProtectedSequencesIdCastIndexRoute,
-    ProtectedSequencesIdLocationsIndexRoute:
-      ProtectedSequencesIdLocationsIndexRoute,
-  }
-
-const ProtectedSequencesIdRouteRouteWithChildren =
-  ProtectedSequencesIdRouteRoute._addFileChildren(
-    ProtectedSequencesIdRouteRouteChildren,
-  )
-
-interface ProtectedRouteRouteChildren {
-  ProtectedAdminRouteRoute: typeof ProtectedAdminRouteRouteWithChildren
-  ProtectedSettingsRouteRoute: typeof ProtectedSettingsRouteRouteWithChildren
-  ProtectedCreditsRoute: typeof ProtectedCreditsRoute
-  ProtectedSequencesIdRouteRoute: typeof ProtectedSequencesIdRouteRouteWithChildren
-  ProtectedLocationsLocationIdRoute: typeof ProtectedLocationsLocationIdRoute
-  ProtectedSequencesNewRoute: typeof ProtectedSequencesNewRoute
-  ProtectedTalentIdRoute: typeof ProtectedTalentIdRoute
-  ProtectedLocationsIndexRoute: typeof ProtectedLocationsIndexRoute
-  ProtectedSequencesIndexRoute: typeof ProtectedSequencesIndexRoute
-  ProtectedTalentIndexRoute: typeof ProtectedTalentIndexRoute
-}
-
-const ProtectedRouteRouteChildren: ProtectedRouteRouteChildren = {
-  ProtectedAdminRouteRoute: ProtectedAdminRouteRouteWithChildren,
-  ProtectedSettingsRouteRoute: ProtectedSettingsRouteRouteWithChildren,
-  ProtectedCreditsRoute: ProtectedCreditsRoute,
-  ProtectedSequencesIdRouteRoute: ProtectedSequencesIdRouteRouteWithChildren,
-  ProtectedLocationsLocationIdRoute: ProtectedLocationsLocationIdRoute,
-  ProtectedSequencesNewRoute: ProtectedSequencesNewRoute,
-  ProtectedTalentIdRoute: ProtectedTalentIdRoute,
-  ProtectedLocationsIndexRoute: ProtectedLocationsIndexRoute,
-  ProtectedSequencesIndexRoute: ProtectedSequencesIndexRoute,
-  ProtectedTalentIndexRoute: ProtectedTalentIndexRoute,
-}
-
-const ProtectedRouteRouteWithChildren = ProtectedRouteRoute._addFileChildren(
-  ProtectedRouteRouteChildren,
 )
 
 interface MarketingRouteChildren {
@@ -1468,8 +1450,8 @@ const ApiV1SequencesRouteWithChildren = ApiV1SequencesRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
+  AppRouteRoute: AppRouteRouteWithChildren,
   AuthRouteRoute: AuthRouteRouteWithChildren,
-  ProtectedRouteRoute: ProtectedRouteRouteWithChildren,
   MarketingRoute: MarketingRouteWithChildren,
   DocsRoute: DocsRouteWithChildren,
   LlmsDottxtRoute: LlmsDottxtRoute,

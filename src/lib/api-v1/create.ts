@@ -19,9 +19,17 @@ import { createSequenceSchema } from '@/lib/schemas/sequence.schemas';
 import { createSequences } from '@/lib/sequences/create-sequences';
 import { STORAGE_BUCKETS, type StorageBucket } from '@/lib/storage/buckets';
 import { createLibraryTalent } from '@/lib/talent/create-library-talent';
+import type { SequenceStatus } from '@/lib/db/schema/sequences';
 import { createSequenceLink } from './discovery';
-import { API_V1_BASE, type HalLinks, getLink, waitLink } from './hal';
+import {
+  API_V1_BASE,
+  type HalLinks,
+  type HalResource,
+  getLink,
+  waitLink,
+} from './hal';
 import type { ApiCreateSequenceInput } from './input-schema';
+import type { SequenceState } from './state';
 import {
   ingestElements,
   resolveLocationIds,
@@ -36,17 +44,43 @@ export type OneShotContext = {
   teamId: string;
 };
 
+/** One created sequence in the (non-`?wait`) create response. */
+export type OneShotSequenceEntry = {
+  id: string;
+  status: SequenceStatus;
+  workflowRunId: string;
+  statusUrl: string;
+  /** Affordances for this sequence: read status, or long-poll it. */
+  _links: HalLinks;
+};
+
 export type OneShotResult = {
-  sequences: Array<{
-    id: string;
-    status: string;
-    workflowRunId: string;
-    statusUrl: string;
-    /** Affordances for this sequence: read status, or long-poll it. */
-    _links: HalLinks;
-  }>;
+  sequences: OneShotSequenceEntry[];
   enhancedScript?: string;
   /** Affordances available from the create response itself. */
+  _links: HalLinks;
+};
+
+/**
+ * One created sequence in the `?wait` create response: the redundant top-level
+ * status/statusUrl/_links are dropped in favour of the live embedded `state`,
+ * plus the long-poll outcome flags.
+ */
+export type OneShotWaitSequenceEntry = {
+  id: string;
+  workflowRunId: string;
+  /** First progress snapshot (with its own `_links`); `null` if unavailable. */
+  state: HalResource<SequenceState> | null;
+  /** The sequence advanced during the wait. */
+  waitChanged: boolean;
+  /** The sequence reached a terminal state during the wait. */
+  waitDone: boolean;
+};
+
+/** The `?wait` variant of {@link OneShotResult} (the wire shape the route returns). */
+export type OneShotWaitResult = {
+  sequences: OneShotWaitSequenceEntry[];
+  enhancedScript?: string;
   _links: HalLinks;
 };
 

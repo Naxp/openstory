@@ -5,7 +5,7 @@
  */
 
 import { handleApiError, OpenStoryError } from '@/lib/errors';
-import { getLogger } from '@/lib/observability/logger';
+import { getLogger, toErrorPayload } from '@/lib/observability/logger';
 import { z } from 'zod';
 
 const logger = getLogger(['openstory', 'api-v1']);
@@ -45,6 +45,8 @@ export async function runApiV1Handler(
       logger.error('api/v1 handler failed: {code} {message}', {
         code: handled.code,
         message: handled.message,
+        // Keep the original error (stack/cause) so a 500 is traceable later.
+        err: toErrorPayload(error),
       });
     }
     return apiJsonError(handled.statusCode, handled.code, handled.message);

@@ -9,17 +9,28 @@
  * after an action.
  *
  * Accepted forms: `30` (seconds), `45s`, `2m`, `1500ms`. Clamped to
- * [0, MAX_WAIT_MS]; `0`/absent/garbage means "return immediately" (normal GET).
+ * [0, MAX_WAIT_MS]; `0`/absent means "return immediately" (normal GET). A
+ * present-but-unparseable value is rejected (so an agent that mis-guesses the
+ * syntax learns via a 400 rather than a silent downgrade to a busy-poll).
  */
+
+import { ValidationError } from '@/lib/errors';
 
 const MAX_WAIT_MS = 90_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 
-/** Parse a `wait` value (`"60s"`, `"2m"`, `"1500ms"`, `"30"`) into clamped ms. */
-export function parseWaitParam(raw: string | null | undefined): number {
-  if (!raw) return 0;
-  const match = /^(\d+)(ms|s|m)?$/.exec(raw.trim().toLowerCase());
-  if (!match) return 0;
+/**
+ * Parse a `wait` value into clamped ms.
+ *   - absent (null / empty / whitespace) → `0` (immediate, valid)
+ *   - valid (`"60s"`, `"2m"`, `"1500ms"`, `"30"`) → clamped `[0, MAX_WAIT_MS]`
+ *   - present but malformed (`"soon"`, `"-5"`, `"30x"`) → `null`
+ */
+export function parseWaitParam(raw: string | null | undefined): number | null {
+  if (raw == null) return 0;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === '') return 0;
+  const match = /^(\d+)(ms|s|m)?$/.exec(trimmed);
+  if (!match) return null;
   const value = Number(match[1]);
   const unit = match[2] ?? 's';
   const ms =
@@ -27,9 +38,19 @@ export function parseWaitParam(raw: string | null | undefined): number {
   return Math.min(Math.max(ms, 0), MAX_WAIT_MS);
 }
 
-/** Read and parse the `wait` query param from a request URL. */
+/**
+ * Read and parse the `wait` query param, throwing a 400 `ValidationError` when
+ * it's present but unparseable. Call this BEFORE any side effects so a bad
+ * `wait` fails fast.
+ */
 export function getWaitMs(request: Request): number {
-  return parseWaitParam(new URL(request.url).searchParams.get('wait'));
+  const ms = parseWaitParam(new URL(request.url).searchParams.get('wait'));
+  if (ms === null) {
+    throw new ValidationError(
+      'Invalid "wait" parameter. Use a duration like "60s", "2m", "1500ms", or a number of seconds (capped at 90s).'
+    );
+  }
+  return ms;
 }
 
 /** Abort-aware sleep. Resolves early (does not reject) if the signal aborts. */

@@ -63,7 +63,7 @@ function exampleCreateBody(): unknown {
   });
 }
 
-/** The `create-sequence` affordance — shared by the root and 404 hints. */
+/** The `create-sequence` affordance, advertised in the root document. */
 export function createSequenceLink(): HalLink {
   return {
     href: `${API_V1_BASE}/sequences`,

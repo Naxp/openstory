@@ -31,7 +31,7 @@ export const Route = createFileRoute('/api/v1/sequences/$id')({
         runApiV1Handler(async () => {
           const waitMs = getWaitMs(request);
 
-          const { value, changed } = await longPoll({
+          const { value, changed, done } = await longPoll({
             waitMs,
             signal: request.signal,
             load: async () => {
@@ -48,10 +48,15 @@ export const Route = createFileRoute('/api/v1/sequences/$id')({
           });
 
           return Response.json(withSequenceStateLinks(value), {
-            // Tell a long-poller whether they timed out (unchanged) or got a real
-            // progress event, without diffing the body themselves.
+            // Tell a long-poller whether it timed out (unchanged), advanced, or
+            // reached a terminal state — without diffing the body itself.
             headers:
-              waitMs > 0 ? { 'X-Wait-Changed': String(changed) } : undefined,
+              waitMs > 0
+                ? {
+                    'X-Wait-Changed': String(changed),
+                    'X-Wait-Done': String(done),
+                  }
+                : undefined,
           });
         }),
     },

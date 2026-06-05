@@ -8,13 +8,19 @@
  */
 
 import type { ScopedDb } from '@/lib/db/scoped';
+import { FRAME_GENERATION_STATUSES } from '@/lib/db/schema/frames';
+import type { MusicStatus, SequenceStatus } from '@/lib/db/schema/sequences';
 import type { Sequence } from '@/types/database';
 import { API_V1_BASE, type HalResource, waitLink, withLinks } from './hal';
 
-type FrameGenStatus = 'pending' | 'generating' | 'completed' | 'failed';
+type FrameGenStatus = (typeof FRAME_GENERATION_STATUSES)[number];
 
 /** Sequence statuses past which no further generation happens. */
-const TERMINAL_STATUSES = new Set(['completed', 'failed', 'archived']);
+const TERMINAL_STATUSES = new Set<SequenceStatus>([
+  'completed',
+  'failed',
+  'archived',
+]);
 
 type SequenceStateFrame = {
   id: string;
@@ -27,14 +33,13 @@ type SequenceStateFrame = {
 export type SequenceState = {
   id: string;
   title: string;
-  /** draft | processing | completed | failed | archived */
-  status: string;
+  status: SequenceStatus;
   statusError: string | null;
   aspectRatio: string;
   createdAt: string;
   updatedAt: string;
   poster: { url: string } | null;
-  music: { status: string; url: string | null };
+  music: { status: MusicStatus; url: string | null };
   frames: SequenceStateFrame[];
   counts: {
     frames: number;
