@@ -12,7 +12,15 @@ import {
 import type { ScopedDb } from '@/lib/db/scoped';
 
 /** The slice of ScopedDb this flow needs — keeps tests cast-free. */
-type OAuthScopedDb = { apiKeys: Pick<ScopedDb['apiKeys'], 'saveKey'> };
+type OAuthScopedDb = {
+  apiKeys: Pick<ScopedDb['apiKeys'], 'saveKey' | 'listKeys'>;
+};
+
+/**
+ * How recently an OAuth key must have been saved to count as the winning
+ * half of a double-delivered callback (observed hits are ~2s apart).
+ */
+const DOUBLE_DELIVERY_WINDOW_MS = 2 * 60 * 1000;
 
 type CompleteOAuthParams = {
   /** Team resolved from the authenticated session on the callback request. */
@@ -51,7 +59,18 @@ export async function completeOpenRouterOAuth(
   }
 
   // Exchange code for API key
-  const { apiKey } = await exchangeCodeForKey(code, state.codeVerifier);
+  let apiKey: string;
+  try {
+    ({ apiKey } = await exchangeCodeForKey(code, state.codeVerifier));
+  } catch (error) {
+    // OpenRouter's redirect occasionally delivers the callback twice (two
+    // top-level navigations ~2s apart). The first request redeems the
+    // single-use code and saves the key; this one then fails the exchange
+    // with "Invalid code". If a fresh OAuth key exists, the flow actually
+    // succeeded — don't overwrite the user's outcome with an error.
+    if (await wasJustConnected(scopedDb)) return;
+    throw error;
+  }
 
   // Save the key (encrypted)
   await scopedDb.apiKeys.saveKey({
@@ -59,4 +78,16 @@ export async function completeOpenRouterOAuth(
     apiKey,
     source: 'oauth',
   });
+}
+
+/** True if a concurrent callback request already completed this flow. */
+async function wasJustConnected(scopedDb: OAuthScopedDb): Promise<boolean> {
+  const keys = await scopedDb.apiKeys.listKeys();
+  return keys.some(
+    (key) =>
+      key.provider === 'openrouter' &&
+      key.source === 'oauth' &&
+      !key.isInvalid &&
+      Date.now() - key.createdAt.getTime() < DOUBLE_DELIVERY_WINDOW_MS
+  );
 }

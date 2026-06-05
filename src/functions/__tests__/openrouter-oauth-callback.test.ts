@@ -34,22 +34,37 @@ const validState: OAuthState = {
   csrfState: 'csrf-nonce-xyz789',
 };
 
-function makeScopedDb() {
+type ApiKeyInfo = Awaited<ReturnType<ScopedDb['apiKeys']['listKeys']>>[number];
+
+function makeKeyInfo(overrides: Partial<ApiKeyInfo> = {}): ApiKeyInfo {
+  return {
+    id: '01JKEY000000000000000000000',
+    provider: 'openrouter',
+    keyHint: '****wkey',
+    source: 'oauth',
+    isActive: true,
+    isInvalid: false,
+    invalidReason: null,
+    lastValidatedAt: null,
+    addedBy: USER_ID,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+function makeScopedDb(existingKeys: ApiKeyInfo[] = []) {
   const saveKey = vi.fn<ScopedDb['apiKeys']['saveKey']>((params) =>
-    Promise.resolve({
-      id: '01JKEY000000000000000000000',
-      provider: params.provider,
-      keyHint: '****wkey',
-      source: params.source ?? 'oauth',
-      isActive: true,
-      isInvalid: false,
-      invalidReason: null,
-      lastValidatedAt: null,
-      addedBy: USER_ID,
-      createdAt: new Date(),
-    })
+    Promise.resolve(
+      makeKeyInfo({
+        provider: params.provider,
+        source: params.source ?? 'oauth',
+      })
+    )
   );
-  return { scopedDb: { apiKeys: { saveKey } }, saveKey };
+  const listKeys = vi.fn<ScopedDb['apiKeys']['listKeys']>(() =>
+    Promise.resolve(existingKeys)
+  );
+  return { scopedDb: { apiKeys: { saveKey, listKeys } }, saveKey, listKeys };
 }
 
 async function setStateCookie(state: OAuthState, secure = true) {
@@ -191,5 +206,57 @@ describe('completeOpenRouterOAuth', () => {
     );
 
     expect(saveKey).toHaveBeenCalled();
+  });
+
+  describe('double-delivered callback', () => {
+    it('treats an exchange failure as success when a fresh OAuth key exists', async () => {
+      await setStateCookie(validState);
+      exchangeCodeForKeyMock.mockRejectedValue(
+        new Error('OpenRouter key exchange failed (403): Invalid code')
+      );
+      // The concurrent winning request saved a key seconds ago
+      const { scopedDb, saveKey } = makeScopedDb([makeKeyInfo()]);
+
+      await expect(
+        completeOpenRouterOAuth(
+          {
+            teamId: TEAM_ID,
+            code: 'auth-code',
+            csrfState: validState.csrfState,
+            secureCookies: true,
+          },
+          scopedDb
+        )
+      ).resolves.toBeUndefined();
+      expect(saveKey).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['stale', { createdAt: new Date(Date.now() - 10 * 60 * 1000) }],
+      ['manual', { source: 'manual' as const }],
+      ['invalid', { isInvalid: true }],
+      ['other provider', { provider: 'fal' as const }],
+    ])(
+      'rethrows the exchange failure when the existing key is %s',
+      async (_label, overrides) => {
+        await setStateCookie(validState);
+        exchangeCodeForKeyMock.mockRejectedValue(
+          new Error('OpenRouter key exchange failed (403): Invalid code')
+        );
+        const { scopedDb } = makeScopedDb([makeKeyInfo(overrides)]);
+
+        await expect(
+          completeOpenRouterOAuth(
+            {
+              teamId: TEAM_ID,
+              code: 'auth-code',
+              csrfState: validState.csrfState,
+              secureCookies: true,
+            },
+            scopedDb
+          )
+        ).rejects.toThrow('OpenRouter key exchange failed');
+      }
+    );
   });
 });
