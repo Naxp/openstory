@@ -2,7 +2,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { Style } from '@/types/database';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import type { FC, KeyboardEvent } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { getStyleGradient } from './style-gradient';
@@ -86,7 +86,7 @@ const StyleCard: FC<StyleCardProps> = ({
       <CardContent className="p-0">
         <div className="relative aspect-square overflow-hidden rounded-t-lg bg-muted">
           {style.previewUrl && !imgError ? (
-            <Image
+            <AppImage
               src={style.previewUrl}
               alt={`${style.name} style preview`}
               layout="fullWidth"

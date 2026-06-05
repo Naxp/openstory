@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useMemo, useState } from 'react';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EvalSceneCell } from './eval-scene-cell';
@@ -294,13 +294,13 @@ const SequencePosterCell: React.FC<SequencePosterCellProps> = ({
   if (previewUrl) {
     return (
       <Link {...linkProps} className={baseClass} style={style}>
-        <Image
+        <AppImage
           src={previewUrl}
           alt={`${sequence.title || 'Sequence'} poster`}
           className="w-full h-full object-cover"
           loading="lazy"
-          width={1000}
-          height={1000}
+          width={400}
+          height={400}
         />
         {modelBadge}
       </Link>

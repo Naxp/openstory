@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { EvalSequenceMetadata } from './eval-sequence-metadata';
 import { EvalSceneCell } from './eval-scene-cell';
 import type { DialogTab } from './eval-cell-dialog';
@@ -67,13 +67,13 @@ export const EvalSequenceRow: React.FC<EvalSequenceRowProps> = ({
             aria-label={`Play ${sequence.title || 'sequence'} in theatre`}
             className="w-full h-full flex items-center justify-center cursor-pointer appearance-none bg-transparent border-0 p-0"
           >
-            <Image
+            <AppImage
               src={previewUrl}
               alt={`${sequence.title || 'Sequence'} preview`}
               className="max-w-full max-h-full object-contain rounded-md"
               loading="lazy"
-              width={1000}
-              height={1000}
+              width={400}
+              height={400}
             />
           </button>
         ) : (
