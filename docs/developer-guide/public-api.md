@@ -31,7 +31,7 @@ x-api-key: <key>
 ```
 
 Keys are team-scoped — a key only ever sees its own team's sequences — and rate
-limited to **1 request/second**; exceeding it returns `429` with a `Retry-After`
+limited to **10 requests/second**; exceeding it returns `429` with a `Retry-After`
 header.
 
 ## Create a sequence

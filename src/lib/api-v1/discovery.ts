@@ -28,7 +28,7 @@ Authentication:
   Every endpoint except this root requires an API key. Create one in the
   dashboard under Settings → Developer. Send it as either
   'Authorization: Bearer <key>' or 'x-api-key: <key>'. Keys are team-scoped and
-  rate limited to 1 request/second.
+  rate limited to 10 requests/second.
 
 Conventions (apply to every endpoint):
   - ?wait=<duration> long-polls: instead of busy-polling, append e.g. ?wait=60s
