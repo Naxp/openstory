@@ -258,6 +258,16 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
         });
       }
 
+      // Flip this model's own variant row to `failed` regardless of `isPrimary`
+      // (#547). An added (secondary) model's row was pre-stamped `pending`; left
+      // alone it would spin `generating` forever and block re-adding the model.
+      // Update-only — never inserts a row for a primary that never had one.
+      await scopedDb.sequenceVariants.markMusicFailed(
+        input.sequenceId,
+        model,
+        error
+      );
+
       try {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.audio:progress',

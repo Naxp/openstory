@@ -155,6 +155,32 @@ export function createSequenceVariantsMethods(db: Database) {
       return { variant, divergent: false };
     },
 
+    /**
+     * Flip an EXISTING primary (non-divergent) music variant row to `failed`
+     * (#547). Update-only: it never inserts — a primary model's first generation
+     * has no pre-stamped row — and never overwrites a `completed` alternate.
+     * Mirrors the image/motion `onFailure` variant write so an added audio model
+     * whose generation fails leaves `pending` and becomes re-addable instead of
+     * spinning `generating` forever.
+     */
+    markMusicFailed: async (
+      sequenceId: string,
+      model: string,
+      error: string
+    ): Promise<void> => {
+      await db
+        .update(sequenceMusicVariants)
+        .set({ status: 'failed', error, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sequenceMusicVariants.sequenceId, sequenceId),
+            eq(sequenceMusicVariants.model, model),
+            sql`${sequenceMusicVariants.divergedAt} IS NULL`,
+            sql`${sequenceMusicVariants.status} != 'completed'`
+          )
+        );
+    },
+
     getMusicById: async (
       variantId: string
     ): Promise<SequenceMusicVariant | null> => {

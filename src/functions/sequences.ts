@@ -539,6 +539,47 @@ export function selectEligibleVideoFrames(frames: readonly Frame[]): Frame[] {
 }
 
 /**
+ * Sum a sequence's per-frame durations in seconds, falling back to 10s for any
+ * frame whose duration is unknown. Shared by the add-audio and generate-music
+ * paths; callers apply their own empty-sequence floor (`|| 30`).
+ */
+export function sumFrameDurationsSeconds(
+  frames: ReadonlyArray<Pick<Frame, 'durationMs' | 'metadata'>>
+): number {
+  return frames.reduce((sum, frame) => {
+    const seconds = frame.durationMs
+      ? frame.durationMs / 1000
+      : (frame.metadata?.metadata?.durationSeconds ?? 10);
+    return sum + seconds;
+  }, 0);
+}
+
+/**
+ * Build the music-workflow input for an ADD-MODEL audio run (#547). Always
+ * `isPrimary: false`: an added audio model lands as an alternate in
+ * `sequence_music_variants` and must never repoint the live `sequences.music*`
+ * primary track. The music workflow defaults `isPrimary` to true (#546), so
+ * omitting it here would clobber the user's working primary on both success AND
+ * failure — the exact regression this helper exists to prevent.
+ */
+export function buildAddAudioMusicInput(args: {
+  baseCtx: { userId: string; teamId: string; sequenceId: string };
+  prompt: string;
+  tags: string;
+  durationSeconds: number;
+  model: MusicWorkflowInput['model'];
+}): MusicWorkflowInput {
+  return {
+    ...args.baseCtx,
+    prompt: args.prompt,
+    tags: args.tags,
+    duration: args.durationSeconds,
+    model: args.model,
+    isPrimary: false,
+  };
+}
+
+/**
  * Add a new image / video / audio model to an existing sequence (#547).
  * Generates that model's output for every eligible frame (image/video) or the
  * whole sequence (audio) using the EXISTING prompts — no re-analysis. Each unit
@@ -582,15 +623,7 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         );
       }
       const allFrames = await scopedDb.frames.listBySequence(sequence.id);
-      const totalDuration =
-        allFrames.reduce(
-          (sum, f) =>
-            sum +
-            (f.durationMs
-              ? f.durationMs / 1000
-              : (f.metadata?.metadata?.durationSeconds ?? 10)),
-          0
-        ) || 30;
+      const totalDuration = sumFrameDurationsSeconds(allFrames) || 30;
 
       await requireCredits(scopedDb, estimateAudioCost(model, totalDuration), {
         errorMessage: 'Insufficient credits to add this audio model',
@@ -605,13 +638,13 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
         status: 'pending',
       });
 
-      const musicInput: MusicWorkflowInput = {
-        ...baseCtx,
+      const musicInput = buildAddAudioMusicInput({
+        baseCtx,
         prompt: sequence.musicPrompt,
         tags: sequence.musicTags,
-        duration: totalDuration,
+        durationSeconds: totalDuration,
         model,
-      };
+      });
       try {
         const workflowRunId = await triggerWorkflow('/music', musicInput, {
           deduplicationId: `add-audio-${sequence.id}-${model}-${Date.now()}`,
@@ -1037,12 +1070,7 @@ export const generateMusicFn = createServerFn({ method: 'POST' })
       data.sequenceId
     );
 
-    const totalDuration = allFrames.reduce((sum, frame) => {
-      const seconds = frame.durationMs
-        ? frame.durationMs / 1000
-        : (frame.metadata?.metadata?.durationSeconds ?? 10);
-      return sum + seconds;
-    }, 0);
+    const totalDuration = sumFrameDurationsSeconds(allFrames);
 
     const baseInput = {
       userId: user.id,

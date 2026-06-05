@@ -16,9 +16,11 @@ import { describe, expect, it } from 'vitest';
 import type { Frame, FrameVariant } from '@/lib/db/schema';
 import {
   assertModelNotAlreadyAdded,
+  buildAddAudioMusicInput,
   buildSequencePromoteUpdate,
   selectEligibleVideoFrames,
   selectPromotableVariants,
+  sumFrameDurationsSeconds,
 } from '@/functions/sequences';
 
 const NOW = new Date('2026-06-03T00:00:00.000Z');
@@ -281,5 +283,66 @@ describe('selectEligibleVideoFrames (#547)', () => {
       'ok-1',
       'ok-2',
     ]);
+  });
+});
+
+describe('sumFrameDurationsSeconds (#547)', () => {
+  it('sums durationMs (ms → seconds) across frames', () => {
+    const frames = [
+      makeFrame({ id: 'f1', durationMs: 3000 }),
+      makeFrame({ id: 'f2', durationMs: 4500 }),
+    ];
+    expect(sumFrameDurationsSeconds(frames)).toBe(7.5);
+  });
+
+  it('falls back to 10s per frame when durationMs and metadata are absent', () => {
+    const frames = [
+      makeFrame({ id: 'unknown-1', durationMs: null, metadata: null }),
+      makeFrame({ id: 'unknown-2', durationMs: null, metadata: null }),
+    ];
+    expect(sumFrameDurationsSeconds(frames)).toBe(20);
+  });
+
+  it('returns 0 for an empty sequence (so the caller `|| 30` floor applies)', () => {
+    expect(sumFrameDurationsSeconds([])).toBe(0);
+    // Mirrors the add-audio / generate-music call sites.
+    expect(sumFrameDurationsSeconds([]) || 30).toBe(30);
+  });
+});
+
+describe('buildAddAudioMusicInput (#547)', () => {
+  const baseCtx = { userId: 'u1', teamId: 't1', sequenceId: 'seq-1' };
+
+  it('always sets isPrimary:false so an added audio model never repoints the primary track', () => {
+    const input = buildAddAudioMusicInput({
+      baseCtx,
+      prompt: 'epic score',
+      tags: 'cinematic',
+      durationSeconds: 42,
+      model: 'elevenlabs_music',
+    });
+    // The regression guard: the music workflow defaults isPrimary to true, which
+    // would clobber the live sequences.music* columns on success AND failure.
+    expect(input.isPrimary).toBe(false);
+  });
+
+  it('threads the context, prompt, tags, duration and model through unchanged', () => {
+    const input = buildAddAudioMusicInput({
+      baseCtx,
+      prompt: 'epic score',
+      tags: 'cinematic',
+      durationSeconds: 42,
+      model: 'elevenlabs_music',
+    });
+    expect(input).toEqual({
+      userId: 'u1',
+      teamId: 't1',
+      sequenceId: 'seq-1',
+      prompt: 'epic score',
+      tags: 'cinematic',
+      duration: 42,
+      model: 'elevenlabs_music',
+      isPrimary: false,
+    });
   });
 });

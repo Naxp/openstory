@@ -152,8 +152,12 @@ export function updateQueryCacheFromEvent(
           )
         );
       }
-      // Refresh variant data so model switcher and variant overlay stay current
-      if (status === 'completed') {
+      // Refresh variant data so model switcher and variant overlay stay current.
+      // Refresh on `failed` too (#547): image-workflow.onFailure writes a `failed`
+      // variant row, and an added model's coverage marker must reflect that
+      // terminal state instead of spinning `generating` until staleTime lapses —
+      // matching the video/audio handlers below.
+      if (status === 'completed' || status === 'failed') {
         debouncedInvalidate(
           queryClient,
           ['sequence-image-variants', sequenceId],
