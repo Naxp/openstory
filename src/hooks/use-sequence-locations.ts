@@ -9,7 +9,11 @@ import {
   getTeamLocationsLibraryFn,
   recastLocationFn,
 } from '@/functions/sequence-locations';
-import { getTeamLibraryLocationsFn } from '@/functions/location-library';
+import {
+  getPublicLibraryLocationsFn,
+  getTeamLibraryLocationsFn,
+} from '@/functions/location-library';
+import { usePublicOrTeamQuery } from '@/hooks/use-public-or-team-query';
 import type { LibraryLocation, SequenceLocation } from '@/lib/db/schema';
 
 // Re-export for backwards compatibility
@@ -45,6 +49,7 @@ export const sequenceLocationKeys = {
 export const libraryLocationKeys = {
   all: ['library-locations'] as const,
   list: ['library-locations', 'list'] as const,
+  publicList: ['library-locations', 'list', 'public'] as const,
 };
 
 export function useSequenceLocations(sequenceId: string) {
@@ -77,11 +82,14 @@ export function useTeamSequenceLocations() {
  * These are user-created location templates
  */
 export function useLibraryLocations() {
-  return useQuery<LibraryLocation[]>({
-    queryKey: libraryLocationKeys.list,
-    queryFn: async () => {
-      return getTeamLibraryLocationsFn();
-    },
+  // Authenticated users get their team's locations plus public ("system")
+  // ones; anonymous visitors get the public catalogue so they can browse and
+  // pick system locations on the public new-sequence screen and locations page.
+  return usePublicOrTeamQuery<LibraryLocation[]>({
+    teamKey: libraryLocationKeys.list,
+    publicKey: libraryLocationKeys.publicList,
+    teamFn: () => getTeamLibraryLocationsFn(),
+    publicFn: () => getPublicLibraryLocationsFn(),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

@@ -33,6 +33,7 @@ import {
   createLocationSheetsReadMethods,
   createLocationsMethods,
   createLocationsReadMethods,
+  createPublicLocationsReadMethods,
 } from '@/lib/db/scoped/location-library';
 import { createSequenceElementsMethods } from '@/lib/db/scoped/sequence-elements';
 import { createSequenceLocationsMethods } from '@/lib/db/scoped/sequence-locations';
@@ -44,10 +45,12 @@ import {
   createSequencesReadMethods,
 } from '@/lib/db/scoped/sequences';
 import {
+  createPublicStylesReadMethods,
   createStylesMethods,
   createStylesReadMethods,
 } from '@/lib/db/scoped/styles';
 import {
+  createPublicTalentReadMethods,
   createTalentMethods,
   createTalentReadMethods,
 } from '@/lib/db/scoped/talent';
@@ -124,6 +127,61 @@ export async function getUserTeamMembership(
 
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
   return result ?? null;
+}
+
+/**
+ * Public (anonymous) read surface — everything a logged-out visitor can read.
+ * Each function delegates to a createPublic*ReadMethods factory that takes no
+ * team scope at all, so these code paths cannot express a team-scoped query;
+ * the isPublic filters inside the factories are the entire data boundary.
+ */
+
+/**
+ * List publicly-shared styles without any team scoping or auth.
+ * Used to populate the style picker for anonymous (logged-out) visitors so
+ * they can compose a sequence before being prompted to sign in.
+ */
+export async function listPublicStyles() {
+  return createPublicStylesReadMethods(getDb()).list();
+}
+
+/**
+ * List public ("system") talent without team scoping or auth. Lets anonymous
+ * visitors browse and pre-cast system talent on the public new-sequence
+ * screen and talent library page.
+ */
+export async function listPublicTalent(options?: { favoritesOnly?: boolean }) {
+  return createPublicTalentReadMethods(getDb()).list(options);
+}
+
+/**
+ * List public ("system") library locations without team scoping or auth.
+ */
+export async function listPublicLibraryLocations() {
+  return createPublicLocationsReadMethods(getDb()).list();
+}
+
+/**
+ * Fetch a public ("system") talent with its sheets and media, no auth.
+ * Returns undefined if the talent isn't public. Lets anonymous visitors open a
+ * talent detail page read-only.
+ */
+export async function getPublicTalentWithRelations(talentId: string) {
+  return createPublicTalentReadMethods(getDb()).getWithRelations(talentId);
+}
+
+/**
+ * Fetch a public ("system") library location with its sheets, no auth.
+ * Returns null if the location isn't public. Mirrors getLibraryLocationByIdFn's
+ * shape so the same detail page renders for anonymous visitors.
+ */
+export async function getPublicLibraryLocationById(locationId: string) {
+  const db = getDb();
+  const location =
+    await createPublicLocationsReadMethods(db).getById(locationId);
+  if (!location) return null;
+  const sheets = await createLocationSheetsReadMethods(db).list(locationId);
+  return { ...location, sequenceTitle: 'Library' as const, sheets };
 }
 
 /**

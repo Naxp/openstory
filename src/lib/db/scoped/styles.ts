@@ -3,10 +3,10 @@
  * Team-scoped style library CRUD (includes public styles in listing).
  */
 
-import { asc, desc, and, eq, or, sql } from 'drizzle-orm';
 import type { Database } from '@/lib/db/client';
-import { styles } from '@/lib/db/schema';
 import type { NewStyle, Style } from '@/lib/db/schema';
+import { styles } from '@/lib/db/schema';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -39,8 +39,17 @@ export function createStylesReadMethods(db: Database, teamId: string) {
         .limit(1);
       return result[0] ?? null;
     },
+  };
+}
 
-    getPublic: async (): Promise<Style[]> => {
+/**
+ * Public (anonymous) styles reads. Takes no team scope at all, so this code
+ * path cannot express a team-scoped query — the isPublic filter is the entire
+ * data boundary for the unauthenticated style-catalogue endpoint.
+ */
+export function createPublicStylesReadMethods(db: Database) {
+  return {
+    list: async (): Promise<Style[]> => {
       return await db
         .select()
         .from(styles)

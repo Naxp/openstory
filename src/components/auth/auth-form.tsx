@@ -184,7 +184,10 @@ export function AuthForm({
         )}
 
         {/* Email Form */}
-        <form onSubmit={(e) => void handleSendOtp(e)}>
+        <form
+          className="group/email-form"
+          onSubmit={(e) => void handleSendOtp(e)}
+        >
           <div className="mb-4 space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -200,7 +203,14 @@ export function AuthForm({
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          {/* Hidden until an email is entered. CSS-driven (rather than React
+              state) so it works pre-hydration and isn't lost to the
+              controlled-input hydration race. */}
+          <Button
+            type="submit"
+            className="hidden w-full group-has-[input:not(:placeholder-shown)]/email-form:inline-flex"
+            disabled={isLoading}
+          >
             {isLoading ? 'Sending…' : 'Continue with email'}
           </Button>
         </form>

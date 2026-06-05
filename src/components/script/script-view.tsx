@@ -1,3 +1,4 @@
+import { useAuthGate } from '@/components/auth/auth-gate-provider';
 import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
 import {
   ElementSelector,
@@ -480,6 +481,7 @@ export const ScriptView: FC<{
   ) => setEnhanceUI((s) => ({ ...s, [key]: value }));
 
   const createSequenceMutation = useCreateSequence();
+  const { requireAuth } = useAuthGate();
   const {
     needsBillingSetup,
     showGate,
@@ -551,6 +553,12 @@ export const ScriptView: FC<{
       event.preventDefault();
     }
 
+    // Anonymous visitors can compose a draft, but generating prompts a login.
+    // The draft is persisted to localStorage, so it's restored after sign-in.
+    if (!requireAuth()) {
+      return;
+    }
+
     if (needsBillingSetup) {
       showGate();
       return;
@@ -574,6 +582,11 @@ export const ScriptView: FC<{
   const enhanceAbortRef = useRef<AbortController | null>(null);
 
   const handleEnhance = async () => {
+    // Enhancing runs an AI model on the server — gate it behind login too.
+    if (!requireAuth()) {
+      return;
+    }
+
     if (needsBillingSetup) {
       showGate();
       return;

@@ -12,6 +12,32 @@ import type {
   NewLocationSheet,
 } from '@/lib/db/schema';
 
+/**
+ * Public (anonymous) location-library reads. Takes no team scope at all, so
+ * this code path cannot express a team-scoped query — the isPublic filter is
+ * the entire data boundary for the unauthenticated location endpoints.
+ */
+export function createPublicLocationsReadMethods(db: Database) {
+  return {
+    list: async (): Promise<LibraryLocation[]> => {
+      return await db
+        .select()
+        .from(locationLibrary)
+        .where(eq(locationLibrary.isPublic, true));
+    },
+
+    getById: async (id: string): Promise<LibraryLocation | null> => {
+      const result = await db
+        .select()
+        .from(locationLibrary)
+        .where(
+          and(eq(locationLibrary.id, id), eq(locationLibrary.isPublic, true))
+        );
+      return result[0] ?? null;
+    },
+  };
+}
+
 export function createLocationsReadMethods(db: Database, teamId: string) {
   return {
     list: async (): Promise<LibraryLocation[]> => {

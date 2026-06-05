@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { VideoIcon } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import { Route as sequencesNewRoute } from '@/routes/_protected/sequences/new';
+import { Route as sequencesNewRoute } from '@/routes/_app/sequences/new';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { getCreatorIdentity } from './creator-identity';
 

@@ -7,7 +7,7 @@ import { EvalSequenceRow } from './eval-sequence-row';
 import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import type { ViewMode } from './eval-view';
 import type { DialogTab } from './eval-cell-dialog';
-import { Route as sequencesTheatreRoute } from '@/routes/_protected/sequences/$id/theatre';
+import { Route as sequencesTheatreRoute } from '@/routes/_app/sequences/$id/theatre';
 
 const ROW_HEIGHT = 240;
 const METADATA_WIDTH = 280;

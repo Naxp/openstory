@@ -2,8 +2,25 @@
  * Scoped styles tests:
  *   - incrementUsage atomically bumps usageCount.
  *   - list({ orderBy: 'popular' }) sorts by usageCount desc.
+ *   - createPublicStylesReadMethods().list() never leaks private team styles
+ *     (guards the unauthenticated public-catalogue endpoint).
  */
 
+import type { Database } from '@/lib/db/client';
+import { generateId } from '@/lib/db/id';
+import {
+  styles,
+  teams,
+  user,
+  type NewStyle,
+  type Style,
+} from '@/lib/db/schema';
+import { relations } from '@/lib/db/schema/relations';
+import { createPublicStylesReadMethods } from '@/lib/db/scoped/styles';
+import { createClient, type Client } from '@libsql/client';
+import { asc, desc, eq, or, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
 import {
   afterAll,
   beforeAll,
@@ -13,26 +30,14 @@ import {
   it,
   vi,
 } from 'vitest';
-import { type Client, createClient } from '@libsql/client';
-import { asc, desc, eq, or, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
-import { generateId } from '@/lib/db/id';
-import type { Database } from '@/lib/db/client';
-import {
-  styles,
-  teams,
-  user,
-  type NewStyle,
-  type Style,
-} from '@/lib/db/schema';
-import { relations } from '@/lib/db/schema/relations';
 
 // scoped.test.ts registers a global module mock for @/lib/db/scoped/styles
 // via vi.doMock(). vi.doMock is per-file, so it shouldn't bleed across the
 // suite, but we mirror the production methods inline against an in-memory
 // libSQL DB anyway to exercise real SQL behavior without depending on the
-// other file's mock setup. Keep these in lockstep with @/lib/db/scoped/styles.
+// other file's mock setup. Keep these in lockstep with the *team-scoped*
+// methods in @/lib/db/scoped/styles only — the public read path is exercised
+// via the real createPublicStylesReadMethods factory below, not mirrored.
 function makeStylesMethods(database: Database, teamId: string, userId: string) {
   return {
     list: async (
@@ -219,6 +224,32 @@ describe("createStylesMethods.list({ orderBy: 'popular' })", () => {
     expect(ids).toContain(mine.id);
     expect(ids).toContain(theirsPublic.id);
     expect(ids).not.toContain(theirsPrivate.id);
+  });
+});
+
+describe('createPublicStylesReadMethods', () => {
+  // Uses the REAL production read methods (not the inline mirror above):
+  // this factory backs getPublicStylesFn, an endpoint with no auth
+  // middleware, so its isPublic filter is the entire data-leak barrier.
+  it('returns only public styles, never private team styles', async () => {
+    const methods = makeStylesMethods(db, team.id, userRow.id);
+
+    const pub = await methods.create({
+      name: 'Public',
+      config: baseConfig,
+      sortOrder: 1,
+      isPublic: true,
+    });
+    const priv = await methods.create({
+      name: 'Private',
+      config: baseConfig,
+      sortOrder: 2,
+    });
+
+    const visible = await createPublicStylesReadMethods(db).list();
+    const ids = visible.map((s) => s.id);
+    expect(ids).toContain(pub.id);
+    expect(ids).not.toContain(priv.id);
   });
 });
 
