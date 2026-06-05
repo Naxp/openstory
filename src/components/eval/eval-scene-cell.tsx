@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { Frame } from '@/types/database';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { stripMarkdown } from '@/lib/utils/markdown-plain';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import type React from 'react';
 import { EvalCellDialog, type DialogTab } from './eval-cell-dialog';
 import type { ViewMode } from './eval-view';
@@ -121,13 +121,13 @@ export const EvalSceneCell: React.FC<EvalSceneCellProps> = ({
           onClick={handleClick}
         >
           <div className="flex-1 flex items-center justify-center min-h-0">
-            <Image
+            <AppImage
               src={frame.thumbnailUrl}
               alt={`Scene ${sceneNumber}`}
               className="max-w-full max-h-full object-contain rounded-md"
               loading="lazy"
-              width={1000}
-              height={1000}
+              width={400}
+              height={400}
             />
           </div>
         </button>
@@ -202,13 +202,13 @@ export const EvalSceneCell: React.FC<EvalSceneCellProps> = ({
               onClick={handleClick}
             >
               <div className="relative flex-1 flex items-center justify-center min-h-0">
-                <Image
+                <AppImage
                   src={frame.thumbnailUrl}
                   alt={`Scene ${sceneNumber} preview`}
                   className="max-w-full max-h-full object-contain rounded-md opacity-60"
                   loading="lazy"
-                  width={1000}
-                  height={1000}
+                  width={400}
+                  height={400}
                 />
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <span className="text-xs font-medium text-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded-md border">

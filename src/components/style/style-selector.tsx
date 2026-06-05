@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Style } from '@/lib/db/schema/libraries';
 import { cn } from '@/lib/utils';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { MoreHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getStyleGradient } from './style-gradient';
@@ -11,7 +11,7 @@ const StyleTileBackground: React.FC<{ style: Style }> = ({ style }) => {
   const [imgError, setImgError] = useState(false);
 
   return style.previewUrl && !imgError ? (
-    <Image
+    <AppImage
       key={style.id}
       src={style.previewUrl}
       layout="fullWidth"

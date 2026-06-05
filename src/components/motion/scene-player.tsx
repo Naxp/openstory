@@ -17,7 +17,7 @@ import {
 } from '@/lib/constants/aspect-ratios';
 import { cn } from '@/lib/utils';
 import type { Frame } from '@/types/database';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import {
   AlertCircle,
   Download,
@@ -179,7 +179,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
           >
             {posterUrl ? (
               <>
-                <Image
+                <AppImage
                   src={posterUrl}
                   alt=""
                   width={imageDimensions.width}
@@ -216,7 +216,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
               getAspectRatioClassName(aspectRatio)
             )}
           >
-            <Image
+            <AppImage
               src={posterUrl}
               alt=""
               width={imageDimensions.width}
@@ -305,7 +305,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
               rel="noopener noreferrer"
               className="block w-full h-full"
             >
-              <Image
+              <AppImage
                 src={displayImage}
                 alt={title || 'Scene thumbnail'}
                 className="w-full h-full object-cover"

@@ -6,7 +6,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertCircle } from 'lucide-react';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { memo } from 'react';
 
 type SceneThumbnailProps = {
@@ -53,7 +53,7 @@ const SceneThumbnailComponent: React.FC<SceneThumbnailProps> = ({
       )}
 
       {displayUrl && (
-        <Image
+        <AppImage
           src={displayUrl}
           alt={alt}
           className="h-full w-full object-cover"

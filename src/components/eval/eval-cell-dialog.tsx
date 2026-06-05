@@ -19,7 +19,7 @@ import type { Frame } from '@/types/database';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { stripMarkdown } from '@/lib/utils/markdown-plain';
 import { Clapperboard, FileTextIcon, ImageIcon, TextIcon } from 'lucide-react';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import {
@@ -243,7 +243,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
               </div>
             ) : (
               <div className="flex justify-center items-center h-full">
-                <Image
+                <AppImage
                   src={frame.thumbnailUrl}
                   alt={`Scene ${sceneNumber}`}
                   className="max-w-full max-h-full object-contain rounded-lg"
@@ -259,7 +259,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
               frame.thumbnailUrl ? (
                 <div className="flex justify-center items-center h-full w-full">
                   <div className="relative w-full max-w-4xl">
-                    <Image
+                    <AppImage
                       src={frame.thumbnailUrl}
                       alt={`Scene ${sceneNumber} preview`}
                       className="w-full h-auto object-contain rounded-lg opacity-60"
