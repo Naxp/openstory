@@ -80,15 +80,10 @@ baseTest.describe('Route Protection', () => {
 
     await expect(page).toHaveURL('/login');
     await expect(page.getByLabel('Email')).toBeVisible({ timeout: 15000 });
-    await expect(
-      page.getByRole('button', { name: 'Continue with email' })
-    ).toBeVisible({
-      timeout: 10000,
-    });
   });
 
   baseTest(
-    'login page shows email input and submit button',
+    'login page reveals the submit button once an email is entered',
     async ({ page }) => {
       await page.goto('/login');
 
@@ -99,12 +94,14 @@ baseTest.describe('Route Protection', () => {
 
       await expect(emailInput).toBeVisible({ timeout: 15000 });
       await expect(emailInput).toBeEnabled();
-      await expect(submitButton).toBeVisible({ timeout: 10000 });
-      await expect(submitButton).toBeEnabled();
 
-      // Verify email input accepts input
+      // The submit button stays hidden until an email is entered.
+      await expect(submitButton).toBeHidden();
+
       await emailInput.fill('test@example.com');
       await expect(emailInput).toHaveValue('test@example.com');
+      await expect(submitButton).toBeVisible();
+      await expect(submitButton).toBeEnabled();
     }
   );
 });
@@ -159,8 +156,10 @@ baseTest.describe('Email OTP Flow', () => {
       name: 'Continue with email',
     });
 
-    // Enter invalid email
+    // Enter invalid email — the submit button only appears once the field is
+    // non-empty, so wait for it before clicking.
     await emailInput.fill('invalid-email');
+    await expect(submitButton).toBeVisible();
     await submitButton.click();
 
     // Browser should show validation error (HTML5 validation)
