@@ -44,6 +44,8 @@ import type {
   AnalyzeScriptWorkflowInput,
   BatchMotionMusicWorkflowInput,
   CharacterBibleWorkflowInput,
+  ElementSheetWorkflowInput,
+  ElementSheetWorkflowResult,
   FrameImagesWorkflowInput,
   FrameImagesWorkflowResult,
   LocationBibleWorkflowInput,
@@ -57,6 +59,7 @@ import type {
   TalentMatchingWorkflowOutput,
   VisualPromptWorkflowInput,
 } from '@/lib/workflow/types';
+import { findMissingElementEntries } from '@/lib/workflows/element-sheet-workflow';
 import {
   matchCharactersToScene,
   matchElementsToScene,
@@ -69,6 +72,7 @@ import {
 import { waitForElementVision } from '@/lib/workflows/wait-for-sheets';
 import type {
   CharacterMinimal,
+  SequenceElementMinimal,
   SequenceLocationMinimal,
 } from '@/lib/db/schema';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
@@ -336,7 +340,57 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       );
     }
 
-    const [charSettled, locationSettled, visualSettled] =
+    // #835: element-bible entries the scene-split LLM detected (recurring
+    // products/objects) that have no uploaded element row need an
+    // auto-generated reference image, mirroring the character-sheet
+    // treatment. Runs in parallel with the other phase-3 children — visual
+    // prompts only consume the bible text, and the generated references are
+    // merged into `elementsMinimal` before phase 4 attaches them to frames.
+    const missingElementEntries = sequenceId
+      ? findMissingElementEntries(elementBible, elementsMinimal)
+      : [];
+    const elementSheetBinding = this.env.ELEMENT_SHEET_WORKFLOW;
+    if (missingElementEntries.length > 0 && !elementSheetBinding) {
+      throw new NonRetryableError(
+        '[AnalyzeScriptWorkflow:cf] ELEMENT_SHEET_WORKFLOW binding missing on env; check wrangler.jsonc',
+        'WorkflowValidationError'
+      );
+    }
+    const runElementSheets = async (): Promise<SequenceElementMinimal[]> => {
+      if (
+        !sequenceId ||
+        missingElementEntries.length === 0 ||
+        !elementSheetBinding
+      ) {
+        return [];
+      }
+      const result = await spawnAndAwaitChild<
+        ElementSheetWorkflowInput,
+        ElementSheetWorkflowResult
+      >(step, {
+        binding: elementSheetBinding as Workflow<
+          ElementSheetWorkflowInput & {
+            _parent: import('@/lib/workflow/await-child').ParentNotifyHint;
+          }
+        >,
+        parentBindingName: PARENT_BINDING_NAME,
+        parentInstanceId,
+        childId: `element-sheets:${sequenceId}`,
+        childPayload: {
+          userId: input.userId,
+          teamId: input.teamId,
+          sequenceId,
+          entries: missingElementEntries,
+          imageModel,
+          styleConfig,
+        },
+        spawnStepName: 'spawn-element-sheets',
+        awaitStepName: 'await-element-sheets',
+      });
+      return result.elements;
+    };
+
+    const [charSettled, locationSettled, visualSettled, elementSheetSettled] =
       await Promise.allSettled([
         spawnAndAwaitChild<CharacterBibleWorkflowInput, CharacterMinimal[]>(
           step,
@@ -411,6 +465,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           spawnStepName: 'spawn-visual-prompts',
           awaitStepName: 'await-visual-prompts',
         }),
+        runElementSheets(),
       ]);
 
     if (charSettled.status === 'rejected') {
@@ -428,10 +483,23 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         `Visual prompt generation failed: ${String(visualSettled.reason)}`
       );
     }
+    // Element references degrade gracefully: a failed run means the affected
+    // frames render unanchored (today's behavior) — not a failed analysis.
+    if (elementSheetSettled.status === 'rejected') {
+      logger.error(
+        '[AnalyzeScriptWorkflow:cf] Element reference generation failed; continuing without auto-generated references:',
+        { err: elementSheetSettled.reason }
+      );
+    }
 
     const charactersWithSheets = charSettled.value;
     const locationsWithSheets = locationSettled.value;
     const scenesWithVisualPrompts = visualSettled.value;
+    const generatedElements =
+      elementSheetSettled.status === 'fulfilled'
+        ? elementSheetSettled.value
+        : [];
+    const allElements = [...elementsMinimal, ...generatedElements];
 
     // ----------------------------------------------------------------------
     // PHASE 4: frame images + motion/music prompts in parallel
@@ -456,7 +524,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           scene.metadata?.location ?? ''
         );
         const elementsMatched = matchElementsToScene(
-          elementsMinimal,
+          allElements,
           scene.continuity?.elementTags ?? [],
           scene.originalScript.extract
         );
@@ -485,7 +553,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       scenesWithVisualPrompts,
       charactersWithSheets,
       locationsWithSheets,
-      elements: elementsMinimal,
+      elements: allElements,
       frameMapping,
       imageModel,
       imageModels,
