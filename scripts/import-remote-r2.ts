@@ -50,11 +50,18 @@ const appUrl = (process.env.VITE_APP_URL || 'http://localhost:3000').replace(
 
 const DOWNLOAD_CONCURRENCY = 8;
 
+// Escape ALL regex metacharacters — domains can arrive via --domain=, and a
+// stray `(`/`*` would otherwise change the pattern's meaning (CodeQL
+// js/regex-injection).
+function escapeRegex(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Matches a full storage URL on any source domain. Key charset is
 // conservative (our keys are bucket/ULID/slug paths) and stops at JSON/string
 // delimiters so URLs embedded in metadata JSON extract cleanly.
 const urlRe = new RegExp(
-  `https://(?:${SOURCE_DOMAINS.map((d) => d.replace(/\./g, '\\.')).join('|')})/[A-Za-z0-9._%/-]+`,
+  `https://(?:${SOURCE_DOMAINS.map(escapeRegex).join('|')})/[A-Za-z0-9._%/-]+`,
   'g'
 );
 
