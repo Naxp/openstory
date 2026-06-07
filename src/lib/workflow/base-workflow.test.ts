@@ -5,11 +5,16 @@
  *   1. Engine aborts ("Aborting engine: Grace period complete") are transient
  *      — CF resumes the instance afterwards — so run() must rethrow WITHOUT
  *      invoking `onFailure` (which marks user-facing rows failed) or
- *      notifying the parent of failure.
+ *      notifying the parent of failure. The same applies when the abort
+ *      lands mid-cleanup, inside `onFailure` itself.
  *   2. A successful child whose parent already reached a finite state must
  *      return its result normally instead of retroactively failing.
  *   3. Real failures keep the existing contract: onFailure runs, the parent
  *      is notified, and the original error is rethrown.
+ *   4. A throwing `onFailure` is logged and swallowed — the original error
+ *      stays the terminal state and the parent failure-notify still fires.
+ *   5. `WorkflowValidationError` is re-thrown as CF's `NonRetryableError`
+ *      so deterministic validation failures don't retry 10×.
  */
 
 import { describe, expect, test, vi } from 'vitest';
@@ -172,14 +177,34 @@ describe('OpenStoryWorkflowEntrypoint.run', () => {
       throw new Error('D1 write failed');
     });
 
-    // The cleanup error is logged and swallowed (after the step's retry
-    // budget — the catch sits outside step.do); the ORIGINAL error stays
-    // the terminal state and the parent failure-notify still happens.
+    // The throw escapes step.do (the catch sits outside it, so the engine's
+    // step retries apply at runtime — not modelled by the stub here) and is
+    // logged + swallowed; the ORIGINAL error stays the terminal state and
+    // the parent failure-notify still happens.
     await expect(workflow.run(makeEvent(true), makeStep())).rejects.toThrow(
       'fal request failed'
     );
     expect(onFailure).toHaveBeenCalledTimes(1);
     expect(notifyParentOfFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('engine abort during onFailure cleanup: abort rethrown, parent not notified of failure', async () => {
+    notifyParent.mockReset();
+    notifyParentOfFailure.mockReset();
+    const { workflow, onFailure } = makeWorkflow(() =>
+      Promise.reject(new Error('fal request failed'))
+    );
+    onFailure.mockImplementation(() => {
+      throw new Error(ENGINE_ABORT);
+    });
+
+    // The abort is a transient interruption — CF resumes the instance — so
+    // it must surface as-is, not be mislabelled a cleanup failure, and the
+    // parent must not be told work failed when it is about to continue.
+    await expect(workflow.run(makeEvent(true), makeStep())).rejects.toThrow(
+      'Grace period complete'
+    );
+    expect(notifyParentOfFailure).not.toHaveBeenCalled();
   });
 
   test('WorkflowValidationError is re-thrown as NonRetryableError (no 10x retry storm)', async () => {

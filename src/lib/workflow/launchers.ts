@@ -71,7 +71,7 @@ export class GenerationStatusUnknownError extends Error {
 /**
  * Mutex step 1 — fetch the sequence and reject unless its most recent
  * storyboard run can be ruled out as live:
- *   - in flight (queued/running/waiting) → `GenerationInProgressError`
+ *   - in flight (queued/running/paused/waiting) → `GenerationInProgressError`
  *   - status lookup failed → `GenerationStatusUnknownError`
  *
  * Both fail closed — the right direction for a mutex — but with messages

@@ -232,6 +232,18 @@ async function reconcileFrameVariantsPass(
  * can't distinguish slow-but-alive from dead, and 'processing' has no safe
  * blind-fail threshold now that full runs can legitimately take hours.
  */
+// Narrowly typed like FRAMES_PIPELINE_COLUMNS.setStatus so the compiler
+// enforces the null/'unknown' skip in the loop below: dropping either guard
+// makes this call fail typecheck instead of silently flipping a live (or
+// unverifiable) sequence to 'completed'.
+const setSequenceStatus = (next: 'failed' | 'completed') =>
+  next === 'failed'
+    ? {
+        status: 'failed' as const,
+        statusError: 'Generation was interrupted — use Retry to run it again.',
+      }
+    : { status: 'completed' as const };
+
 async function reconcileSequencesPass(db: Database): Promise<number> {
   const staleCutoff = new Date(Date.now() - STALE_THRESHOLD_MS);
 
@@ -253,15 +265,7 @@ async function reconcileSequencesPass(db: Database): Promise<number> {
     if (next === null || next === 'unknown') continue;
     await db
       .update(sequences)
-      .set(
-        next === 'failed'
-          ? {
-              status: 'failed',
-              statusError:
-                'Generation was interrupted — use Retry to run it again.',
-            }
-          : { status: 'completed' }
-      )
+      .set(setSequenceStatus(next))
       .where(eq(sequences.id, row.id));
     updated++;
   }

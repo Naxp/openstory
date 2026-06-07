@@ -175,6 +175,11 @@ export abstract class OpenStoryWorkflowEntrypoint<
             await this.onFailure?.({ event, error: sanitized, scopedDb });
           });
         } catch (cleanupError) {
+          // An engine abort mid-cleanup is the same transient interruption
+          // as one mid-run: rethrow untouched so CF resumes the instance,
+          // instead of mislabelling it a cleanup failure and notifying the
+          // parent of a failure that is about to continue. (#839)
+          if (isEngineAbortError(cleanupError)) throw cleanupError;
           logger.error(
             `[${this.constructor.name}] onFailure handler itself failed:`,
             {

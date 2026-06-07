@@ -257,6 +257,76 @@ describe('executeSmartRetry — partial retry status reset', () => {
     });
   });
 
+  test('mixed frames: skipped prompt-less frame is not counted as retried', async () => {
+    resetMocks();
+    // The counting regression #839's review flagged: reporting
+    // failedImageFrames.length would claim "2 image(s)" here even though
+    // only one frame is actually retriable.
+    const retriable = makeFrame({
+      id: 'frame-1',
+      thumbnailStatus: 'failed',
+      imagePrompt: 'A cinematic shot of the lab',
+    });
+    const skipped = makeFrame({
+      id: 'frame-2',
+      orderIndex: 1,
+      thumbnailStatus: 'failed',
+      imagePrompt: null,
+      metadata: null,
+      description: '',
+    });
+    const { context, updateStatus } = makeContext(makeSequence(), [
+      retriable,
+      skipped,
+    ]);
+
+    const result = await executeSmartRetry(context);
+
+    expect(triggerWorkflowMock).toHaveBeenCalledTimes(1);
+    expect(triggerWorkflowMock).toHaveBeenCalledWith(
+      '/image',
+      expect.objectContaining({ frameId: 'frame-1' }),
+      expect.objectContaining({ label: expect.any(String) })
+    );
+    expect(result).toEqual({
+      retryType: 'smart',
+      retriedItems: ['1 image(s)'],
+    });
+    expect(updateStatus).toHaveBeenCalledWith('completed');
+  });
+
+  test('failed motion → triggers /motion with image url, prompt and duration', async () => {
+    resetMocks();
+    const frame = makeFrame({
+      videoStatus: 'failed',
+      thumbnailStatus: 'completed',
+      thumbnailUrl: 'https://cdn/thumb.jpg',
+      motionPrompt: 'slow pan across the lab',
+      durationMs: 5000,
+    });
+    const { context, updateStatus } = makeContext(makeSequence(), [frame]);
+
+    const result = await executeSmartRetry(context);
+
+    expect(triggerWorkflowMock).toHaveBeenCalledTimes(1);
+    expect(triggerWorkflowMock).toHaveBeenCalledWith(
+      '/motion',
+      expect.objectContaining({
+        frameId: 'frame-1',
+        sequenceId: 'seq_1',
+        imageUrl: 'https://cdn/thumb.jpg',
+        prompt: 'slow pan across the lab',
+        duration: 5,
+      }),
+      expect.objectContaining({ label: expect.any(String) })
+    );
+    expect(result).toEqual({
+      retryType: 'smart',
+      retriedItems: ['1 motion video(s)'],
+    });
+    expect(updateStatus).toHaveBeenCalledWith('completed');
+  });
+
   test('sequence not marked failed → no status write after retrying', async () => {
     resetMocks();
     const frame = makeFrame({
