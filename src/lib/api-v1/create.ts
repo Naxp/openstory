@@ -11,6 +11,7 @@
  */
 
 import { enhanceScriptToString } from '@/functions/ai';
+import { toEnhanceStyleInputs } from '@/lib/ai/enhance-style';
 import { isShortScript } from '@/lib/ai/should-enhance';
 import { DEFAULT_ASPECT_RATIO } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
@@ -108,6 +109,11 @@ export async function runOneShotCreate(
     input.enhance === 'always' ||
     (input.enhance === 'auto' && isShortScript(input.script));
 
+  // Resolve the style first so the enhancer is style-aware: a thin brief like
+  // "a new product launch" must inherit the chosen style's genre/mood, or the
+  // enhancer falls back to a generic mood piece (issue #855).
+  const style = await resolveStyle(ctx.scopedDb, input.style);
+
   let script = input.script;
   let enhancedScript: string | undefined;
   if (willEnhance) {
@@ -116,6 +122,8 @@ export async function runOneShotCreate(
         script: input.script,
         targetDuration: input.targetSeconds,
         aspectRatio: input.aspectRatio,
+        // Feed the enhancer the same style inputs the UI does (issue #855).
+        ...toEnhanceStyleInputs(style),
       },
       { scopedDb: ctx.scopedDb, userId: ctx.user.id, teamId: ctx.teamId }
     );
@@ -125,14 +133,13 @@ export async function runOneShotCreate(
     }
   }
 
-  // 2. Resolve references in parallel — style, cast, locations, elements. Cast
-  //    and locations are unified lists (ref strings + inline create objects);
-  //    inline-create delegates to the real library-create cores (which trigger
-  //    sheet generation), so the storyboard workflow's sheet/vision-wait gates
-  //    block on the new entities before matching.
-  const [style, suggestedTalentIds, suggestedLocationIds, elementUploads] =
+  // 2. Resolve the remaining references in parallel — cast, locations, elements.
+  //    Cast and locations are unified lists (ref strings + inline create
+  //    objects); inline-create delegates to the real library-create cores (which
+  //    trigger sheet generation), so the storyboard workflow's sheet/vision-wait
+  //    gates block on the new entities before matching.
+  const [suggestedTalentIds, suggestedLocationIds, elementUploads] =
     await Promise.all([
-      resolveStyle(ctx.scopedDb, input.style),
       resolveTalentIds(
         {
           talent: ctx.scopedDb.talent,

@@ -12,6 +12,7 @@
  */
 import { getEnv } from '#env';
 import { callLLM, RECOMMENDED_MODELS } from '@/lib/ai/llm-client';
+import type { StyleMeta } from '@/lib/ai/enhance-style';
 import { createUserPrompt } from '@/lib/ai/script-enhancer';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import type { StyleConfig } from '@/lib/db/schema/libraries';
@@ -62,11 +63,13 @@ function openRouterKey(): string {
 async function enhanceBrief(args: {
   brief: string;
   styleConfig: StyleConfig;
+  styleMeta?: StyleMeta;
   aspectRatio: AspectRatio;
 }): Promise<string> {
   const { prompt, compiled } = await getPrompt('script/enhance');
   const userPrompt = createUserPrompt(args.brief, {
     styleConfig: args.styleConfig,
+    styleMeta: args.styleMeta,
     aspectRatio: args.aspectRatio,
     targetDuration: CANONICAL_TARGET_SECONDS,
   });
@@ -140,6 +143,7 @@ async function splitIntoBeats(args: {
 export async function generateCanonicalScript(args: {
   brief: string;
   styleConfig: StyleConfig;
+  styleMeta?: StyleMeta;
   aspectRatio: AspectRatio;
 }): Promise<{ enhancedScript: string; beats: SampleBeat[] }> {
   const enhancedScript = await enhanceBrief(args);

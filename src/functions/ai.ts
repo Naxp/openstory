@@ -265,6 +265,16 @@ const enhanceScriptInputSchema = z.object({
   tone: z.enum(['dramatic', 'comedic', 'documentary', 'action']).optional(),
   style: z.string().optional(),
   styleConfig: StyleConfigSchema.partial().optional(),
+  // Style identity (name/category/description) — drives genre-appropriate
+  // events in the script, distinct from the aesthetic-only styleConfig.
+  styleMeta: z
+    .object({
+      name: z.string().optional(),
+      category: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      tags: z.array(z.string()).nullable().optional(),
+    })
+    .optional(),
   analysisModel: z.string().optional(),
   aspectRatio: aspectRatioSchema.optional(),
   elements: z
@@ -308,6 +318,7 @@ export async function* streamScriptEnhancement(
   const elements = data.elements ?? [];
   const userPrompt = createUserPrompt(sanitized, {
     styleConfig: data.styleConfig,
+    styleMeta: data.styleMeta,
     aspectRatio: data.aspectRatio,
     targetDuration: data.targetDuration,
     elements: elements.length > 0 ? elements : undefined,
