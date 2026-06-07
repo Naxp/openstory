@@ -2,7 +2,7 @@
  * Canonical sample-script generation (issue #718).
  *
  * Mirrors the app's real "enhance" path headlessly:
- *   1. `getPrompt('script/enhance')` (Langfuse, or the bundled local fallback)
+ *   1. `getPrompt('script/enhance')` (the bundled local prompt registry)
  *      + `createUserPrompt(brief, { styleConfig, aspectRatio, targetDuration })`
  *      → the same style-aware enhance the UI uses (`enhanceScriptStreamFn`).
  *   2. A structured scene split turns the enhanced prose into render-ready beats.
@@ -64,7 +64,7 @@ async function enhanceBrief(args: {
   styleConfig: StyleConfig;
   aspectRatio: AspectRatio;
 }): Promise<string> {
-  const { prompt, compiled } = await getPrompt('script/enhance');
+  const { compiled } = await getPrompt('script/enhance');
   const userPrompt = createUserPrompt(args.brief, {
     styleConfig: args.styleConfig,
     aspectRatio: args.aspectRatio,
@@ -81,9 +81,6 @@ async function enhanceBrief(args: {
     ],
     max_tokens: 4000,
     temperature: 0.7,
-    prompt: prompt
-      ? { name: prompt.name, version: prompt.version, isFallback: false }
-      : undefined,
     observationName: 'sample-script-enhance',
     apiKey: openRouterKey(),
   });

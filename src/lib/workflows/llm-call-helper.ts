@@ -17,6 +17,7 @@ import { extractStreamingStringField } from '@/lib/ai/stream-extract';
 import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { aiObservabilityMiddleware } from '@/lib/observability/ai-otel';
 import { getLogger } from '@/lib/observability/logger';
 import { getChatPrompt } from '@/lib/prompts';
 import { getFramePromptChannel } from '@/lib/realtime';
@@ -58,7 +59,7 @@ export type DurableStreamingLLMCallContext = DurableLLMCallContext & {
  * Execute a durable LLM call. Returns the validated parsed object.
  *
  * Step layout (deterministic names):
- *   1. `prepare-${name}` — fetch prompt from Langfuse
+ *   1. `prepare-${name}` — resolve the chat prompt
  *   2. `${name}` — LLM call (JSON-stringified result for step boundary)
  *   3. `deduct-llm-credits-${name}` — credit deduction (only if scopedDb passed)
  */
@@ -76,9 +77,7 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
     ...config.additionalMetadata,
   };
 
-  // Step 1: Prepare — fetch the chat prompt. promptReference (Langfuse
-  // ChatPromptClient) isn't Rpc.Serializable so we refetch inside the LLM
-  // step rather than passing it through the boundary.
+  // Step 1: Prepare — resolve the chat prompt.
   const { messages } = await step.do(`prepare-${name}`, async () => {
     const { messages } = await getChatPrompt(
       config.promptName,
@@ -103,13 +102,6 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
           return { key: env.OPENROUTER_KEY, source: 'platform' as const };
         })();
     const adapter = createAdapter(modelId, openRouterApiKeyInfo.key);
-
-    // Refetch prompt inside the LLM step — promptReference can't cross the
-    // step boundary (not Rpc.Serializable).
-    const { prompt: promptReference } = await getChatPrompt(
-      config.promptName,
-      config.promptVariables
-    );
 
     logger.info(`[LLM:${logName}:cf] Starting call`, {
       model: modelId,
@@ -148,14 +140,13 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
         stream: false,
         maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
         abortController,
-        metadata: {
+        middleware: aiObservabilityMiddleware({
           observationName: logName,
-          prompt: promptReference,
           tags: logTags,
           metadata: logMetadata,
           sessionId: callContext.sequenceId,
           userId: callContext.userId,
-        },
+        }),
         outputSchema: config.responseSchema,
         debug: false,
       });
@@ -243,10 +234,6 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
             return { key: env.OPENROUTER_KEY, source: 'platform' as const };
           })();
       const adapter = createAdapter(modelId, openRouterApiKeyInfo.key);
-      const { prompt: promptReference } = await getChatPrompt(
-        config.promptName,
-        config.promptVariables
-      );
 
       logger.info(`[LLM:${logName}:cf] Starting streaming call`, {
         model: modelId,
@@ -301,14 +288,13 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
           stream: true,
           maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
           abortController,
-          metadata: {
+          middleware: aiObservabilityMiddleware({
             observationName: logName,
-            prompt: promptReference,
             tags: logTags,
             metadata: logMetadata,
             sessionId: callContext.sequenceId,
             userId: callContext.userId,
-          },
+          }),
           outputSchema: config.responseSchema,
           debug: false,
         })) {

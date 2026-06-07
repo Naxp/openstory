@@ -19,7 +19,7 @@ import { extractFalErrorMessage } from '@/lib/ai/fal-error';
 import { computeMotionPromptInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_VIDEO_MODEL, IMAGE_TO_VIDEO_MODELS } from '@/lib/ai/models';
 import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
-import { microsToUsd, type Microdollars } from '@/lib/billing/money';
+import { microsToUsd } from '@/lib/billing/money';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { ensureImageUnderLimit } from '@/lib/image/image-compress';
 import {
@@ -28,7 +28,6 @@ import {
   submitMotionJob,
 } from '@/lib/motion/motion-generation';
 import { uploadVideoToStorage } from '@/lib/motion/video-storage';
-import { endSpanSuccess, startGenAISpan } from '@/lib/observability/tracer';
 import { getGenerationChannel } from '@/lib/realtime';
 import { simpleHash } from '@/lib/utils/hash';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
@@ -58,29 +57,6 @@ type MotionWorkflowResult = {
   videoUrl: string;
   duration: number;
 };
-
-function recordMotionObservation(params: {
-  model: string;
-  prompt: string;
-  imageUrl: string;
-  videoUrl: string;
-  cost: Microdollars;
-  videoDuration: number;
-  generationTimeMs: number;
-}) {
-  const span = startGenAISpan('fal-motion', {
-    model: params.model,
-    provider: 'fal',
-    operation: 'generate_content',
-    input: { prompt: params.prompt, imageUrl: params.imageUrl },
-    metadata: {
-      videoDuration: params.videoDuration,
-      generationTimeMs: params.generationTimeMs,
-    },
-  });
-  span.setAttribute('gen_ai.usage.cost', microsToUsd(params.cost));
-  endSpanSuccess(span, { videoUrl: params.videoUrl });
-}
 
 export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowInput> {
   protected override async runImpl(
@@ -388,18 +364,6 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
     if (!videoUrl) {
       throw new Error('Motion generation timed out after 15 minutes');
     }
-
-    await step.do('record-motion-observation', async () => {
-      recordMotionObservation({
-        model,
-        prompt: input.prompt,
-        imageUrl: input.imageUrl,
-        videoUrl,
-        cost: cost,
-        videoDuration: duration,
-        generationTimeMs: Date.now() - job.submittedAt,
-      });
-    });
 
     // Deduct credits (skip if team used own fal key)
     if (cost > 0 && input.teamId && !job.usedOwnKey) {

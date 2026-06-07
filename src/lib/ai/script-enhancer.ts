@@ -156,7 +156,7 @@ export async function enhanceScript(
     throw new Error('OpenRouter API key not configured');
   }
 
-  const { prompt, compiled } = await getPrompt('script/enhance');
+  const { compiled } = await getPrompt('script/enhance');
   const userPrompt = createUserPrompt(validatedOptions.originalScript);
 
   const enhanced = await callLLM({
@@ -167,7 +167,6 @@ export async function enhanceScript(
     ],
     max_tokens: 4000,
     temperature: 0.7,
-    prompt,
     observationName: 'script-enhancement',
     responseSchema: EnhancedScriptSchema,
     apiKey: openRouterKey,

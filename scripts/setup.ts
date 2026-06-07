@@ -132,16 +132,6 @@ function writeEnvFile(vars: Map<string, string>) {
       keys: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
     },
     {
-      header: 'Observability (Langfuse)',
-      keys: [
-        'LANGFUSE_PUBLIC_KEY',
-        'LANGFUSE_SECRET_KEY',
-        'LANGFUSE_BASE_URL',
-        'LANGFUSE_PROMPTS_ENABLED',
-        'LANGFUSE_TRACING_ENVIRONMENT',
-      ],
-    },
-    {
       header: 'Analytics (PostHog)',
       keys: ['VITE_PUBLIC_POSTHOG_PROJECT_TOKEN', 'VITE_PUBLIC_POSTHOG_HOST'],
     },
@@ -225,11 +215,6 @@ const PR_PREVIEW_SECRETS_BASE = [
   'CEREBRAS_API_KEY',
   'EMAIL_FROM',
   'FAL_KEY',
-  'LANGFUSE_BASE_URL',
-  'LANGFUSE_PROMPTS_ENABLED',
-  'LANGFUSE_PUBLIC_KEY',
-  'LANGFUSE_SECRET_KEY',
-  'LANGFUSE_TRACING_ENVIRONMENT',
   'LETZAI_API_KEY',
   'OPENROUTER_KEY',
   'QSTASH_CURRENT_SIGNING_KEY',
@@ -398,9 +383,6 @@ async function prPreviewSetup() {
     merged.delete(key);
   }
   p.log.info(`Removed (not needed for preview): ${removed.join(', ')}`);
-
-  merged.set('LANGFUSE_TRACING_ENVIRONMENT', 'preview');
-  p.log.info('Set LANGFUSE_TRACING_ENVIRONMENT = preview');
 
   // 5. Prompt for AI keys — skip if .env.staging already has its own values
   const aiKeys = ['FAL_KEY', 'OPENROUTER_KEY'] as const;
@@ -2023,104 +2005,6 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // Observability (Langfuse)
-  // -------------------------------------------------------------------------
-  const langfuseKeys = [
-    'LANGFUSE_PUBLIC_KEY',
-    'LANGFUSE_SECRET_KEY',
-    'LANGFUSE_BASE_URL',
-  ] as const;
-  const hasLangfuse = langfuseKeys.some((k) => vars.has(k));
-
-  if (hasLangfuse) {
-    for (const k of langfuseKeys) {
-      if (vars.has(k)) p.log.success(`${k} — already configured`);
-    }
-  }
-
-  const setupLangfuse =
-    hasLangfuse ||
-    checkCancel(
-      await p.confirm({
-        message:
-          'Set up Langfuse for prompt management & LLM tracing? (optional)',
-        initialValue: false,
-      })
-    );
-
-  if (setupLangfuse) {
-    await promptForKey(
-      'LANGFUSE_PUBLIC_KEY',
-      'Langfuse Public Key',
-      'Get one at: https://cloud.langfuse.com/project/settings'
-    );
-    await promptForKey('LANGFUSE_SECRET_KEY', 'Langfuse Secret Key');
-    await promptForKey(
-      'LANGFUSE_BASE_URL',
-      'Langfuse Base URL (leave empty for cloud)',
-      'Default: https://cloud.langfuse.com'
-    );
-
-    if (!vars.has('LANGFUSE_TRACING_ENVIRONMENT')) {
-      const defaultEnv = isProd ? 'production' : 'development';
-      const tracingEnv = checkCancel(
-        await p.text({
-          message: 'Langfuse tracing environment',
-          placeholder: defaultEnv,
-          defaultValue: defaultEnv,
-        })
-      );
-      if (tracingEnv) {
-        vars.set(
-          'LANGFUSE_TRACING_ENVIRONMENT',
-          tracingEnv.trim() || defaultEnv
-        );
-        saveProgress();
-      }
-    } else {
-      p.log.success('LANGFUSE_TRACING_ENVIRONMENT — already configured');
-    }
-
-    if (!vars.has('LANGFUSE_PROMPTS_ENABLED')) {
-      const enablePrompts = checkCancel(
-        await p.confirm({
-          message:
-            'Fetch prompts from Langfuse API? (If no, prompts are served from git)',
-          initialValue: false,
-        })
-      );
-      vars.set('LANGFUSE_PROMPTS_ENABLED', enablePrompts ? 'true' : 'false');
-      saveProgress();
-    } else {
-      p.log.success('LANGFUSE_PROMPTS_ENABLED — already configured');
-    }
-
-    const uploadPrompts = checkCancel(
-      await p.confirm({
-        message: 'Upload all prompts to Langfuse now?',
-        initialValue: true,
-      })
-    );
-
-    if (uploadPrompts) {
-      const promptSpinner = p.spinner();
-      promptSpinner.start('Uploading prompts to Langfuse');
-      try {
-        execFileSync('bun', ['scripts/upload-all-prompts.ts'], {
-          stdio: 'pipe',
-          cwd: process.cwd(),
-        });
-        promptSpinner.stop('Prompts uploaded to Langfuse');
-      } catch {
-        promptSpinner.stop('Prompt upload failed');
-        p.log.warn(
-          'You can retry later with: bun scripts/upload-all-prompts.ts'
-        );
-      }
-    }
-  }
-
-  // -------------------------------------------------------------------------
   // Analytics (PostHog)
   // -------------------------------------------------------------------------
   const posthogKeys = ['VITE_PUBLIC_POSTHOG_PROJECT_TOKEN'] as const;
@@ -2249,12 +2133,6 @@ async function main() {
     ['Workflows', vars.has('QSTASH_TOKEN') ? 'Configured' : 'Skipped'],
     ['Storage', vars.has('R2_ACCOUNT_ID') ? 'Configured' : 'Skipped'],
     ['Google OAuth', vars.has('GOOGLE_CLIENT_ID') ? 'Configured' : 'Skipped'],
-    [
-      'Langfuse',
-      vars.has('LANGFUSE_PUBLIC_KEY')
-        ? 'Configured'
-        : 'Skipped (using local prompts)',
-    ],
     [
       'PostHog',
       vars.has('VITE_PUBLIC_POSTHOG_PROJECT_TOKEN') ? 'Configured' : 'Skipped',

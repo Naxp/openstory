@@ -202,7 +202,6 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
             input.referenceImages?.map(
               (ref: ReferenceImageDescription) => ref.referenceImageUrl
             ) ?? [],
-          traceName: 'frame-image',
         } satisfies ImageGenerationParams;
       }
     );

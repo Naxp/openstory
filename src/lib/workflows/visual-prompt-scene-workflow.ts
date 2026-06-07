@@ -29,6 +29,7 @@ import { extractStreamingStringField } from '@/lib/ai/stream-extract';
 import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { aiObservabilityMiddleware } from '@/lib/observability/ai-otel';
 import { getLogger } from '@/lib/observability/logger';
 import { getChatPrompt } from '@/lib/prompts';
 import { getFramePromptChannel, getGenerationChannel } from '@/lib/realtime';
@@ -82,30 +83,27 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
       frameId,
     };
 
-    // Step 1: Prepare — fetch prompt from Langfuse.
-    const { messages, promptReference } = await step.do(
-      `prepare-${STEP_NAME}`,
-      async () => {
-        const { messages: msgs } = await getChatPrompt(
-          'phase/visual-prompt-scene-generation-chat',
-          {
-            sceneBefore: sceneBefore
-              ? JSON.stringify(sceneBefore, null, 2)
-              : '(none)',
-            sceneAfter: sceneAfter
-              ? JSON.stringify(sceneAfter, null, 2)
-              : '(none)',
-            scene: JSON.stringify(scene, null, 2),
-            characterBible: JSON.stringify(characterBible, null, 2),
-            locationBible: JSON.stringify(locationBible, null, 2),
-            elementBible: JSON.stringify(elementBible, null, 2),
-            styleConfig: JSON.stringify(styleConfig, null, 2),
-            aspectRatio,
-          }
-        );
-        return { messages: msgs, promptReference: undefined };
-      }
-    );
+    // Step 1: Prepare — resolve the chat prompt.
+    const { messages } = await step.do(`prepare-${STEP_NAME}`, async () => {
+      const { messages: msgs } = await getChatPrompt(
+        'phase/visual-prompt-scene-generation-chat',
+        {
+          sceneBefore: sceneBefore
+            ? JSON.stringify(sceneBefore, null, 2)
+            : '(none)',
+          sceneAfter: sceneAfter
+            ? JSON.stringify(sceneAfter, null, 2)
+            : '(none)',
+          scene: JSON.stringify(scene, null, 2),
+          characterBible: JSON.stringify(characterBible, null, 2),
+          locationBible: JSON.stringify(locationBible, null, 2),
+          elementBible: JSON.stringify(elementBible, null, 2),
+          styleConfig: JSON.stringify(styleConfig, null, 2),
+          aspectRatio,
+        }
+      );
+      return { messages: msgs };
+    });
 
     // Step 2: Durable LLM call (streaming or non-streaming depending on
     // whether `emitStreaming` was set by the caller). Step name matches
@@ -172,14 +170,13 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
             stream: false,
             maxTokens: Math.floor(getContextWindow(analysisModelId) * 0.5),
             abortController,
-            metadata: {
+            middleware: aiObservabilityMiddleware({
               observationName: LOG_NAME,
-              prompt: promptReference,
               tags: [...LOG_TAGS],
               metadata: logMetadata,
               sessionId: sequenceId,
               userId,
-            },
+            }),
             debug: false,
           });
           logger.info(
@@ -213,14 +210,13 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
           stream: true,
           maxTokens: Math.floor(getContextWindow(analysisModelId) * 0.5),
           abortController,
-          metadata: {
+          middleware: aiObservabilityMiddleware({
             observationName: LOG_NAME,
-            prompt: promptReference,
             tags: [...LOG_TAGS_STREAM],
             metadata: logMetadata,
             sessionId: sequenceId,
             userId,
-          },
+          }),
           outputSchema: visualPromptWithContinuitySchema,
           debug: false,
         })) {

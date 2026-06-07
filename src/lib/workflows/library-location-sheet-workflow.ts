@@ -82,7 +82,6 @@ export class LibraryLocationSheetWorkflow extends OpenStoryWorkflowEntrypoint<Li
           numImages: 1,
           referenceImageUrls:
             referenceUrls.length > 0 ? referenceUrls : undefined,
-          traceName: 'library-location-sheet',
         } satisfies ImageGenerationParams;
       }
     );
@@ -180,7 +179,6 @@ export class LibraryLocationSheetWorkflow extends OpenStoryWorkflowEntrypoint<Li
         prompt,
         imageSize: 'landscape_16_9',
         numImages: 1,
-        traceName: 'location-preview-image',
       } satisfies ImageGenerationParams;
 
       if (hasReferenceImages) {

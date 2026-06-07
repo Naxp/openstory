@@ -31,7 +31,6 @@ import { resolveVideoModels } from '@/lib/ai/resolve-video-models';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { assembleMotionPrompt } from '@/lib/motion/assemble-motion-prompt';
-import { recordWorkflowTrace } from '@/lib/observability/langfuse';
 import { getGenerationChannel } from '@/lib/realtime';
 import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
@@ -629,20 +628,6 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         },
         spawnStepName: 'spawn-motion-batch',
         awaitStepName: 'await-motion-batch',
-      });
-    }
-
-    if (sequenceId) {
-      await step.do('record-workflow-trace', async () => {
-        await recordWorkflowTrace(
-          'analyzeScriptWorkflow',
-          { script, styleConfig, aspectRatio },
-          completeScenes,
-          sequenceId,
-          input.userId,
-          analysisModelId,
-          new Date(startTime)
-        );
       });
     }
 
