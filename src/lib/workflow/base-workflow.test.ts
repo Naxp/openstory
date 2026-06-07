@@ -14,7 +14,9 @@
 
 import { describe, expect, test, vi } from 'vitest';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type { UserWorkflowContext } from '@/lib/workflow/types';
 
 const SCOPED_DB = { scoped: true };
@@ -156,6 +158,41 @@ describe('OpenStoryWorkflowEntrypoint.run', () => {
     await expect(workflow.run(makeEvent(true), makeStep())).rejects.toThrow(
       'fal request failed'
     );
+    expect(onFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('throwing onFailure: original error surfaces, parent still notified', async () => {
+    notifyParent.mockReset();
+    notifyParentOfFailure.mockReset();
+    notifyParentOfFailure.mockResolvedValue(undefined);
+    const { workflow, onFailure } = makeWorkflow(() =>
+      Promise.reject(new Error('fal request failed'))
+    );
+    onFailure.mockImplementation(() => {
+      throw new Error('D1 write failed');
+    });
+
+    // The cleanup error is logged and swallowed (after the step's retry
+    // budget — the catch sits outside step.do); the ORIGINAL error stays
+    // the terminal state and the parent failure-notify still happens.
+    await expect(workflow.run(makeEvent(true), makeStep())).rejects.toThrow(
+      'fal request failed'
+    );
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(notifyParentOfFailure).toHaveBeenCalledTimes(1);
+  });
+
+  test('WorkflowValidationError is re-thrown as NonRetryableError (no 10x retry storm)', async () => {
+    notifyParent.mockReset();
+    notifyParentOfFailure.mockReset();
+    const { workflow, onFailure } = makeWorkflow(() =>
+      Promise.reject(new WorkflowValidationError('Sequence ID is required'))
+    );
+
+    await expect(
+      workflow.run(makeEvent(false), makeStep())
+    ).rejects.toBeInstanceOf(NonRetryableError);
+    // Validation failures still run cleanup so user-facing rows get marked.
     expect(onFailure).toHaveBeenCalledTimes(1);
   });
 

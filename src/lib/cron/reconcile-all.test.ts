@@ -78,7 +78,7 @@ vi.doMock('#db-client', () => ({ getDb: () => dbMock }));
 
 // resolveRunState stub: defaults to "still in flight" (null) — verified
 // passes are no-ops unless a test overrides `runStateResult`.
-let runStateResult: 'failed' | 'completed' | null = null;
+let runStateResult: 'failed' | 'completed' | 'unknown' | null = null;
 vi.doMock('@/lib/workflow/reconcile', () => ({
   resolveRunState: async () => runStateResult,
   STALE_THRESHOLD_MS: 5 * 60 * 1000,
@@ -159,6 +159,20 @@ describe('reconcileAllStuckJobs — run-id-verified passes', () => {
 
   test('in-flight instance (resolveRunState null) → no per-row update on verified tables', async () => {
     stuckRows = [{ id: 'frm_1', runId: 'wf_running' }];
+    const { reconcileAllStuckJobs } = await import('./reconcile-all');
+
+    await reconcileAllStuckJobs();
+
+    const verifiedTables: SchemaTable[] = [frames, frameVariants, sequences];
+    const verifiedUpdates = updateCalls.filter(
+      (c) => verifiedTables.includes(c.table) && !('musicStatus' in c.payload) // sequences.music is blind-fail, not verified
+    );
+    expect(verifiedUpdates).toHaveLength(0);
+  });
+
+  test("status lookup failed (resolveRunState 'unknown') → no per-row update on verified tables", async () => {
+    stuckRows = [{ id: 'frm_1', runId: 'wf_unreachable' }];
+    runStateResult = 'unknown';
     const { reconcileAllStuckJobs } = await import('./reconcile-all');
 
     await reconcileAllStuckJobs();

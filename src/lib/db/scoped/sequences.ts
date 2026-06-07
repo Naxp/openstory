@@ -182,10 +182,14 @@ export function createSequencesMethods(
       musicGeneratedAt?: Date;
       posterUrl?: string | null;
     }): Promise<Sequence> => {
+      // Scoped by teamId like every other write here — `workflowRunId` in
+      // particular is the generation-mutex column (#839), so a cross-team id
+      // must never be able to stomp it.
+      const { id, ...values } = params;
       const [data] = await db
         .update(sequences)
-        .set(params)
-        .where(eq(sequences.id, params.id))
+        .set(values)
+        .where(and(eq(sequences.id, id), eq(sequences.teamId, teamId)))
         .returning();
 
       // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined

@@ -54,23 +54,53 @@ export class GenerationInProgressError extends Error {
 }
 
 /**
- * Throw if the sequence's most recent storyboard run is still in flight.
+ * Thrown when the run-status lookup itself failed, so we can't tell whether
+ * a generation is live. Distinct from `GenerationInProgressError` — telling
+ * the user to "wait for it to finish" would be wrong when there may be no
+ * run at all (a CF status-API blip), and waiting would never clear it.
+ */
+export class GenerationStatusUnknownError extends Error {
+  constructor() {
+    super(
+      "Couldn't verify whether a generation is still running — please try again in a moment."
+    );
+    this.name = 'GenerationStatusUnknownError';
+  }
+}
+
+/**
+ * Mutex step 1 — fetch the sequence and reject unless its most recent
+ * storyboard run can be ruled out as live:
+ *   - in flight (queued/running/waiting) → `GenerationInProgressError`
+ *   - status lookup failed → `GenerationStatusUnknownError`
+ *
+ * Both fail closed — the right direction for a mutex — but with messages
+ * that match what we actually know.
+ */
+async function getSequenceRejectingActiveRun(
+  scopedDb: ScopedDb,
+  sequenceId: string
+) {
+  const sequence = await scopedDb.sequences.getForUser({ sequenceId });
+  if (!sequence.workflowRunId) return sequence; // legacy row or never generated
+  const state = await resolveRunState(sequence.workflowRunId);
+  if (state === null) throw new GenerationInProgressError();
+  if (state === 'unknown') throw new GenerationStatusUnknownError();
+  return sequence;
+}
+
+/**
+ * Throw if the sequence's most recent storyboard run is still in flight
+ * (or its status can't be verified — see `getSequenceRejectingActiveRun`).
  *
  * Check-only — for partial retries (per-frame image/motion) that must not
  * race a live full pipeline but don't start a storyboard themselves.
- *
- * `resolveRunState` returns null for queued/running/waiting instances AND
- * for transient status-lookup failures — both reject here. Failing closed
- * is the right direction for a mutex; the user can simply retry the click.
  */
 export async function assertNoActiveStoryboard(
   scopedDb: ScopedDb,
   sequenceId: string
 ): Promise<void> {
-  const sequence = await scopedDb.sequences.getForUser({ sequenceId });
-  if (!sequence.workflowRunId) return; // legacy row or never generated
-  const state = await resolveRunState(sequence.workflowRunId);
-  if (state === null) throw new GenerationInProgressError();
+  await getSequenceRejectingActiveRun(scopedDb, sequenceId);
 }
 
 /**
@@ -89,12 +119,9 @@ export async function triggerStoryboard(
     throw new Error('triggerStoryboard requires input.sequenceId');
   }
 
-  // Mutex step 1: reject while the previous run is still in flight.
-  const sequence = await scopedDb.sequences.getForUser({ sequenceId });
-  if (sequence.workflowRunId) {
-    const state = await resolveRunState(sequence.workflowRunId);
-    if (state === null) throw new GenerationInProgressError();
-  }
+  // Mutex step 1: reject while the previous run is still in flight (or its
+  // state can't be verified).
+  const sequence = await getSequenceRejectingActiveRun(scopedDb, sequenceId);
 
   // Mutex step 2: CAS-claim the slot so two racing requests can't both pass.
   const claimId = `storyboard-${sequenceId}-${generateId()}`;

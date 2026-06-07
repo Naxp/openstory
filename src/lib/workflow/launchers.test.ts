@@ -16,7 +16,7 @@ vi.doMock('@/lib/workflow/client', () => ({
   triggerWorkflow: triggerWorkflowMock,
 }));
 
-let runStateResult: 'failed' | 'completed' | null = null;
+let runStateResult: 'failed' | 'completed' | 'unknown' | null = null;
 vi.doMock('@/lib/workflow/reconcile', () => ({
   resolveRunState: vi.fn(async () => runStateResult),
 }));
@@ -26,6 +26,7 @@ const {
   triggerStoryboard,
   assertNoActiveStoryboard,
   GenerationInProgressError,
+  GenerationStatusUnknownError,
 } = await import('./launchers');
 
 const INPUT: StoryboardWorkflowInput = {
@@ -78,6 +79,20 @@ describe('triggerStoryboard', () => {
 
     await expect(triggerStoryboard(scopedDb, INPUT)).rejects.toBeInstanceOf(
       GenerationInProgressError
+    );
+    expect(claimWorkflowSlot).not.toHaveBeenCalled();
+    expect(triggerWorkflowMock).not.toHaveBeenCalled();
+  });
+
+  test('status lookup failed → GenerationStatusUnknownError (not "already running"), nothing triggered', async () => {
+    runStateResult = 'unknown'; // CF status API blip — can't verify
+    triggerWorkflowMock.mockReset();
+    const { scopedDb, claimWorkflowSlot } = makeScopedDb({
+      workflowRunId: 'openstory-so_storyboard_maybe',
+    });
+
+    await expect(triggerStoryboard(scopedDb, INPUT)).rejects.toBeInstanceOf(
+      GenerationStatusUnknownError
     );
     expect(claimWorkflowSlot).not.toHaveBeenCalled();
     expect(triggerWorkflowMock).not.toHaveBeenCalled();
@@ -162,6 +177,17 @@ describe('assertNoActiveStoryboard', () => {
     await expect(
       assertNoActiveStoryboard(scopedDb, 'seq_1')
     ).rejects.toBeInstanceOf(GenerationInProgressError);
+  });
+
+  test('status lookup failed → GenerationStatusUnknownError', async () => {
+    runStateResult = 'unknown';
+    const { scopedDb } = makeScopedDb({
+      workflowRunId: 'openstory-so_storyboard_maybe',
+    });
+
+    await expect(
+      assertNoActiveStoryboard(scopedDb, 'seq_1')
+    ).rejects.toBeInstanceOf(GenerationStatusUnknownError);
   });
 
   test('terminal run → passes', async () => {

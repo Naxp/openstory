@@ -85,8 +85,10 @@ export abstract class OpenStoryWorkflowEntrypoint<
 
   /**
    * Optional failure hook. Runs inside a `step.do('emit-failure')` so the
-   * cleanup write itself is retried by the engine. The original error is
-   * rethrown after this returns — the workflow ends in `errored` state.
+   * cleanup write itself is retried by the engine; if it still throws after
+   * its retry budget the error is logged and swallowed (the cron reconciler
+   * is the backstop). The original error is rethrown after this returns —
+   * the workflow ends in `errored` state.
    */
   protected onFailure?(
     failure: OpenStoryFailureContext<T>
@@ -160,23 +162,26 @@ export abstract class OpenStoryWorkflowEntrypoint<
       });
 
       if (this.onFailure) {
-        // Wrap in step.do so cleanup retries on its own merits and doesn't
-        // mask the original throw — if the cleanup fails after its own
-        // retries, both errors surface in the instance status.
-        await step.do('emit-failure', async () => {
-          try {
+        // Wrap in step.do so cleanup retries on its own merits. The catch
+        // sits OUTSIDE the step — catching inside would make the step
+        // succeed on the first attempt and silently skip the engine's
+        // retries. If cleanup still fails after its retry budget, log and
+        // swallow: the original error must stay the instance's terminal
+        // state, and a row stranded by the failed cleanup (e.g. a sequence
+        // left 'processing') is healed by the cron reconciler via its
+        // persisted workflowRunId (see lib/cron/reconcile-all.ts).
+        try {
+          await step.do('emit-failure', async () => {
             await this.onFailure?.({ event, error: sanitized, scopedDb });
-          } catch (cleanupError) {
-            logger.error(
-              `[${this.constructor.name}] onFailure handler itself failed:`,
-              {
-                err: cleanupError,
-              }
-            );
-            // Swallow the cleanup error — the original error is what we
-            // want to surface as the instance's terminal state.
-          }
-        });
+          });
+        } catch (cleanupError) {
+          logger.error(
+            `[${this.constructor.name}] onFailure handler itself failed:`,
+            {
+              err: cleanupError,
+            }
+          );
+        }
       }
 
       // Notify the parent on failure too — otherwise a parent's

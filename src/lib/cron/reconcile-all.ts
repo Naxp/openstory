@@ -153,7 +153,9 @@ async function reconcileFramesPass(
   let updated = 0;
   for (const row of stuck) {
     const next = await resolveRunState(row.runId ?? '');
-    if (next === null) continue;
+    // null = still in flight, 'unknown' = lookup failed — either way, don't
+    // write a terminal status; the next sweep retries.
+    if (next === null || next === 'unknown') continue;
     await db
       .update(frames)
       .set(cols.setStatus(next))
@@ -200,7 +202,7 @@ async function reconcileFrameVariantsPass(
   let updated = 0;
   for (const row of stuck) {
     const next = await resolveRunState(row.runId ?? '');
-    if (next === null) continue;
+    if (next === null || next === 'unknown') continue;
     if (pipeline === 'primary') {
       await db
         .update(frameVariants)
@@ -248,7 +250,7 @@ async function reconcileSequencesPass(db: Database): Promise<number> {
   let updated = 0;
   for (const row of stuck) {
     const next = await resolveRunState(row.runId ?? '');
-    if (next === null) continue;
+    if (next === null || next === 'unknown') continue;
     await db
       .update(sequences)
       .set(
