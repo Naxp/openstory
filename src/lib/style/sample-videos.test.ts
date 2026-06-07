@@ -7,6 +7,7 @@ import {
   briefForStyle,
   buildSampleVideos,
   CANONICAL_SCRIPT_OVERRIDES,
+  CATEGORY_BRIEFS,
   CANONICAL_TARGET_SECONDS,
   heroStyleSlugs,
   isHeroStyle,
@@ -128,6 +129,25 @@ describe('briefForStyle', () => {
   });
 
   it('throws on an unmapped category', () => {
-    expect(() => briefForStyle({ category: 'not-a-real-category' })).toThrow();
+    expect(() =>
+      briefForStyle({ name: 'Mystery Style', category: 'not-a-real-category' })
+    ).toThrow();
+  });
+
+  it('gives every film-genre style its own brief or script (the shared film brief made action have no action)', () => {
+    const filmStyles = DEFAULT_STYLE_TEMPLATES.filter(
+      (s) => s.category === 'film'
+    );
+    expect(filmStyles.length).toBeGreaterThan(0);
+    for (const style of filmStyles) {
+      const slug = styleSlug(style.name);
+      const hasOwnBrief =
+        briefForStyle(style) !== CATEGORY_BRIEFS['film'] ||
+        slug in CANONICAL_SCRIPT_OVERRIDES;
+      expect(
+        hasOwnBrief,
+        `${style.name} falls back to the generic film brief`
+      ).toBe(true);
+    }
   });
 });
