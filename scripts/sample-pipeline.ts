@@ -8,8 +8,8 @@
  * holds identity across frames, and the samples exercise the production path
  * end-to-end — the sample script drives it headlessly through the public API.
  *
- * Used only by `scripts/generate-style-sample-videos.ts`; kept
- * fetch-injectable and fs-free so it unit-tests without a server.
+ * Script-only helper for `scripts/generate-style-sample-videos.ts` — not
+ * imported by the app, so nothing here ships in the worker bundle.
  */
 
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';

@@ -62,7 +62,7 @@ import {
   orderedFrameVideos,
   waitForSampleSequence,
   type SamplePipelineConfig,
-} from '@/lib/style/sample-pipeline';
+} from './sample-pipeline';
 import {
   beatsToScript,
   BESPOKE_SCRIPTS,

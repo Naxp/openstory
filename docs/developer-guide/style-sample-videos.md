@@ -27,7 +27,7 @@ All the moving parts live in `scripts/generate-style-sample-videos.ts`,
 `scripts/upload-style-sample-videos-to-r2.ts`,
 `scripts/seed-style-sample-videos.ts`, the data/helpers in
 `src/lib/style/sample-videos.ts`, and the public-API client in
-`src/lib/style/sample-pipeline.ts`.
+`scripts/sample-pipeline.ts`.
 
 ## Prerequisites
 
