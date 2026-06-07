@@ -234,6 +234,7 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
         }
         await scopedDb.billing.deductCredits(imageCostMicros, {
           description: `Image generation (${generationParams.model})`,
+          idempotencyKey: `${event.instanceId}:image`,
           metadata: {
             model: generationParams.model,
             frameId: input.frameId,

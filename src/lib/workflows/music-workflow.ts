@@ -110,6 +110,7 @@ export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInpu
         }
         await scopedDb.billing.deductCredits(musicCostMicros, {
           description: `Music generation (${model})`,
+          idempotencyKey: `${event.instanceId}:music`,
           metadata: {
             model,
             sequenceId,

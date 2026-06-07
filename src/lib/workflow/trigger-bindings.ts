@@ -12,7 +12,11 @@
  */
 
 import type { CloudflareEnv } from '@/lib/workflow/types';
+import { isInstanceAlreadyExistsError } from '@/lib/workflow/errors';
 import { buildInstanceId } from '@/lib/workflow/instance-id';
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'workflow', 'trigger-bindings']);
 
 const TRIGGER_TO_BINDING: Record<string, keyof CloudflareEnv> = {
   image: 'IMAGE_WORKFLOW',
@@ -128,6 +132,22 @@ export async function triggerCfWorkflow<T extends Rpc.Serializable<T>>({
     suffix: deduplicationId ?? `${Date.now()}-${crypto.randomUUID()}`,
   });
 
-  const instance = await binding.create({ id, params: body });
-  return { workflowRunId: instance.id };
+  try {
+    const instance = await binding.create({ id, params: body });
+    return { workflowRunId: instance.id };
+  } catch (error) {
+    // A deterministic id (caller passed `deduplicationId`) hitting
+    // `instance.already_exists` means a prior attempt of this same logical
+    // trigger — typically a `step.do` replay — already created the instance.
+    // Treat it as success so the retrying step can complete instead of
+    // burning its budget on a permanent error. The random-suffix path can't
+    // collide legitimately, so it keeps throwing.
+    if (deduplicationId && isInstanceAlreadyExistsError(error)) {
+      logger.info(
+        `[triggerCfWorkflow] ${id} already exists; reusing existing instance for '${workflowName}'`
+      );
+      return { workflowRunId: id };
+    }
+    throw error;
+  }
 }

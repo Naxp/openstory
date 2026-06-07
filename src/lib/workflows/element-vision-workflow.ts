@@ -75,12 +75,16 @@ export class ElementVisionWorkflow extends OpenStoryWorkflowEntrypoint<ElementVi
     // Step 5: auto-rename to vision-suggested token if different. Uses
     // ensureUniqueToken (suffixes `_2` on collision) because the system is
     // choosing the name — failing the workflow on collision would strand the
-    // element with no usable name.
+    // element with no usable name. Excluding the element's own row keeps a
+    // step retry idempotent: after a successful rename the replay sees the
+    // suggested token on this element only, gets it back un-suffixed, and
+    // the (atomic) cascade re-run yields zero deltas.
     const finalToken = await step.do('auto-rename', async () => {
       if (suggestedToken === element.token) return element.token;
       const unique = await scopedDb.sequenceElements.ensureUniqueToken(
         element.sequenceId,
-        suggestedToken
+        suggestedToken,
+        elementId
       );
       if (unique === element.token) return element.token;
       const result = await scopedDb.sequenceElements.cascadeRename({

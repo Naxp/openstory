@@ -414,6 +414,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
       await step.do('deduct-credits', async () => {
         await scopedDb.billing.deductCredits(cost, {
           description: `Motion generation (${model})`,
+          idempotencyKey: `${event.instanceId}:motion`,
           metadata: {
             model,
             frameId: input.frameId,

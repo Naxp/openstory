@@ -54,3 +54,14 @@ export function isEngineAbortError(error: unknown): boolean {
 export function isRecipientInFiniteStateError(error: unknown): boolean {
   return /in_finite_state|finite state/i.test(errorMessage(error));
 }
+
+/**
+ * CF surfaces a reused instance id as `(instance.already_exists) Instance
+ * already exists`. Match on the message defensively (the thrown value's class
+ * isn't part of the public API) so an in-run durable retry — where `create()`
+ * succeeded but the step's result wasn't persisted before a crash — is treated
+ * as success instead of a hard failure.
+ */
+export function isInstanceAlreadyExistsError(error: unknown): boolean {
+  return /already.?exists/i.test(errorMessage(error));
+}
