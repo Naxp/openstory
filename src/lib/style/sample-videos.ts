@@ -3,15 +3,16 @@
  *
  * Pure data + URL/entry builders shared by the render script
  * (`scripts/generate-style-sample-videos.ts`) and the seed
- * (`scripts/seed-style-sample-videos.ts`). Deliberately free of fal/photon/
- * ffmpeg/LLM imports so the seed and unit tests stay lightweight (the enhance +
- * scene-split LLM logic lives in `sample-script.ts`).
+ * (`scripts/seed-style-sample-videos.ts`). Deliberately free of heavy imports
+ * so the seed and unit tests stay lightweight.
  *
- * Every style gets a CANONICAL sample: a per-category one-liner brief (below) is
- * run through the script-enhancer + a scene split, so each style gets a
- * style-appropriate ~15s script (same brief within a category ⇒ comparable).
- * The ~10 hero styles in BESPOKE_SCRIPTS also get a bespoke sample, from a
- * curated script tuned to show the style off.
+ * Every style gets a CANONICAL sample: a per-category one-liner brief (below)
+ * is enhanced server-side by the platform's script-enhancer, so each style
+ * gets a style-appropriate ~15s script (same brief within a category ⇒
+ * comparable). The ~10 hero styles in BESPOKE_SCRIPTS also get a bespoke
+ * sample, from a curated script tuned to show the style off. All samples
+ * render through the real OpenStory pipeline (`POST /api/v1/sequences`) so
+ * recurring people/characters stay consistent across shots.
  */
 import {
   StyleSampleVideoSchema,
@@ -19,17 +20,17 @@ import {
 } from '@/lib/db/schema/libraries';
 import { styleSlug } from '@/lib/style/style-slug';
 
-/** A single shot: a still to generate, then image-to-video to animate it. */
+/** A single curated shot, flattened into script prose via `beatsToScript`. */
 export type SampleBeat = {
-  /** Short id used for intermediate filenames (e.g. `wide`, `pour`). */
+  /** Short id naming the shot (e.g. `wide`, `pour`). */
   id: string;
-  /** Subject/scene description. Style `config` is blended in at render time. */
+  /** Subject/scene description. The style layer is applied by the pipeline. */
   imagePrompt: string;
-  /** Camera/motion description fed to the image-to-video model. */
+  /** Camera/motion description for the shot. */
   motionPrompt: string;
 };
 
-/** Nominal seconds per beat — the i2v duration we request per clip. */
+/** Nominal seconds per beat/shot — used for duration targets + cost estimates. */
 export const NOMINAL_BEAT_SECONDS = 5;
 
 /** Target length of a canonical sample (drives enhance scene count + seed metadata). */
@@ -73,6 +74,41 @@ export function briefForStyle(style: { category: string | null }): string {
     );
   }
   return brief;
+}
+
+/**
+ * Hand-written canonical scripts, keyed by style slug — sent verbatim
+ * (`enhance: 'off'`) INSTEAD of the platform enhancing the per-category brief,
+ * for styles where that brief is a poor fit. `documentary` scored ~4.3 with
+ * the shared film brief (anti-narrative), so it gets an observational portrait
+ * that plays to the style.
+ */
+export const CANONICAL_SCRIPT_OVERRIDES: Record<
+  string,
+  { enhancedScript: string }
+> = {
+  documentary: {
+    // NOTE: the scene-splitter's ONE-SHOT rule needs explicit cut markers
+    // ("Cut to:", sequential framings) to produce multiple frames — plain
+    // continuous prose collapses to a single scene/shot.
+    enhancedScript:
+      'An observational documentary portrait. INT. CLUTTERED VIOLIN WORKSHOP - EARLY MORNING. ' +
+      'Elena, a violin maker in her sixties — grey hair tied back, worn canvas apron over a dark linen shirt — works alone at a bench by the window. ' +
+      'Handheld close shot: her hands plane the spruce top of an unfinished violin, pale wood shavings curling away from the blade, dust drifting in the window light.\n\n' +
+      'Cut to: a handheld medium close-up. Elena lifts the unvarnished violin body to the window light and turns it slowly, checking the curve of the arching with her thumb.\n\n' +
+      'Cut to: a wide shot. Elena sits back on her stool, the violin resting on her knee, and looks at it in silence — the workshop quiet around her, morning light across the bench.',
+  },
+};
+
+/**
+ * Flatten curated beats into prose the real pipeline can scene-split — the
+ * API takes a script rather than per-shot prompts, so its scene split decides
+ * the final shots.
+ */
+export function beatsToScript(beats: SampleBeat[]): string {
+  return beats
+    .map((beat, i) => `Shot ${i + 1}: ${beat.imagePrompt} ${beat.motionPrompt}`)
+    .join('\n\n');
 }
 
 /**

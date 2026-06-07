@@ -2,9 +2,11 @@ import { StyleSampleVideoSchema } from '@/lib/db/schema/libraries';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { describe, expect, it } from 'vitest';
 import {
+  beatsToScript,
   BESPOKE_SCRIPTS,
   briefForStyle,
   buildSampleVideos,
+  CANONICAL_SCRIPT_OVERRIDES,
   CANONICAL_TARGET_SECONDS,
   heroStyleSlugs,
   isHeroStyle,
@@ -84,6 +86,36 @@ describe('hero styles', () => {
   it('isHeroStyle matches the bespoke map', () => {
     expect(isHeroStyle('Product Ad')).toBe(true);
     expect(isHeroStyle('White Background Studio')).toBe(false);
+  });
+});
+
+describe('canonical script overrides', () => {
+  const templateSlugs = new Set(
+    DEFAULT_STYLE_TEMPLATES.map((s) => styleSlug(s.name))
+  );
+
+  it('every override slug maps to a real template name', () => {
+    for (const slug of Object.keys(CANONICAL_SCRIPT_OVERRIDES)) {
+      expect(templateSlugs.has(slug), slug).toBe(true);
+    }
+  });
+
+  it('every override has a non-empty script', () => {
+    for (const [slug, override] of Object.entries(CANONICAL_SCRIPT_OVERRIDES)) {
+      expect(override.enhancedScript.length, slug).toBeGreaterThan(50);
+    }
+  });
+});
+
+describe('beatsToScript', () => {
+  it('flattens beats into numbered shot prose', () => {
+    const script = beatsToScript([
+      { id: 'a', imagePrompt: 'A red ball.', motionPrompt: 'It rolls.' },
+      { id: 'b', imagePrompt: 'A blue cube.', motionPrompt: 'It spins.' },
+    ]);
+    expect(script).toBe(
+      'Shot 1: A red ball. It rolls.\n\nShot 2: A blue cube. It spins.'
+    );
   });
 });
 

@@ -1,40 +1,46 @@
 /**
- * Generate style sample videos (issue #718).
+ * Generate style sample videos (issues #718, #801).
  *
- * CANONICAL sample (every style): a per-category one-liner brief is run through
- * the app's script-enhancer (`getPrompt('script/enhance')` + the same
- * createUserPrompt path the UI uses) and split into 2-3 render-ready beats, so
- * each style gets a style-appropriate ~15s script. BESPOKE sample (~10 hero
- * styles): a curated script from BESPOKE_SCRIPTS. Each beat is: still
- * (recommended image model) → image-to-video (recommended video model) → the
- * clips are concatenated into one mp4 via the system `ffmpeg`.
+ * Every sample renders through the REAL OpenStory pipeline via
+ * `POST /api/v1/sequences` on the live site — scene split, character bible +
+ * reference sheets, frame images, motion, music — so recurring people and
+ * characters stay consistent across shots and every sample exercises the
+ * production path end-to-end. There is no direct-fal fallback.
+ *
+ * CANONICAL sample (every style): the per-category one-liner brief is sent
+ * with `enhance: 'always'` and the platform's script-enhancer expands it
+ * server-side (~15s target). BESPOKE sample (~10 hero styles): curated beats
+ * from BESPOKE_SCRIPTS, flattened to shot prose and sent verbatim
+ * (`enhance: 'off'`). Hand-written CANONICAL_SCRIPT_OVERRIDES are also sent
+ * verbatim.
+ *
+ * The per-frame clips are downloaded and concatenated into one mp4 via the
+ * system `ffmpeg`. Music lands on the account as a sequence-level asset (mixed
+ * client-side in the app) — it is not part of the frame clips, so the local
+ * concat stays silent.
  *
  * Output (local, for review before upload):
  *   sample-videos/{slug}/canonical.mp4
  *   sample-videos/{slug}/bespoke.mp4              (hero styles only)
- *   sample-videos/{slug}/canonical.script.json    (enhanced script + beats, reviewable + reused)
- *   sample-videos/{slug}/_frames/*.webp|.mp4      (intermediate stills + clips)
+ *   sample-videos/{slug}/{kind}.sequence.json     (created sequence id, resumed on re-run)
+ *   sample-videos/{slug}/{kind}.enhanced.txt      (canonical: platform-enhanced script)
+ *   sample-videos/{slug}/_frames/*.webp|.mp4      (downloaded stills + clips)
  *
- * Two-phase workflow:
- *   1. --scripts-only  → just enhance + split + save canonical.script.json (needs OPENROUTER_KEY).
- *      Review the scripts, then…
- *   2. (default)       → render. Reuses any saved script.json; --force regenerates.
- *
- * Without FAL_KEY, the default run is a dry-run (prints resolved models + brief
- * + estimated fal.ai spend so you see the bill first).
- *
- * Still gate: when OPENROUTER_KEY is set, each generated still is scored and
- * re-rolled (up to STILL_ATTEMPTS, default 3) on a clear failure — literal
- * medium, multi-frame, or gross anatomy — BEFORE the expensive image-to-video
- * step, since a sample video has no later pick-the-best safety net. Disable with
- * --no-gate.
+ * Without OPENSTORY_API_KEY the run is a dry-run (prints the resolved plan +
+ * estimated spend so you see the bill first).
  *
  * Usage:
- *   bun scripts/generate-style-sample-videos.ts --scripts-only            # phase 1 (LLM only)
- *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts --filter "Product Ad"
- *   FAL_KEY=… bun scripts/generate-style-sample-videos.ts                 # all styles
- *   bun scripts/generate-style-sample-videos.ts --dry-run                 # cost preview
- *   …--canonical-only | --bespoke-only | --hero-only | --force | --no-gate
+ *   OPENSTORY_API_KEY=osk_… bun scripts/generate-style-sample-videos.ts            # all styles
+ *   OPENSTORY_API_KEY=osk_… bun scripts/generate-style-sample-videos.ts --submit-only
+ *       # kick off all sequences (ids → {kind}.sequence.json), no polling;
+ *       # re-run without --submit-only later to download + concat from the saved ids
+ *   bun scripts/generate-style-sample-videos.ts --dry-run                          # cost preview
+ *   …--filter "<name>" | --canonical-only | --bespoke-only | --hero-only | --force
+ *
+ * Env: OPENSTORY_API_URL (default https://openstory.so — the live site; set
+ * http://localhost:3000 + `bun dev` to test against local) and
+ * OPENSTORY_API_KEY (Settings → Developer; the key's team must have the
+ * template styles seeded and enough credits — generation bills the platform).
  */
 import {
   DEFAULT_IMAGE_MODEL,
@@ -43,38 +49,30 @@ import {
   safeImageToVideoModel,
   safeTextToImageModel,
   type ImageToVideoModel,
-  type TextModel,
   type TextToImageModel,
 } from '@/lib/ai/models';
 import { microsToUsd } from '@/lib/billing/money';
 import {
   aspectRatioSchema,
-  aspectRatioToImageSize,
   type AspectRatio,
 } from '@/lib/constants/aspect-ratios';
-import type { StyleConfig } from '@/lib/db/schema/libraries';
-import { generateImageWithProvider } from '@/lib/image/image-generation';
+import { calculateMotionMetadata } from '@/lib/motion/motion-generation';
 import {
-  calculateMotionMetadata,
-  pollMotionJob,
-  submitMotionJob,
-} from '@/lib/motion/motion-generation';
-import { generateCanonicalScript } from '@/lib/style/sample-script';
+  createSampleSequence,
+  orderedFrameVideos,
+  waitForSampleSequence,
+  type SamplePipelineConfig,
+} from '@/lib/style/sample-pipeline';
 import {
-  scoreStill,
-  stillFlagLabels,
-  stillRejected,
-} from '@/lib/style/score-image';
-import { buildStyledImagePrompt } from '@/lib/style/style-image-prompt';
-import {
+  beatsToScript,
   BESPOKE_SCRIPTS,
   briefForStyle,
+  CANONICAL_SCRIPT_OVERRIDES,
   NOMINAL_BEAT_SECONDS,
   type SampleBeat,
 } from '@/lib/style/sample-videos';
 import { styleSlug } from '@/lib/style/style-slug';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
-import { PhotonImage } from '@cf-wasm/photon';
 import { execFile } from 'node:child_process';
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -84,39 +82,16 @@ import { z } from 'zod';
 const execFileAsync = promisify(execFile);
 
 const OUTPUT_DIR = path.join(process.cwd(), 'sample-videos');
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT ?? '3'); // script-gen (LLM) pool; render uses the submit throttle below
-const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 
-/**
- * fal has its own queue, so the render path doesn't cap concurrency — it meters
- * the SUBMISSION rate. Every fal submit (image gen + image-to-video) waits its
- * turn via throttleSubmit() so no two fire within SUBMIT_INTERVAL_MS of each
- * other; fal queues everything behind them. Jobs are launched all at once and
- * poll their own results — the throttle is the only rate limit.
- */
-const SUBMIT_INTERVAL_MS = Number(process.env.SUBMIT_INTERVAL_MS ?? '1000');
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-let nextSubmitAt = 0;
-async function throttleSubmit(): Promise<void> {
-  const now = Date.now();
-  const wait = Math.max(0, nextSubmitAt - now);
-  nextSubmitAt = Math.max(now, nextSubmitAt) + SUBMIT_INTERVAL_MS;
-  if (wait > 0) await sleep(wait);
-}
 /** Upper bound of the enhancer's 2-3 scene range — used for cost estimates. */
 const CANONICAL_PLANNED_SCENES = 3;
 
-// Still-quality gate: score each generated still and re-roll bad ones BEFORE
-// the expensive image-to-video step (videos have no later pick-the-best safety
-// net like thumbnails do). Disabled with --no-gate or when OPENROUTER_KEY is
-// absent. The gate model just needs to be vision-capable + cheap.
-const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
-const STILL_ATTEMPTS = Number(process.env.STILL_ATTEMPTS ?? '3');
-const GATE_MODEL: TextModel = 'google/gemini-3-flash-preview';
-const gateEnabled = !process.argv.includes('--no-gate') && !!OPENROUTER_KEY;
+const OPENSTORY_API_URL =
+  process.env.OPENSTORY_API_URL ?? 'https://openstory.so';
+const OPENSTORY_API_KEY = process.env.OPENSTORY_API_KEY;
 
-const hasFalKey = !!process.env.FAL_KEY;
+/** Global clip progress across all jobs — `done/total` for render logging. */
+const clipProgress = { done: 0, total: 0 };
 
 type Flags = {
   filter: string | null;
@@ -124,8 +99,8 @@ type Flags = {
   bespokeOnly: boolean;
   heroOnly: boolean;
   force: boolean;
-  scriptsOnly: boolean;
   dryRun: boolean;
+  submitOnly: boolean;
 };
 
 function parseFlags(argv: string[]): Flags {
@@ -136,8 +111,8 @@ function parseFlags(argv: string[]): Flags {
     bespokeOnly: argv.includes('--bespoke-only'),
     heroOnly: argv.includes('--hero-only'),
     force: argv.includes('--force'),
-    scriptsOnly: argv.includes('--scripts-only'),
-    dryRun: argv.includes('--dry-run') || !hasFalKey,
+    dryRun: argv.includes('--dry-run'),
+    submitOnly: argv.includes('--submit-only'),
   };
 }
 
@@ -150,31 +125,15 @@ type RenderJob = {
   imageModel: TextToImageModel;
   videoModel: ImageToVideoModel;
   aspectRatio: AspectRatio;
-  config: StyleConfig;
   outputPath: string;
   force: boolean;
-  /** Canonical only: enhanced from this per-category brief. */
+  /** Canonical only: the platform enhances this per-category brief. */
   brief?: string;
-  /** Bespoke only: curated beats (skip enhance). */
+  /** Bespoke only: curated beats, sent verbatim (no enhancement). */
   curatedBeats?: SampleBeat[];
-  /** Scene count used for cost estimates before enhance resolves real beats. */
+  /** Scene count used for cost estimates before the platform's scene split. */
   plannedScenes: number;
 };
-
-const savedScriptSchema = z.object({
-  brief: z.string(),
-  enhancedScript: z.string(),
-  beats: z
-    .array(
-      z.object({
-        id: z.string(),
-        imagePrompt: z.string(),
-        motionPrompt: z.string(),
-      })
-    )
-    .min(1),
-});
-type SavedScript = z.infer<typeof savedScriptSchema>;
 
 function buildJobs(flags: Flags): RenderJob[] {
   const jobs: RenderJob[] = [];
@@ -204,7 +163,6 @@ function buildJobs(flags: Flags): RenderJob[] {
       imageModel,
       videoModel,
       aspectRatio,
-      config: style.config,
       force: flags.force,
     };
 
@@ -239,162 +197,179 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-function scriptJsonPath(job: RenderJob): string {
-  return path.join(path.dirname(job.outputPath), `${job.kind}.script.json`);
-}
-
 /**
- * Resolve a job's beats. Bespoke → curated. Canonical → reuse the saved
- * script.json (unless --force), else enhance the brief + split into beats and
- * persist it for review/reproducibility.
+ * What a job sends to `POST /api/v1/sequences`. Bespoke beats and hand-written
+ * overrides are already-reviewed prose → sent verbatim (`enhance: 'off'`).
+ * Other canonicals send the raw brief with `enhance: 'always'` so the LIVE
+ * SITE's script-enhancer expands it — no local LLM involved.
  */
-async function prepareBeats(job: RenderJob): Promise<SampleBeat[]> {
-  if (job.curatedBeats) return job.curatedBeats;
+function preparePipelineRequest(job: RenderJob): {
+  script: string;
+  enhance: 'always' | 'off';
+  targetSeconds?: number;
+} {
+  if (job.curatedBeats) {
+    return { script: beatsToScript(job.curatedBeats), enhance: 'off' };
+  }
+  const override = CANONICAL_SCRIPT_OVERRIDES[job.slug];
+  if (override) return { script: override.enhancedScript, enhance: 'off' };
   if (!job.brief) throw new Error(`Canonical job ${job.slug} has no brief`);
+  return {
+    script: job.brief,
+    enhance: 'always',
+    targetSeconds: CANONICAL_PLANNED_SCENES * NOMINAL_BEAT_SECONDS,
+  };
+}
 
-  const scriptPath = scriptJsonPath(job);
-  if (!job.force && (await fileExists(scriptPath))) {
-    const saved = savedScriptSchema.safeParse(
-      JSON.parse(await readFile(scriptPath, 'utf-8'))
+/** Where a job persists its created sequence id (submit/resume). */
+function sequenceJsonPath(job: RenderJob): string {
+  return path.join(path.dirname(job.outputPath), `${job.kind}.sequence.json`);
+}
+
+const savedSequenceSchema = z.object({
+  id: z.string(),
+  workflowRunId: z.string(),
+  baseUrl: z.string(),
+  createdAt: z.string(),
+});
+
+function pipelineApi(): SamplePipelineConfig {
+  if (!OPENSTORY_API_KEY) {
+    throw new Error(
+      `set OPENSTORY_API_KEY (and OPENSTORY_API_URL, default ${OPENSTORY_API_URL}) to render`
     );
-    if (saved.success) return saved.data.beats;
   }
-
-  const { enhancedScript, beats } = await generateCanonicalScript({
-    brief: job.brief,
-    style: {
-      config: job.config,
-      name: job.styleName,
-      category: job.category,
-      tags: job.tags,
-    },
-    aspectRatio: job.aspectRatio,
-  });
-  const saved: SavedScript = { brief: job.brief, enhancedScript, beats };
-  await mkdir(path.dirname(scriptPath), { recursive: true });
-  await writeFile(scriptPath, JSON.stringify(saved, null, 2));
-  return beats;
-}
-
-/** Re-encode downloaded image bytes to a webp (for review) + a base64 JPEG (for scoring). */
-function encodeStill(bytes: Uint8Array): { webp: Buffer; jpegBase64: string } {
-  const image = PhotonImage.new_from_byteslice(bytes);
-  try {
-    return {
-      webp: Buffer.from(image.get_bytes_webp()),
-      jpegBase64: Buffer.from(image.get_bytes_jpeg(85)).toString('base64'),
-    };
-  } finally {
-    image.free();
-  }
-}
-
-async function generateStillOnce(
-  job: RenderJob,
-  beat: SampleBeat
-): Promise<{ url: string; bytes: Uint8Array }> {
-  await throttleSubmit();
-  const result = await generateImageWithProvider({
-    model: job.imageModel,
-    prompt: buildStyledImagePrompt(beat.imagePrompt, job.config),
-    imageSize: aspectRatioToImageSize(job.aspectRatio),
-    numImages: 1,
-    resolution: '2K',
-  });
-  const url = result.imageUrls[0];
-  if (!url) throw new Error(`No image returned for ${job.slug}/${beat.id}`);
-  const res = await fetch(url);
-  return { url, bytes: new Uint8Array(await res.arrayBuffer()) };
+  return { baseUrl: OPENSTORY_API_URL, apiKey: OPENSTORY_API_KEY };
 }
 
 /**
- * Generate a still for one beat, write it locally as webp, return its URL. When
- * the gate is enabled, score each still and re-roll on a clear failure
- * (literal-medium / multi-frame / gross anatomy) up to STILL_ATTEMPTS, keeping
- * the first clean one (or the best-scoring if none come back clean) — so we
- * never animate a known-bad frame.
+ * Create the job's sequence on the platform — or resume the one a previous
+ * run already created (`{kind}.sequence.json`), so a `--submit-only` pass (or
+ * a crashed run) is picked up later without re-creating/re-billing. `--force`
+ * ignores the saved id and creates a fresh sequence.
  */
-async function renderStill(
+async function ensureSampleSequence(
   job: RenderJob,
-  beat: SampleBeat,
-  framesDir: string
+  api: SamplePipelineConfig
 ): Promise<string> {
-  const webpPath = path.join(framesDir, `${beat.id}.webp`);
-
-  if (!gateEnabled || !OPENROUTER_KEY) {
-    const { url, bytes } = await generateStillOnce(job, beat);
-    await writeFile(webpPath, encodeStill(bytes).webp);
-    return url;
+  const seqPath = sequenceJsonPath(job);
+  if (!job.force && (await fileExists(seqPath))) {
+    const saved = savedSequenceSchema.safeParse(
+      JSON.parse(await readFile(seqPath, 'utf-8'))
+    );
+    if (saved.success && saved.data.baseUrl === api.baseUrl) {
+      console.log(
+        `   ↩️  ${job.slug}/${job.kind} resuming sequence ${saved.data.id} (from ${path.relative(process.cwd(), seqPath)})`
+      );
+      return saved.data.id;
+    }
   }
 
-  let best: { url: string; webp: Buffer; adherence: number } | null = null;
-  for (let attempt = 1; attempt <= STILL_ATTEMPTS; attempt++) {
-    const { url, bytes } = await generateStillOnce(job, beat);
-    const { webp, jpegBase64 } = encodeStill(bytes);
-    const verdict = await scoreStill({
-      jpegBase64,
+  const request = preparePipelineRequest(job);
+  const { id, workflowRunId, enhancedScript } = await createSampleSequence(
+    api,
+    {
+      ...request,
+      title: `Style sample — ${job.styleName} (${job.kind})`,
       styleName: job.styleName,
-      sceneDescription: beat.imagePrompt,
-      config: job.config,
-      model: GATE_MODEL,
-      apiKey: OPENROUTER_KEY,
-    });
-    if (!best || verdict.styleAdherence > best.adherence) {
-      best = { url, webp, adherence: verdict.styleAdherence };
+      aspectRatio: job.aspectRatio,
+      imageModel: job.imageModel,
+      videoModel: job.videoModel,
     }
-    if (!stillRejected(verdict)) {
-      await writeFile(webpPath, webp);
-      return url;
-    }
-    console.log(
-      `   ↻ ${job.slug}/${beat.id} still re-roll ${attempt}/${STILL_ATTEMPTS} [${stillFlagLabels(verdict)}]`
+  );
+  console.log(
+    `   📤 ${job.slug}/${job.kind} sequence ${id} created via ${api.baseUrl}`
+  );
+  await mkdir(path.dirname(seqPath), { recursive: true });
+  await writeFile(
+    seqPath,
+    JSON.stringify(
+      {
+        id,
+        workflowRunId,
+        baseUrl: api.baseUrl,
+        createdAt: new Date().toISOString(),
+      },
+      null,
+      2
+    )
+  );
+  // Persist the platform-enhanced script for the record (review happens after
+  // the fact — there's no local pre-render review step).
+  if (enhancedScript) {
+    await writeFile(
+      path.join(path.dirname(job.outputPath), `${job.kind}.enhanced.txt`),
+      enhancedScript
     );
   }
-  // No clean still after all attempts — use the best one and warn.
-  if (!best) throw new Error(`No still produced for ${job.slug}/${beat.id}`);
-  console.warn(
-    `   ⚠️  ${job.slug}/${beat.id}: kept best-of-${STILL_ATTEMPTS} still (still flagged)`
-  );
-  await writeFile(webpPath, best.webp);
-  return best.url;
+  return id;
 }
 
-/** Submit + poll one i2v clip; download it locally; return the local path. */
-async function renderClip(
+async function downloadTo(url: string, dest: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Download failed (${res.status}): ${url}`);
+  await writeFile(dest, Buffer.from(await res.arrayBuffer()));
+}
+
+/**
+ * One sequence through the real OpenStory pipeline: create (or resume), wait
+ * for every frame video, then download the per-frame clips for the local
+ * concat. The platform has no server-side assembly (final export is
+ * client-side), so concatenation stays here.
+ */
+async function renderJobViaPipeline(
   job: RenderJob,
-  beat: SampleBeat,
-  imageUrl: string,
   framesDir: string
-): Promise<string> {
-  await throttleSubmit();
-  const submission = await submitMotionJob({
-    imageUrl,
-    prompt: beat.motionPrompt,
-    model: job.videoModel,
-    duration: NOMINAL_BEAT_SECONDS,
-    aspectRatio: job.aspectRatio,
-    generateAudio: false, // silent for clean apples-to-apples comparison
+): Promise<string[]> {
+  const api = pipelineApi();
+  const id = await ensureSampleSequence(job, api);
+
+  // Frames appear incrementally while scene-split streams, so track the
+  // count delta rather than latching the first non-zero value.
+  let framesCounted = 0;
+  let videosCounted = 0;
+  const state = await waitForSampleSequence(api, {
+    id,
+    onProgress: (p) => {
+      if (p.frames > framesCounted) {
+        clipProgress.total += p.frames - framesCounted;
+        framesCounted = p.frames;
+      }
+      const newlyReady = Math.max(0, p.videosReady - videosCounted);
+      videosCounted += newlyReady;
+      clipProgress.done += newlyReady;
+      console.log(
+        `   ⏳ ${job.slug}/${job.kind} [${p.status}] images ${p.imagesReady}/${p.frames}, ` +
+          `clips ${p.videosReady}/${p.frames}` +
+          (p.videosFailed > 0 ? `, ${p.videosFailed} FAILED` : '') +
+          ` — ${clipProgress.done}/${clipProgress.total} clips overall`
+      );
+    },
   });
 
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const poll = await pollMotionJob(submission.jobId, submission.modelKey);
-    if (poll.status === 'completed') {
-      if (!poll.url)
-        throw new Error(`Clip completed without URL: ${job.slug}/${beat.id}`);
-      const res = await fetch(poll.url);
-      const clipPath = path.join(framesDir, `${beat.id}.mp4`);
-      await writeFile(clipPath, Buffer.from(await res.arrayBuffer()));
-      return clipPath;
-    }
-    if (poll.status === 'failed') {
-      throw new Error(
-        `Motion failed for ${job.slug}/${beat.id}: ${poll.error ?? 'unknown'}`
-      );
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  // A non-completed status with every clip ready is tolerated by
+  // waitForSampleSequence (e.g. `instance.in_finite_state` poisoning where the
+  // failure was written after all the work landed) — surface it but proceed.
+  if (state.status !== 'completed') {
+    console.warn(
+      `   ⚠️  ${job.slug}/${job.kind} sequence ${id} ended ${state.status} but all clips rendered — using them`
+    );
   }
-  throw new Error(`Motion timed out for ${job.slug}/${beat.id}`);
+
+  // Download per-frame clips (+ stills, review-only) in playback order.
+  const frames = orderedFrameVideos(state);
+  return Promise.all(
+    frames.map(async (frame, i) => {
+      const base = `${String(i + 1).padStart(2, '0')}-${frame.frameId}`;
+      if (frame.imageUrl) {
+        const ext = path.extname(new URL(frame.imageUrl).pathname) || '.webp';
+        await downloadTo(frame.imageUrl, path.join(framesDir, base + ext));
+      }
+      const clipPath = path.join(framesDir, `${base}.mp4`);
+      await downloadTo(frame.videoUrl, clipPath);
+      return clipPath;
+    })
+  );
 }
 
 /** Concatenate clips into one mp4. Stream-copy first, re-encode on failure. */
@@ -438,12 +413,18 @@ async function concatClips(clipPaths: string[], outputPath: string) {
   }
 }
 
-async function renderJob(job: RenderJob): Promise<void> {
+async function renderJob(job: RenderJob, submitOnly: boolean): Promise<void> {
   if (!job.force && (await fileExists(job.outputPath))) {
     console.log(`⏭️  ${job.slug}/${job.kind} exists — skipping (use --force)`);
     return;
   }
-  const beats = await prepareBeats(job);
+  // Fire-and-forget: create the sequence on the platform, persist its id, and
+  // exit — a later run (without --submit-only) resumes from the saved id to
+  // poll + download + concat.
+  if (submitOnly) {
+    await ensureSampleSequence(job, pipelineApi());
+    return;
+  }
   const framesDir = path.join(
     path.dirname(job.outputPath),
     '_frames',
@@ -451,20 +432,8 @@ async function renderJob(job: RenderJob): Promise<void> {
   );
   await mkdir(framesDir, { recursive: true });
 
-  // 1. Stills (parallel across beats — shared subject text keeps them consistent).
-  const stills = await Promise.all(
-    beats.map(async (beat) => ({
-      beat,
-      imageUrl: await renderStill(job, beat, framesDir),
-    }))
-  );
-  // 2. Clips (parallel submit + poll), preserving beat order.
-  const clipPaths = await Promise.all(
-    stills.map(({ beat, imageUrl }) =>
-      renderClip(job, beat, imageUrl, framesDir)
-    )
-  );
-  // 3. Concatenate.
+  const clipPaths = await renderJobViaPipeline(job, framesDir);
+
   await mkdir(path.dirname(job.outputPath), { recursive: true });
   await concatClips(clipPaths, job.outputPath);
   await rm(path.join(framesDir, 'concat.txt'), { force: true });
@@ -473,7 +442,11 @@ async function renderJob(job: RenderJob): Promise<void> {
   );
 }
 
-/** Estimate total fal.ai video cost (excludes image cost; canonical uses planned scene count). */
+/**
+ * Rough motion-cost indicator (raw model price × planned scenes). Generation
+ * bills the API key's team in platform credits — images, motion, and music —
+ * so the real bill is higher; this is only a relative size of the run.
+ */
 function estimateCost(jobs: RenderJob[]): number {
   let usd = 0;
   for (const job of jobs) {
@@ -506,7 +479,7 @@ function printDryRun(jobs: RenderJob[]) {
     for (const job of styleJobs) {
       const detail =
         job.kind === 'canonical'
-          ? `brief: "${job.brief}" → ~${job.plannedScenes} scenes`
+          ? `brief: "${job.brief}" → ~${job.plannedScenes} scenes (platform-enhanced)`
           : `${job.plannedScenes} curated beats`;
       console.log(`    ${job.kind}: ${detail} × ${NOMINAL_BEAT_SECONDS}s`);
     }
@@ -514,58 +487,26 @@ function printDryRun(jobs: RenderJob[]) {
   const clips = jobs.reduce((n, j) => n + j.plannedScenes, 0);
   console.log(
     `\nTotals: ${byStyle.size} styles, ${jobs.length} videos, ~${clips} clips ` +
-      `(+~${clips} image gens). Est. video spend ≈ $${estimateCost(jobs).toFixed(2)} ` +
-      `(image + LLM script cost not included).`
+      `(+~${clips} image gens + music per sequence), all via the OpenStory pipeline ` +
+      `at ${OPENSTORY_API_URL}. Motion-cost indicator ≈ $${estimateCost(jobs).toFixed(2)} ` +
+      `(bills the API key's team in credits).`
   );
-  if (!hasFalKey)
-    console.log('\n(FAL_KEY not set — set it to actually render.)');
-}
-
-/** Phase 1: enhance + split + save canonical.script.json (no rendering). */
-async function runScriptsOnly(jobs: RenderJob[]) {
-  const canonical = jobs.filter((j) => j.kind === 'canonical');
-  console.log(
-    `✍️  Generating ${canonical.length} canonical scripts (no render)…\n`
-  );
-  let index = 0;
-  const failures: string[] = [];
-  const worker = async () => {
-    while (index < canonical.length) {
-      const job = canonical[index++];
-      if (!job) break;
-      try {
-        const beats = await prepareBeats(job);
-        console.log(
-          `✅ ${job.slug}: ${beats.length} beats → ${path.relative(process.cwd(), scriptJsonPath(job))}`
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`❌ ${job.slug}: ${message}`);
-        failures.push(job.slug);
-      }
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(MAX_CONCURRENT, canonical.length) }, worker)
-  );
-  console.log(
-    `\nDone: ${canonical.length - failures.length}/${canonical.length} scripts.`
-  );
-  if (failures.length > 0) process.exit(1);
+  if (!OPENSTORY_API_KEY) {
+    console.log('\n(OPENSTORY_API_KEY not set — set it to actually render.)');
+  }
 }
 
 /**
- * Launch every job at once and let each one submit + poll independently;
- * throttleSubmit() meters the actual fal submission rate (1 per
- * SUBMIT_INTERVAL_MS) and fal's queue absorbs the backlog, so there's no fixed
- * concurrency cap. Failures are collected without aborting the rest.
+ * Launch every job at once; each creates its sequence and long-polls
+ * independently — the platform's own queue absorbs the backlog. Failures are
+ * collected without aborting the rest.
  */
-async function runPool(jobs: RenderJob[]) {
+async function runPool(jobs: RenderJob[], submitOnly: boolean) {
   const failures: { slug: string; kind: string; error: string }[] = [];
   await Promise.all(
     jobs.map(async (job) => {
       try {
-        await renderJob(job);
+        await renderJob(job, submitOnly);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`❌ ${job.slug}/${job.kind}: ${message}`);
@@ -585,24 +526,27 @@ async function main() {
     process.exit(1);
   }
 
-  if (flags.scriptsOnly) {
-    await runScriptsOnly(jobs);
-    return;
-  }
-
-  if (flags.dryRun) {
+  if (flags.dryRun || !OPENSTORY_API_KEY) {
     printDryRun(jobs);
     return;
   }
 
   console.log(
-    `🎬 Rendering ${jobs.length} videos (submitting 1 fal job every ${SUBMIT_INTERVAL_MS}ms; fal queues the rest). Est. spend ≈ $${estimateCost(jobs).toFixed(2)}\n`
+    flags.submitOnly
+      ? `🚀 Submitting ${jobs.length} sequence(s) to the OpenStory pipeline (${OPENSTORY_API_URL}) — ` +
+          `no polling; ids land in sample-videos/{slug}/{kind}.sequence.json. ` +
+          `Motion-cost indicator ≈ $${estimateCost(jobs).toFixed(2)} (bills the API key's team)\n`
+      : `🎬 Rendering ${jobs.length} videos via the OpenStory pipeline (${OPENSTORY_API_URL}). ` +
+          `Motion-cost indicator ≈ $${estimateCost(jobs).toFixed(2)} (bills the API key's team)\n`
   );
   await mkdir(OUTPUT_DIR, { recursive: true });
-  const failures = await runPool(jobs);
+  const failures = await runPool(jobs, flags.submitOnly);
 
   console.log(
-    `\nDone: ${jobs.length - failures.length}/${jobs.length} succeeded.`
+    `\nDone: ${jobs.length - failures.length}/${jobs.length} ` +
+      (flags.submitOnly
+        ? 'submitted. Re-run without --submit-only to download + concat once they finish.'
+        : 'succeeded.')
   );
   if (failures.length > 0) {
     console.error(`${failures.length} failed:`);
