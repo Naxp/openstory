@@ -47,21 +47,28 @@ export const CANONICAL_TARGET_SECONDS = 15;
  * same inert anticipation→reveal→logo mood piece for every style, and a
  * 15-second sample where nothing happens is a boring sample. Scenes become
  * motion clips, so the brief must describe visible motion.
+ *
+ * Every human subject is given an explicit gender and a short visual
+ * descriptor. Neutral nouns ("a courier", "a dancer") made the enhancer
+ * default to singular "they", which the image model rendered as androgynous
+ * figures AND gave the character-bible nothing to lock identity onto across
+ * cuts — the exact consistency #801 is about. The descriptor doubles as the
+ * bible's anchor, so name what the person looks like, not just what they do.
  */
 export const CATEGORY_BRIEFS: Record<string, string> = {
   commercial:
-    'a premium brand spot: a dancer sprints through a dark warehouse, bursts through a curtain of golden dust, and lands in slow motion as light floods the space',
+    'a premium brand spot: a woman in a flowing red dress sprints through a dark warehouse, bursts through a curtain of golden dust, and lands in slow motion as light floods the space',
   ecommerce:
     'a product launch where the product assembles itself mid-air — components fly in and snap together in slow motion, and the finished product drops onto the counter with a satisfying bounce',
   influencer:
-    'an honest review spoken to camera: the creator unboxes the product, fumbles it in surprise at how light it is, catches it one-handed, and cracks up laughing',
+    'an honest review spoken to camera: a young man with tousled hair unboxes the product, fumbles it in surprise at how light it is, catches it one-handed, and cracks up laughing',
   animatic:
-    'a storyboard animatic of a heist gone sideways — a courier grabs the case, vaults a desk, and dives through closing elevator doors',
+    'a storyboard animatic of a heist gone sideways — a woman in a sharp black suit grabs the case, vaults a desk, and dives through closing elevator doors',
   animation:
     'a playful animated story: a small robot chases its runaway wheel downhill through a street market, bouncing off awnings, and catches it at the lip of a fountain',
   kids: 'a kids’ ad where a juice box rockets off the table, loops around the kitchen trailing rainbow fizz, and sticks the landing in a lunchbox just as it snaps shut',
   corporate:
-    'a brand film following one package across the world in three cuts — a warehouse robot lifts it, a cargo drone carries it through a storm, and a courier hands it over at a sunlit door',
+    'a brand film following one package across the world in three cuts — a warehouse robot lifts it, a cargo drone carries it through a storm, and a man in a courier uniform hands it over at a sunlit door',
   realestate:
     'a luxury home tour that begins underwater in the infinity pool, surfaces at sunset, and glides through open glass doors into the living room as the lights come on',
   // Narrative film genres get per-style briefs in STYLE_BRIEF_OVERRIDES (a
@@ -70,20 +77,20 @@ export const CATEGORY_BRIEFS: Record<string, string> = {
   // the guarded fallback for a future film style without an override.
   film: 'a cinematic scene where something decisive happens — a chase, a confrontation, or an escape; never a person standing still',
   photography:
-    'a photography showcase built on motion — a model turns into a burst of strobe flashes, fabric mid-swirl, each flash freezing a different pose',
+    'a photography showcase built on motion — a woman model with sharp features turns into a burst of strobe flashes, fabric mid-swirl, each flash freezing a different pose',
   healthcare:
-    'a recovery story in three beats — hands gripping parallel bars in physical therapy, the first unassisted steps, then the patient jogging the hospital corridor past applauding staff',
-  food: 'the making of a signature dish — flames leap from the pan, sauce pours in slow motion, and the chef cuts through the finished dish as steam escapes',
+    'a recovery story in three beats — an older man grips parallel bars in physical therapy, takes his first unassisted steps, then jogs the hospital corridor past applauding staff',
+  food: 'the making of a signature dish — a woman chef works a flaming pan, sauce pours in slow motion, and she cuts through the finished dish as steam escapes',
   fitness:
-    'one rep at the limit — a lifter chalks up, drives the barbell overhead in slow motion as chalk dust flies, and drops it with a floor-shaking bounce',
+    'one rep at the limit — a broad-shouldered man chalks up, drives the barbell overhead in slow motion as chalk dust flies, and drops it with a floor-shaking bounce',
   edtech:
-    'a learning montage — a student sketches an equation that lifts off the page into floating diagrams around her, then snaps back into the notebook as she nails the answer',
+    'a learning montage — a young woman sketches an equation that lifts off the page into floating diagrams around her, then snaps back into the notebook as she nails the answer',
   automotive:
     'a car reveal in motion — the car drifts through a wet hangar in a controlled slide, headlights blazing through fog, and stops dead inches from the camera',
   nonprofit:
-    'a hands-in-the-dirt story — volunteers plant a treeline at dawn in quick cuts, a child waters the first sapling, and the camera lifts to reveal a whole green field',
+    'a hands-in-the-dirt story — a group of volunteers plant a treeline at dawn in quick cuts, a young girl waters the first sapling, and the camera lifts to reveal a whole green field',
   travel:
-    'a getaway in three jumps — a cliff dive into turquoise water, a scooter weaving through a market at dusk, and a paper lantern rising from the beach into the night sky',
+    'a getaway in three jumps — a man dives off a cliff into turquoise water, a woman weaves a scooter through a market at dusk, and a paper lantern rises from the beach into the night sky',
 };
 
 /**
@@ -94,21 +101,21 @@ export const CATEGORY_BRIEFS: Record<string, string> = {
  */
 export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
   action:
-    'a rooftop chase at night — a courier vaults between buildings clutching a stolen drive, a pursuit drone closing in, ending with a leap off the roof edge',
+    'a rooftop chase at night — a wiry man in his 30s in a battered jacket vaults between buildings clutching a stolen drive, a pursuit drone closing in, ending with a leap off the roof edge',
   'western-epic':
-    'a horseback pursuit across open desert — a rider gallops through a canyon as a dust storm rises behind, and clears a ravine the pursuers refuse to jump',
+    'a horseback pursuit across open desert — a hard-eyed woman in a dust-caked duster coat gallops through a canyon as a dust storm rises behind, and clears a ravine the pursuers refuse to jump',
   'sci-fi-futuristic':
-    'an escape from a docking bay — a pilot sprints to her ship as blast doors close, slides under at the last second, and the ship tears away from the station',
+    'an escape from a docking bay — a woman pilot in a flight suit sprints to her ship as blast doors close, slides under at the last second, and the ship tears away from the station',
   'neo-noir-thriller':
-    'a rain-soaked double-cross — a briefcase handoff in an alley goes wrong, one figure bolts through neon-lit traffic, and the case bursts open scattering cash in the rain',
+    'a rain-soaked double-cross — a briefcase handoff in an alley goes wrong, a man in a long trench coat bolts through neon-lit traffic, and the case bursts open scattering cash in the rain',
   'horror-gothic':
-    'a candlelit flight through a derelict manor — a woman runs down a corridor as doors slam behind her, reaches the grand staircase, and the candle blows out',
+    'a candlelit flight through a derelict manor — a young woman in a white nightgown runs down a corridor as doors slam behind her, reaches the grand staircase, and the candle blows out',
   'rom-com':
-    'a missed-train almost-kiss — she sprints across the platform, he holds the doors, and the train pulls away with both of them inside, laughing',
+    'a missed-train almost-kiss — a woman in a yellow coat sprints across the platform, a man in a grey suit holds the doors, and the train pulls away with both of them inside, laughing',
   'award-season':
-    'a wordless reunion — a soldier steps off a bus in the rain, his daughter breaks from the crowd and runs to him, and he drops his bag to lift her up',
+    'a wordless reunion — a man in military uniform steps off a bus in the rain, his young daughter breaks from the crowd and runs to him, and he drops his bag to lift her up',
   pastel:
-    'a symmetrical hotel caper — a bellhop wheels a squeaky luggage cart down a long corridor, a cat leaps aboard, and matching doors open in sequence as they accelerate toward the lobby',
+    'a symmetrical hotel caper — a young man in a crimson bellhop uniform wheels a squeaky luggage cart down a long corridor, a cat leaps aboard, and matching doors open in sequence as the cart accelerates toward the lobby',
   // `documentary` ships a full hand-written script via
   // CANONICAL_SCRIPT_OVERRIDES (enhance: 'off'), so no brief here.
 };
