@@ -57,7 +57,7 @@ const RECORD_STAGING_DIR = resolve(
 // step's prompt template). Add a new entry when introducing a new prompt
 // family — otherwise its recordings get stuck in `_unsorted/` with a warning.
 const STAGE_PREFIXES: ReadonlyArray<readonly [string, string]> = [
-  ['Please enhance this script for a short film', 'script-enhance'],
+  ['Enhance the script inside <USER_SCRIPT>', 'script-enhance'],
   ['Analyze the script within the USER_SCRIPT', 'script-analyze'],
   ['Match the following library locations', 'location-match'],
   ['Cast the following talent', 'talent-cast'],
