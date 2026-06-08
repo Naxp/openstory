@@ -371,7 +371,7 @@ function sortedBibles(input: PromptSceneContextHashInput) {
  * `*_prompt_input_hash` columns on `frames` / `sequences` so legacy rows
  * fall through that safe path until they're regenerated.
  */
-const PROMPT_INPUT_HASH_VERSION = 3;
+const PROMPT_INPUT_HASH_VERSION = 4;
 
 export function computeVisualPromptInputHash(
   input: PromptSceneContextHashInput

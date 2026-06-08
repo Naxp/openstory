@@ -93,13 +93,15 @@ const team = { id: '', name: 'T', slug: 't' };
 const userRow = { id: '', name: 'U', email: 'u@example.com' };
 
 const baseConfig = {
-  mood: 'neutral',
-  artStyle: 'cinematic',
-  lighting: 'natural',
-  colorPalette: ['#000', '#fff'],
-  cameraWork: 'static',
-  referenceFilms: [],
-  colorGrading: 'neutral',
+  look: {
+    mood: 'neutral',
+    artStyle: 'cinematic',
+    lighting: 'natural',
+    colorPalette: ['#000', '#fff'],
+    colorGrading: 'neutral',
+  },
+  motion: { camera: 'static' },
+  references: [],
 };
 
 async function seed() {

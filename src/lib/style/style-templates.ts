@@ -1,3 +1,7 @@
+import {
+  migrateStyleConfigV1ToV2,
+  type StyleConfigV1,
+} from '@/lib/style/style-config';
 import { styleSlug } from '@/lib/style/style-slug';
 import type { Style } from '@/types/database';
 
@@ -25,13 +29,19 @@ type StyleTemplateEntry = Omit<
   | 'createdAt'
   | 'updatedAt'
   | 'createdBy'
+  | 'config'
   | 'sampleVideos'
   | 'recommendedImageModel'
   | 'recommendedVideoModel'
   | 'defaultAspectRatio'
   | 'useCases'
-> &
-  Partial<
+> & {
+  // Authored in the flat v1 shape and normalized to the grouped v2 `StyleConfig`
+  // by `DEFAULT_SYSTEM_STYLES` below — the SAME converter the user-row backfill
+  // uses, so there is one tested v1→v2 path and zero risk of hand-editing 35
+  // multi-paragraph config literals.
+  config: StyleConfigV1;
+} & Partial<
     Pick<
       Style,
       | 'recommendedImageModel'
@@ -2789,10 +2799,16 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
   },
 ];
 
-// System styles without teamId - teamId will be added during seeding
+// System styles without teamId - teamId will be added during seeding.
+// Each template's flat v1 config is upgraded to the grouped v2 `StyleConfig`
+// (and stamped with `source.kind: 'template'`) here.
 export const DEFAULT_SYSTEM_STYLES: Omit<Style, 'id' | 'teamId'>[] =
   DEFAULT_STYLE_TEMPLATES.map((style) => ({
     ...style,
+    config: {
+      ...migrateStyleConfigV1ToV2(style.config),
+      source: { kind: 'template' as const },
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
     createdBy: 'system',

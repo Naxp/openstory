@@ -15,7 +15,7 @@ import type {
 } from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import type { StyleConfig } from '@/lib/db/schema';
-import { StyleConfigSchema } from '@/lib/db/schema';
+import { parseStyleConfig } from '@/lib/style/style-config';
 import {
   matchCharactersToScene,
   matchElementsToScene,
@@ -75,7 +75,7 @@ export async function loadFramePromptContext(args: {
 
   return {
     scene,
-    styleConfig: StyleConfigSchema.parse(style.config),
+    styleConfig: parseStyleConfig(style.config),
     characterBible: charactersToBible(characters),
     locationBible: sequenceLocationsToBible(locations),
     elementBible: sequenceElementsToBible(elements),

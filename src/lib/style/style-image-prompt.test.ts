@@ -3,13 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { buildStyledImagePrompt } from './style-image-prompt';
 
 const config: StyleConfig = {
-  mood: 'playful',
-  artStyle: 'layered paper pop-up cutouts',
-  lighting: 'soft daylight',
-  colorPalette: ['#fff'],
-  cameraWork: 'slow push-in',
-  referenceFilms: ['handmade stop-motion clay shorts'],
-  colorGrading: 'warm',
+  look: {
+    mood: 'playful',
+    artStyle: 'layered paper pop-up cutouts',
+    lighting: 'soft daylight',
+    colorPalette: ['#fff'],
+    colorGrading: 'warm',
+  },
+  motion: { camera: 'slow push-in' },
+  references: ['handmade stop-motion clay shorts'],
 };
 
 describe('buildStyledImagePrompt', () => {

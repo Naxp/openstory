@@ -8,10 +8,11 @@ const NO_TEXT_SUFFIX =
   'No text, no titles, no subtitles, no watermarks, no letters, no words, no signs, no UI elements.';
 
 function formatStyleDetails(styleConfig: StyleConfig): string {
+  const { look } = styleConfig;
   const details = [
-    styleConfig.artStyle && `Art style: ${styleConfig.artStyle}`,
-    styleConfig.mood && `Mood: ${styleConfig.mood}`,
-    styleConfig.lighting && `Lighting: ${styleConfig.lighting}`,
+    look.artStyle && `Art style: ${look.artStyle}`,
+    look.mood && `Mood: ${look.mood}`,
+    look.lighting && `Lighting: ${look.lighting}`,
   ].filter(Boolean);
 
   return details.length > 0 ? details.join('. ') + '.' : '';

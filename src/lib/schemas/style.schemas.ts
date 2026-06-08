@@ -10,8 +10,14 @@ import { z } from 'zod';
  * Shared Zod schemas for style operations
  */
 
-const tagsSchema = z.array(z.string()).nullish();
-const useCasesSchema = z.array(z.string()).nullish();
+// Create: identity is required-with-defaults (issue #858). `category` is
+// load-bearing (drives sample briefs + enhancer genre) so it's required; tags
+// and useCases default to [] rather than being nullable.
+const createTagsSchema = z.array(z.string()).default([]);
+const createUseCasesSchema = z.array(z.string()).default([]);
+// Update is a partial patch: each field optional, but never null.
+const updateTagsSchema = z.array(z.string()).optional();
+const updateUseCasesSchema = z.array(z.string()).optional();
 const sampleVideosSchema = z.array(StyleSampleVideoSchema).nullish();
 
 // Columns the client must never set. usageCount is server-managed (popularity
@@ -31,14 +37,17 @@ const SERVER_MANAGED_COLUMNS = {
 
 export const createStyleSchema = createInsertSchema(styles, {
   config: () => StyleConfigSchema,
-  tags: () => tagsSchema,
-  useCases: () => useCasesSchema,
+  category: () => z.string().min(1),
+  tags: () => createTagsSchema,
+  useCases: () => createUseCasesSchema,
   sampleVideos: () => sampleVideosSchema,
 }).omit(SERVER_MANAGED_COLUMNS);
+// Update stays whole-or-omitted for `config` (not `.partial()`): the aesthetic
+// recipe is replaced as a unit, never patched field-by-field.
 export const updateStyleSchema = createUpdateSchema(styles, {
   config: () => StyleConfigSchema.optional(),
-  tags: () => tagsSchema,
-  useCases: () => useCasesSchema,
+  tags: () => updateTagsSchema,
+  useCases: () => updateUseCasesSchema,
   sampleVideos: () => sampleVideosSchema,
 }).omit(SERVER_MANAGED_COLUMNS);
 

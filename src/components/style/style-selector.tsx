@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { AppImage } from '@/components/ui/app-image';
 import { MoreHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getStyleGradient } from './style-gradient';
+import { getStyleGradientFromConfig } from './style-gradient';
 import { StyleSelectionDialog } from './style-selection-dialog';
 
 const StyleTileBackground: React.FC<{ style: Style }> = ({ style }) => {
@@ -23,7 +23,7 @@ const StyleTileBackground: React.FC<{ style: Style }> = ({ style }) => {
     <div
       className="h-full w-full"
       style={{
-        background: getStyleGradient(style.config.colorPalette),
+        background: getStyleGradientFromConfig(style.config),
       }}
     />
   );

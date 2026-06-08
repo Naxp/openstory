@@ -124,21 +124,25 @@ describe('buildCastingAttributes', () => {
 });
 
 const neoNoirStyle: StyleConfig = {
-  mood: 'Dark, brooding, and atmospheric',
-  artStyle:
-    'Neo-noir cinematic style with deep shadows and high contrast. Gritty urban realism with expressionist framing.',
-  lighting:
-    'Low-key chiaroscuro lighting with single hard sources. Venetian blind shadows, neon reflections, harsh rim lighting.',
-  colorPalette: ['#0A0A0A', '#1A1A2E', '#E94560', '#16213E', '#533483'],
-  cameraWork:
-    'Dutch angles, low-angle power shots, tight close-ups. Slow deliberate movements with dramatic reveals.',
-  referenceFilms: [
+  look: {
+    mood: 'Dark, brooding, and atmospheric',
+    artStyle:
+      'Neo-noir cinematic style with deep shadows and high contrast. Gritty urban realism with expressionist framing.',
+    lighting:
+      'Low-key chiaroscuro lighting with single hard sources. Venetian blind shadows, neon reflections, harsh rim lighting.',
+    colorPalette: ['#0A0A0A', '#1A1A2E', '#E94560', '#16213E', '#533483'],
+    colorGrading:
+      'Desaturated with selective color pops. Teal and orange split toning with crushed blacks.',
+  },
+  motion: {
+    camera:
+      'Dutch angles, low-angle power shots, tight close-ups. Slow deliberate movements with dramatic reveals.',
+  },
+  references: [
     'rain-slicked neon-noir cityscape cinematography',
     'high-contrast graphic-novel monochrome',
     'synthwave night-drive thriller framing',
   ],
-  colorGrading:
-    'Desaturated with selective color pops. Teal and orange split toning with crushed blacks.',
 };
 
 describe('buildCharacterSheetPrompt with styleConfig', () => {

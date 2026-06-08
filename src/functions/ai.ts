@@ -267,11 +267,13 @@ const enhanceScriptInputSchema = z.object({
   // cohesive object — built by `toEnhanceInputs` so the UI and API match.
   style: z
     .object({
-      config: StyleConfigSchema.partial().optional(),
+      config: StyleConfigSchema.optional(),
       name: z.string().optional(),
       category: z.string().nullable().optional(),
       description: z.string().nullable().optional(),
-      tags: z.array(z.string()).nullable().optional(),
+      // Non-nullable to match the canonical StyleProjection (tags default []);
+      // toEnhanceInputs already coalesces null → undefined.
+      tags: z.array(z.string()).optional(),
     })
     .optional(),
   analysisModel: z.string().optional(),

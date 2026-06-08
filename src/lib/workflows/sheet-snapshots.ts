@@ -73,20 +73,21 @@ export async function resolveLibraryLocationReferenceHash(
   return libraryLocation?.referenceInputHash ?? null;
 }
 
-/** Hash a `StyleConfig` deterministically. `null`/`undefined` → 'no-style'. */
+/**
+ * Hash a `StyleConfig` deterministically. `null`/`undefined` → 'no-style'.
+ * Covers the rendering-relevant signatures (look + motion + references); the new
+ * optional design/sound/source slots are excluded until a sheet consumer reads
+ * them. `canonicalize()` (in `sha256Hex`) sorts keys, so field order is moot.
+ */
 export async function computeStyleConfigHash(
   styleConfig: StyleConfig | null | undefined
 ): Promise<string> {
   if (!styleConfig) return 'no-style';
   return sha256Hex({
     artifact: 'style-config',
-    mood: styleConfig.mood,
-    artStyle: styleConfig.artStyle,
-    lighting: styleConfig.lighting,
-    colorPalette: styleConfig.colorPalette,
-    cameraWork: styleConfig.cameraWork,
-    referenceFilms: styleConfig.referenceFilms,
-    colorGrading: styleConfig.colorGrading,
+    look: styleConfig.look,
+    motion: styleConfig.motion,
+    references: styleConfig.references,
   });
 }
 

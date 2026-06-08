@@ -493,13 +493,15 @@ describe('prompt input hashes', () => {
   };
 
   const minimalStyle: StyleConfig = {
-    mood: 'neutral',
-    artStyle: 'cinematic',
-    lighting: 'natural',
-    colorPalette: ['neutral'],
-    cameraWork: 'static',
-    referenceFilms: [],
-    colorGrading: 'neutral',
+    look: {
+      mood: 'neutral',
+      artStyle: 'cinematic',
+      lighting: 'natural',
+      colorPalette: ['neutral'],
+      colorGrading: 'neutral',
+    },
+    motion: { camera: 'static' },
+    references: [],
   };
 
   const aliceCharacter: CharacterBibleEntry = {

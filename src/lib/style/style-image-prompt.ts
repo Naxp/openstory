@@ -9,8 +9,8 @@
  *     and forbid grids / panels / collage so e.g. an animatic renders one frame,
  *     not a sheet of numbered panels.
  *
- * The aesthetic comes entirely from `config` (artStyle/mood/lighting/cameraWork/
- * colorGrading/referenceFilms). Shared by the preview thumbnails
+ * The aesthetic comes entirely from `config` (look.artStyle/mood/lighting/
+ * colorGrading, motion.camera, references). Shared by the preview thumbnails
  * (`generate-style-previews.ts`) and the sample-video stills
  * (`generate-style-sample-videos.ts`) so the framing lives in one place.
  */
@@ -30,13 +30,13 @@ export function buildStyledImagePrompt(
 ): string {
   return [
     `A single, full-frame cinematic still of the following scene, art-directed in the style described below: ${scene}`,
-    `Art Style: ${config.artStyle}`,
-    `Mood: ${config.mood}`,
-    `Lighting: ${config.lighting}`,
-    `Camera: ${config.cameraWork}`,
-    `Color Grading: ${config.colorGrading}`,
-    config.referenceFilms.length
-      ? `Inspired by: ${config.referenceFilms.join(', ')}`
+    `Art Style: ${config.look.artStyle}`,
+    `Mood: ${config.look.mood}`,
+    `Lighting: ${config.look.lighting}`,
+    `Camera: ${config.motion.camera}`,
+    `Color Grading: ${config.look.colorGrading}`,
+    config.references.length
+      ? `Inspired by: ${config.references.join(', ')}`
       : '',
     STILL_NEGATIVE,
   ]

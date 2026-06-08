@@ -34,7 +34,7 @@ import {
 } from '@/lib/ai/models.config';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
-import { StyleConfigSchema } from '@/lib/db/schema';
+import { parseStyleConfig } from '@/lib/style/style-config';
 import { generateImageWithProvider } from '@/lib/image/image-generation';
 import { buildPosterPrompt } from '@/lib/prompts/poster-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
@@ -115,7 +115,7 @@ export class StoryboardWorkflow extends OpenStoryWorkflowEntrypoint<StoryboardWo
         title: sequence.title,
         script: sequence.script,
         aspectRatio: sequence.aspectRatio,
-        styleConfig: StyleConfigSchema.parse(style.config),
+        styleConfig: parseStyleConfig(style.config),
         analysisModelId:
           getAnalysisModelById(sequence.analysisModel)?.id ??
           DEFAULT_ANALYSIS_MODEL,

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import type { StyleConfig } from '@/lib/style/style-config';
 import { toEnhanceInputs } from '../enhance-inputs';
 import { createUserPrompt } from '../script-enhancer';
+
+const v2Config: StyleConfig = {
+  look: {
+    mood: 'tense',
+    artStyle: 'noir',
+    lighting: 'low-key',
+    colorPalette: ['#000'],
+    colorGrading: 'desaturated',
+  },
+  motion: { camera: 'handheld' },
+  references: [],
+};
 
 describe('createUserPrompt (issue #855)', () => {
   it('carries the per-request payload (script, duration, injection guard)', () => {
@@ -39,7 +52,7 @@ describe('createUserPrompt (issue #855)', () => {
   it('renders aesthetic config and genre identity from the one style object', () => {
     const prompt = createUserPrompt('a brief', {
       style: {
-        config: { mood: 'tense', lighting: 'low-key' },
+        config: v2Config,
         name: 'Neo-Noir',
       },
     });
@@ -54,7 +67,7 @@ describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
   it('narrows a style row to the one object the UI and API both send', () => {
     const result = toEnhanceInputs({
       style: {
-        config: { mood: 'tense' },
+        config: v2Config,
         name: 'Action',
         category: 'film',
         description: 'Kinetic chases',
@@ -62,7 +75,7 @@ describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
       },
     });
     expect(result.style).toEqual({
-      config: { mood: 'tense' },
+      config: v2Config,
       name: 'Action',
       category: 'film',
       description: 'Kinetic chases',

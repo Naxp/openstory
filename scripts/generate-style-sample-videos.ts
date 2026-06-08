@@ -73,6 +73,7 @@ import {
   type SampleBeat,
 } from '@/lib/style/sample-videos';
 import { styleSlug } from '@/lib/style/style-slug';
+import { migrateStyleConfigV1ToV2 } from '@/lib/style/style-config';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { PhotonImage } from '@cf-wasm/photon';
 import { execFile } from 'node:child_process';
@@ -204,7 +205,7 @@ function buildJobs(flags: Flags): RenderJob[] {
       imageModel,
       videoModel,
       aspectRatio,
-      config: style.config,
+      config: migrateStyleConfigV1ToV2(style.config),
       force: flags.force,
     };
 

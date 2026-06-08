@@ -35,6 +35,7 @@ import {
 import type { StyleConfig } from '@/lib/db/schema/libraries';
 import type { ChatMessage, ChatMessageContentPart } from '@/lib/prompts';
 import { styleSlug } from '@/lib/style/style-slug';
+import { migrateStyleConfigV1ToV2 } from '@/lib/style/style-config';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { PhotonImage } from '@cf-wasm/photon';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
@@ -116,11 +117,11 @@ function introText(name: string, c: StyleConfig, sceneOrder: string[]): string {
     `STYLE: ${name}`,
     '',
     'Intended look:',
-    `- Art style: ${c.artStyle}`,
-    `- Mood: ${c.mood}`,
-    `- Lighting: ${c.lighting}`,
-    `- Camera: ${c.cameraWork}`,
-    `- Color grading: ${c.colorGrading}`,
+    `- Art style: ${c.look.artStyle}`,
+    `- Mood: ${c.look.mood}`,
+    `- Lighting: ${c.look.lighting}`,
+    `- Camera: ${c.motion.camera}`,
+    `- Color grading: ${c.look.colorGrading}`,
     '',
     `The ${sceneOrder.length} candidate scene image(s) follow, in this order: ${sceneOrder
       .map((s, i) => `${i + 1}) ${s}`)
@@ -279,7 +280,12 @@ async function main() {
       inputs.push({ scene, file: path.join(PREVIEW_DIR, slug, file) });
     }
     if (inputs.length > 0) {
-      styleTasks.push({ name: style.name, slug, config: style.config, inputs });
+      styleTasks.push({
+        name: style.name,
+        slug,
+        config: migrateStyleConfigV1ToV2(style.config),
+        inputs,
+      });
     }
   }
 

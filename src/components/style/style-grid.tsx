@@ -5,7 +5,7 @@ import type { Style } from '@/types/database';
 import { AppImage } from '@/components/ui/app-image';
 import type { FC, KeyboardEvent } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { getStyleGradient } from './style-gradient';
+import { getStyleGradientFromConfig } from './style-gradient';
 
 type StyleGridProps = {
   styles: Style[];
@@ -97,7 +97,7 @@ const StyleCard: FC<StyleCardProps> = ({
             <div
               className="w-full h-full"
               style={{
-                background: getStyleGradient(style.config.colorPalette),
+                background: getStyleGradientFromConfig(style.config),
               }}
             />
           )}

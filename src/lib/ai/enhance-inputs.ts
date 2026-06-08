@@ -1,28 +1,29 @@
 /**
  * Shared construction of the style/element inputs the script enhancer reads, so
  * the UI (`enhanceScriptStreamFn`) and the public API (`runOneShotCreate`) feed
- * the enhancer IDENTICALLY (issue #855). Kept dependency-free (type-only import
- * of StyleConfig) so it is safe to import from the client bundle.
+ * the enhancer IDENTICALLY (issue #855). Depends only on the drizzle-free
+ * `style-config` module (zod) so it is safe to import from the client bundle.
  */
-import type { StyleConfig } from '@/lib/db/schema/libraries';
+import {
+  parseStyleConfig,
+  type StyleConfig,
+  type StyleProjection,
+} from '@/lib/style/style-config';
 
 /**
  * A style as the enhancer sees it: the aesthetic recipe (`config`) plus the
  * identity that drives WHAT HAPPENS — name/category/tags decide whether "action"
- * gets a chase and "rom-com" gets a meet-cute, not just how the frame looks.
- * One cohesive narrowing of a `Style` row rather than two parallel bags.
+ * gets a chase and "rom-com" gets a meet-cute, not just how the frame looks. A
+ * narrowing of the canonical {@link StyleProjection} rather than a parallel bag.
  */
-export type EnhanceStyle = {
-  config?: Partial<StyleConfig>;
-  name?: string;
-  category?: string | null;
-  description?: string | null;
-  tags?: string[] | null;
-};
+export type EnhanceStyle = Partial<
+  Pick<StyleProjection, 'name' | 'category' | 'description' | 'tags' | 'config'>
+>;
 
-/** A style row, narrowed to the fields the enhancer reads. */
+/** A style row, narrowed to the fields the enhancer reads. `config` is the raw
+ * stored blob (v1 or v2) — up-converted via `parseStyleConfig` below. */
 type StyleLike = {
-  config?: Partial<StyleConfig> | null;
+  config?: StyleConfig | null;
   name?: string | null;
   category?: string | null;
   description?: string | null;
@@ -74,11 +75,11 @@ export function toEnhanceInputs(args: {
   return {
     style: style
       ? {
-          config: style.config ?? undefined,
+          config: style.config ? parseStyleConfig(style.config) : undefined,
           name: style.name ?? undefined,
-          category: style.category,
-          description: style.description,
-          tags: style.tags,
+          category: style.category ?? undefined,
+          description: style.description ?? undefined,
+          tags: style.tags ?? undefined,
         }
       : undefined,
     elements: mapped.length > 0 ? mapped : undefined,

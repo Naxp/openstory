@@ -139,21 +139,25 @@ describe('location-prompt', () => {
 
   describe('buildLocationSheetPrompt with styleConfig', () => {
     const animatedStyle: StyleConfig = {
-      mood: 'Whimsical, playful, and colorful',
-      artStyle:
-        'Stylized 3D animation with exaggerated proportions and rich textures.',
-      lighting:
-        'Soft global illumination with warm key lights and cool fill. Bounced light creates depth.',
-      colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
-      cameraWork:
-        'Smooth dollies and gentle crane movements. Wide establishing shots with shallow depth of field on details.',
-      referenceFilms: [
+      look: {
+        mood: 'Whimsical, playful, and colorful',
+        artStyle:
+          'Stylized 3D animation with exaggerated proportions and rich textures.',
+        lighting:
+          'Soft global illumination with warm key lights and cool fill. Bounced light creates depth.',
+        colorPalette: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+        colorGrading:
+          'Saturated and warm with a slight bloom. Shadows are never pure black.',
+      },
+      motion: {
+        camera:
+          'Smooth dollies and gentle crane movements. Wide establishing shots with shallow depth of field on details.',
+      },
+      references: [
         'heartfelt balloon-house adventure animation',
         'gourmet rat-chef kitchen animation',
         'vibrant land-of-the-dead family animation',
       ],
-      colorGrading:
-        'Saturated and warm with a slight bloom. Shadows are never pure black.',
     };
 
     it('without styleConfig produces no style direction section', () => {

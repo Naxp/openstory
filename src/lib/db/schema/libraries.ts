@@ -5,38 +5,22 @@
 
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { index, integer, snakeCase, text } from 'drizzle-orm/sqlite-core';
-import z from 'zod';
 import { generateId } from '../id';
+import type { StyleConfig, StyleSampleVideo } from '../../style/style-config';
 import { user } from './auth';
 import { teams } from './teams';
 
-export const StyleConfigSchema = z.object({
-  mood: z.string().min(3).max(1000),
-  artStyle: z.string().min(3).max(1000),
-  lighting: z.string().min(3).max(1000),
-  colorPalette: z.array(z.string().min(1)).min(1).max(20),
-  cameraWork: z.string().min(3).max(1000),
-  referenceFilms: z.array(z.string().min(1)).max(50),
-  colorGrading: z.string().min(3).max(1000),
-});
-
-export type StyleConfig = z.infer<typeof StyleConfigSchema>;
-
-export const StyleSampleVideoKindSchema = z.enum([
-  'canonical',
-  'category',
-  'bespoke',
-]);
-export type StyleSampleVideoKind = z.infer<typeof StyleSampleVideoKindSchema>;
-
-export const StyleSampleVideoSchema = z.object({
-  url: z.string().url(),
-  kind: StyleSampleVideoKindSchema,
-  label: z.string(),
-  durationSeconds: z.number().nonnegative(),
-  order: z.number().int().nonnegative(),
-});
-export type StyleSampleVideo = z.infer<typeof StyleSampleVideoSchema>;
+// The canonical style schemas live in a drizzle-free module so they're safe to
+// import from the client bundle; re-exported here for the historical
+// `@/lib/db/schema` import paths and for `config.$type<StyleConfig>()` below.
+export {
+  type StyleConfig,
+  StyleConfigSchema,
+  type StyleSampleVideo,
+  type StyleSampleVideoKind,
+  StyleSampleVideoKindSchema,
+  StyleSampleVideoSchema,
+} from '../../style/style-config';
 
 /**
  * Styles library

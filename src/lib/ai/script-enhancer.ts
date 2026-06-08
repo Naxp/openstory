@@ -1,5 +1,6 @@
 import type { EnhanceStyle } from '@/lib/ai/enhance-inputs';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
+import { toStyleBrief } from '@/lib/style/style-brief';
 import { z } from 'zod';
 
 const enhanceElementSchema = z.object({
@@ -90,18 +91,7 @@ Target video duration: ${formatDuration(durationSeconds)} (${sceneRange} scenes,
   }
 
   if (style?.config) {
-    const s = style.config;
-    const lines = ['Style context (apply these aesthetics throughout):'];
-    if (s.mood) lines.push(`- Mood: ${s.mood}`);
-    if (s.artStyle) lines.push(`- Art style: ${s.artStyle}`);
-    if (s.lighting) lines.push(`- Lighting: ${s.lighting}`);
-    if (s.colorPalette?.length)
-      lines.push(`- Color palette: ${s.colorPalette.join(', ')}`);
-    if (s.cameraWork) lines.push(`- Camera work: ${s.cameraWork}`);
-    if (s.referenceFilms?.length)
-      lines.push(`- Reference films: ${s.referenceFilms.join(', ')}`);
-    if (s.colorGrading) lines.push(`- Color grading: ${s.colorGrading}`);
-    if (lines.length > 1) parts.push(`\n${lines.join('\n')}`);
+    parts.push(`\n${toStyleBrief(style.config)}`);
   }
 
   if (options?.aspectRatio) {

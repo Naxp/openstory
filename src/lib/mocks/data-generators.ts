@@ -260,27 +260,30 @@ const generateMockStyle = (overrides?: Partial<Style>): Style => {
       'https://picsum.photos/seed/1557682250-33bd709cbe85/400/300',
     ]),
     config: {
-      artStyle: faker.helpers.arrayElement(artStyles),
-      colorPalette: faker.helpers.arrayElements(
-        [
-          '#FF6B6B',
-          '#4ECDC4',
-          '#45B7D1',
-          '#96CEB4',
-          '#FFEAA7',
-          '#DDA0DD',
-          '#98D8C8',
-          '#F7DC6F',
-          '#8B4513',
-          '#D2691E',
-          '#2F4F4F',
-        ],
-        { min: 3, max: 5 }
-      ),
-      lighting: faker.helpers.arrayElement(lightings),
-      cameraWork: faker.helpers.arrayElement(cameraWorks),
-      mood: faker.helpers.arrayElement(moods),
-      referenceFilms: faker.helpers.arrayElements(
+      look: {
+        artStyle: faker.helpers.arrayElement(artStyles),
+        colorPalette: faker.helpers.arrayElements(
+          [
+            '#FF6B6B',
+            '#4ECDC4',
+            '#45B7D1',
+            '#96CEB4',
+            '#FFEAA7',
+            '#DDA0DD',
+            '#98D8C8',
+            '#F7DC6F',
+            '#8B4513',
+            '#D2691E',
+            '#2F4F4F',
+          ],
+          { min: 3, max: 5 }
+        ),
+        lighting: faker.helpers.arrayElement(lightings),
+        mood: faker.helpers.arrayElement(moods),
+        colorGrading: faker.helpers.arrayElement(colorGradings),
+      },
+      motion: { camera: faker.helpers.arrayElement(cameraWorks) },
+      references: faker.helpers.arrayElements(
         [
           'rain-slicked neon-noir cityscape cinematography',
           '1970s crime-saga chiaroscuro',
@@ -293,7 +296,6 @@ const generateMockStyle = (overrides?: Partial<Style>): Style => {
         ],
         { min: 1, max: 3 }
       ),
-      colorGrading: faker.helpers.arrayElement(colorGradings),
     },
     teamId: faker.string.ulid(),
     isPublic: faker.datatype.boolean(),

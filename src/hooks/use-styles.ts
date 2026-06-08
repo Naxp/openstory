@@ -17,7 +17,8 @@ type CreateStyleInput = {
   name: string;
   description?: string;
   config: StyleConfig;
-  category?: string;
+  // Required (issue #858): category drives sample briefs + enhancer genre.
+  category: string;
   tags?: string[];
   isPublic?: boolean;
   previewUrl?: string | null;

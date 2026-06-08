@@ -48,13 +48,15 @@ async function seed() {
       teamId: team.id,
       name: 'default',
       config: {
-        mood: 'neutral',
-        artStyle: 'cinematic',
-        lighting: 'natural',
-        colorPalette: ['#000', '#fff'],
-        cameraWork: 'static',
-        referenceFilms: [],
-        colorGrading: 'neutral',
+        look: {
+          mood: 'neutral',
+          artStyle: 'cinematic',
+          lighting: 'natural',
+          colorPalette: ['#000', '#fff'],
+          colorGrading: 'neutral',
+        },
+        motion: { camera: 'static' },
+        references: [],
       },
     })
     .returning();
@@ -293,13 +295,15 @@ describe('listDivergentByTeam', () => {
         teamId: otherTeamId,
         name: 'default',
         config: {
-          mood: 'neutral',
-          artStyle: 'cinematic',
-          lighting: 'natural',
-          colorPalette: ['#000', '#fff'],
-          cameraWork: 'static',
-          referenceFilms: [],
-          colorGrading: 'neutral',
+          look: {
+            mood: 'neutral',
+            artStyle: 'cinematic',
+            lighting: 'natural',
+            colorPalette: ['#000', '#fff'],
+            colorGrading: 'neutral',
+          },
+          motion: { camera: 'static' },
+          references: [],
         },
       })
       .returning();

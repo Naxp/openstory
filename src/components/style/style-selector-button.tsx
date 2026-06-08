@@ -3,7 +3,7 @@ import type { Style } from '@/types/database';
 import { AppImage } from '@/components/ui/app-image';
 import { ChevronDown } from 'lucide-react';
 import { useState, type FC } from 'react';
-import { getStyleGradient } from './style-gradient';
+import { getStyleGradientFromConfig } from './style-gradient';
 
 type StyleSelectorButtonProps = {
   selectedStyle?: Style | null;
@@ -68,7 +68,7 @@ export const StyleSelectorButton: FC<StyleSelectorButtonProps> = ({
             <div
               className="absolute inset-0"
               style={{
-                background: getStyleGradient(selectedStyle.config.colorPalette),
+                background: getStyleGradientFromConfig(selectedStyle.config),
               }}
             />
           )}

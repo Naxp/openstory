@@ -19,13 +19,15 @@ const entry: ElementBibleEntry = {
 };
 
 const styleConfig: StyleConfig = {
-  mood: 'sun-drenched optimism',
-  artStyle: 'cinematic photorealism',
-  lighting: 'warm golden-hour natural light',
-  colorPalette: ['coral', 'sand', 'sea foam'],
-  cameraWork: 'handheld intimate',
-  referenceFilms: ['Call Me by Your Name'],
-  colorGrading: 'warm highlights, soft teal shadows',
+  look: {
+    mood: 'sun-drenched optimism',
+    artStyle: 'cinematic photorealism',
+    lighting: 'warm golden-hour natural light',
+    colorPalette: ['coral', 'sand', 'sea foam'],
+    colorGrading: 'warm highlights, soft teal shadows',
+  },
+  motion: { camera: 'handheld intimate' },
+  references: ['Call Me by Your Name'],
 };
 
 describe('buildElementSheetPrompt', () => {

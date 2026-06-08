@@ -168,13 +168,15 @@ export async function createTestStyle(
   const styleId = generateId();
 
   const styleConfig = {
-    artStyle: 'Cinematic',
-    colorPalette: ['#000000', '#FFFFFF'],
-    lighting: 'Natural',
-    cameraWork: 'Standard',
-    mood: 'Dramatic',
-    referenceFilms: ['Test Film'],
-    colorGrading: 'Natural',
+    look: {
+      artStyle: 'Cinematic',
+      colorPalette: ['#000000', '#FFFFFF'],
+      lighting: 'Natural',
+      mood: 'Dramatic',
+      colorGrading: 'Natural',
+    },
+    motion: { camera: 'Standard' },
+    references: ['Test Film'],
   };
 
   await db.insert(styles).values({

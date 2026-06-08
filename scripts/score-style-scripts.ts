@@ -43,6 +43,7 @@ import {
 import type { StyleConfig } from '@/lib/db/schema/libraries';
 import type { ChatMessage } from '@/lib/prompts';
 import { styleSlug } from '@/lib/style/style-slug';
+import { migrateStyleConfigV1ToV2 } from '@/lib/style/style-config';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -151,11 +152,11 @@ function userText(name: string, c: StyleConfig, s: SavedScript): string {
     `STYLE: ${name}`,
     '',
     'Intended look:',
-    `- Art style: ${c.artStyle}`,
-    `- Mood: ${c.mood}`,
-    `- Lighting: ${c.lighting}`,
-    `- Camera: ${c.cameraWork}`,
-    `- Color grading: ${c.colorGrading}`,
+    `- Art style: ${c.look.artStyle}`,
+    `- Mood: ${c.look.mood}`,
+    `- Lighting: ${c.look.lighting}`,
+    `- Camera: ${c.motion.camera}`,
+    `- Color grading: ${c.look.colorGrading}`,
     '',
     `Brief: ${s.brief}`,
     '',
@@ -259,7 +260,7 @@ async function main() {
     tasks.push({
       name: style.name,
       slug,
-      config: style.config,
+      config: migrateStyleConfigV1ToV2(style.config),
       script: parsed.data,
     });
   }
