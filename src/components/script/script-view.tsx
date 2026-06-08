@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { enhanceScriptStreamFn } from '@/functions/ai';
-import { toEnhanceStyleInputs } from '@/lib/ai/enhance-style';
+import { toEnhanceInputs } from '@/lib/ai/enhance-inputs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useBillingGate } from '@/hooks/use-billing-gate';
 import { useGenerationSettings } from '@/hooks/use-generation-settings';
@@ -611,16 +611,9 @@ export const ScriptView: FC<{
         data: {
           script: scriptValue,
           targetDuration,
-          ...toEnhanceStyleInputs(selectedStyle),
           analysisModel: analysisModels[0],
           aspectRatio,
-          elements:
-            draftElements.length > 0
-              ? draftElements.map((el) => ({
-                  token: el.token,
-                  imageUrl: el.tempPublicUrl,
-                }))
-              : undefined,
+          ...toEnhanceInputs({ style: selectedStyle, elements: draftElements }),
         },
       })) {
         if (abortController.signal.aborted) break;

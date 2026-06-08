@@ -6,7 +6,7 @@ import {
 } from '@/lib/ai/prompt-validation';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import type { StyleConfig } from '@/lib/db/schema/libraries';
-import type { StyleMeta } from '@/lib/ai/enhance-style';
+import type { StyleMeta } from '@/lib/ai/enhance-inputs';
 import { getPrompt } from '@/lib/prompts';
 import { z } from 'zod';
 

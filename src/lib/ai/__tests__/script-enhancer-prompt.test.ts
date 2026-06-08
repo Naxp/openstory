@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toEnhanceStyleInputs } from '../enhance-style';
+import { toEnhanceInputs } from '../enhance-inputs';
 import { createUserPrompt } from '../script-enhancer';
 
 describe('createUserPrompt (issue #855)', () => {
@@ -44,14 +44,16 @@ describe('createUserPrompt (issue #855)', () => {
   });
 });
 
-describe('toEnhanceStyleInputs (UI/API parity, issue #855)', () => {
+describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
   it('maps a style row to the same inputs the UI and API both send', () => {
-    const result = toEnhanceStyleInputs({
-      config: { mood: 'tense' },
-      name: 'Action',
-      category: 'film',
-      description: 'Kinetic chases',
-      tags: ['action', 'blockbuster'],
+    const result = toEnhanceInputs({
+      style: {
+        config: { mood: 'tense' },
+        name: 'Action',
+        category: 'film',
+        description: 'Kinetic chases',
+        tags: ['action', 'blockbuster'],
+      },
     });
     expect(result.styleConfig).toEqual({ mood: 'tense' });
     expect(result.styleMeta).toEqual({
@@ -62,7 +64,28 @@ describe('toEnhanceStyleInputs (UI/API parity, issue #855)', () => {
     });
   });
 
-  it('returns empty inputs for a missing style (no spread keys)', () => {
-    expect(toEnhanceStyleInputs(undefined)).toEqual({});
+  it('maps tokened elements to the enhancer shape and drops tokenless ones', () => {
+    const result = toEnhanceInputs({
+      elements: [
+        {
+          token: 'LOGO',
+          tempPublicUrl: 'https://x/logo.png',
+          description: 'red',
+        },
+        // No token → cannot be referenced in the script → dropped.
+        { token: null, tempPublicUrl: 'https://x/anon.png' },
+      ],
+    });
+    expect(result.elements).toEqual([
+      { token: 'LOGO', imageUrl: 'https://x/logo.png', description: 'red' },
+    ]);
+  });
+
+  it('returns no keys for a missing style and no elements', () => {
+    expect(toEnhanceInputs({})).toEqual({
+      styleConfig: undefined,
+      styleMeta: undefined,
+      elements: undefined,
+    });
   });
 });
