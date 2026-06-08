@@ -52,7 +52,7 @@ export type LLMRequestParams<T = unknown> = {
   presence_penalty?: number;
   stream?: boolean;
   provider?: ProviderPreference;
-  /** Observation name for PostHog LLM analytics (forwarded via AI event bridge) */
+  /** Observation name for PostHog LLM analytics (becomes the OTel span name → $ai_span_name) */
   observationName?: string;
   /** Tags for PostHog filtering */
   tags?: string[];
