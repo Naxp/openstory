@@ -11,6 +11,7 @@
  */
 
 import { enhanceScriptToString } from '@/functions/ai';
+import { toEnhanceInputs } from '@/lib/ai/enhance-inputs';
 import { isShortScript } from '@/lib/ai/should-enhance';
 import { DEFAULT_ASPECT_RATIO } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
@@ -108,6 +109,15 @@ export async function runOneShotCreate(
     input.enhance === 'always' ||
     (input.enhance === 'auto' && isShortScript(input.script));
 
+  // Resolve the style and ingest any elements up front: the enhancer is
+  // style-aware AND weaves uploaded elements into the script, so both must be
+  // ready before we enhance — exactly what the UI passes to the same enhancer
+  // (issue #855). The element ingest is reused for the sequence in step 3.
+  const [style, elementUploads] = await Promise.all([
+    resolveStyle(ctx.scopedDb, input.style),
+    ingestElements(ctx.teamId, input.elements),
+  ]);
+
   let script = input.script;
   let enhancedScript: string | undefined;
   if (willEnhance) {
@@ -116,6 +126,8 @@ export async function runOneShotCreate(
         script: input.script,
         targetDuration: input.targetSeconds,
         aspectRatio: input.aspectRatio,
+        // Feed the enhancer the same style + element inputs the UI does.
+        ...toEnhanceInputs({ style, elements: elementUploads }),
       },
       { scopedDb: ctx.scopedDb, userId: ctx.user.id, teamId: ctx.teamId }
     );
@@ -125,55 +137,52 @@ export async function runOneShotCreate(
     }
   }
 
-  // 2. Resolve references in parallel — style, cast, locations, elements. Cast
-  //    and locations are unified lists (ref strings + inline create objects);
-  //    inline-create delegates to the real library-create cores (which trigger
-  //    sheet generation), so the storyboard workflow's sheet/vision-wait gates
-  //    block on the new entities before matching.
-  const [style, suggestedTalentIds, suggestedLocationIds, elementUploads] =
-    await Promise.all([
-      resolveStyle(ctx.scopedDb, input.style),
-      resolveTalentIds(
-        {
-          talent: ctx.scopedDb.talent,
-          createTalent: async (item) =>
-            createLibraryTalent(
-              {
-                name: item.name,
-                description: item.description,
-                isHuman: item.isHuman,
-                referenceImageUrls: await ingestReferenceImages(
-                  item.referenceImageUrls,
-                  STORAGE_BUCKETS.TALENT,
-                  ctx.teamId
-                ),
-              },
-              ctx
-            ),
-        },
-        input.characters
-      ),
-      resolveLocationIds(
-        {
-          locations: ctx.scopedDb.locations,
-          createLocation: async (item) =>
-            createLibraryLocation(
-              {
-                name: item.name,
-                description: item.description,
-                referenceImageUrls: await ingestReferenceImages(
-                  item.referenceImageUrls,
-                  STORAGE_BUCKETS.LOCATIONS,
-                  ctx.teamId
-                ),
-              },
-              ctx
-            ),
-        },
-        input.locations
-      ),
-      ingestElements(ctx.teamId, input.elements),
-    ]);
+  // 2. Resolve the remaining references in parallel — cast + locations. Both are
+  //    unified lists (ref strings + inline create objects); inline-create
+  //    delegates to the real library-create cores (which trigger sheet
+  //    generation), so the storyboard workflow's sheet/vision-wait gates block
+  //    on the new entities before matching.
+  const [suggestedTalentIds, suggestedLocationIds] = await Promise.all([
+    resolveTalentIds(
+      {
+        talent: ctx.scopedDb.talent,
+        createTalent: async (item) =>
+          createLibraryTalent(
+            {
+              name: item.name,
+              description: item.description,
+              isHuman: item.isHuman,
+              referenceImageUrls: await ingestReferenceImages(
+                item.referenceImageUrls,
+                STORAGE_BUCKETS.TALENT,
+                ctx.teamId
+              ),
+            },
+            ctx
+          ),
+      },
+      input.characters
+    ),
+    resolveLocationIds(
+      {
+        locations: ctx.scopedDb.locations,
+        createLocation: async (item) =>
+          createLibraryLocation(
+            {
+              name: item.name,
+              description: item.description,
+              referenceImageUrls: await ingestReferenceImages(
+                item.referenceImageUrls,
+                STORAGE_BUCKETS.LOCATIONS,
+                ctx.teamId
+              ),
+            },
+            ctx
+          ),
+      },
+      input.locations
+    ),
+  ]);
 
   // 3. Assemble + validate the strict create input. createSequenceSchema applies
   //    model defaults and validates every model key, so an invalid model id
