@@ -7,6 +7,7 @@ import {
   getSequenceFn,
   getSequencesFn,
   setSequenceModelFn,
+  setSequenceMusicFn,
   updateSequenceFn,
   type AddModelResult,
 } from '@/functions/sequences';
@@ -19,6 +20,8 @@ import {
 } from '@/lib/schemas/sequence.schemas';
 import type { Sequence } from '@/types/database';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { usePostHog } from '@posthog/react';
+import { toast } from 'sonner';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -244,6 +247,60 @@ export function useUpdateSequence() {
             err: error,
           });
         });
+    },
+  });
+}
+
+/**
+ * Persist the per-sequence "include music in playback + export" toggle (#834).
+ * Shared by the theatre player's music button and the music tab's checkbox.
+ * Optimistically patches the sequence detail cache so the live player's music
+ * gain and the next export react instantly; rolls back if the write fails.
+ */
+export function useSetSequenceMusic(sequenceId: string) {
+  const queryClient = useQueryClient();
+  const posthog = usePostHog();
+
+  return useMutation({
+    // Serialize per-sequence writes so a quick off→on double-toggle can't have
+    // its two POSTs resolve out of order and persist the stale value (#834).
+    scope: { id: `set-sequence-music-${sequenceId}` },
+    mutationFn: (includeMusic: boolean) =>
+      setSequenceMusicFn({ data: { sequenceId, includeMusic } }),
+    onMutate: async (includeMusic) => {
+      const key = sequenceKeys.detail(sequenceId);
+      // Cancel in-flight reads before patching: this query refetches on mount
+      // and window focus and is invalidated by the generation stream, so an
+      // outstanding refetch could otherwise resolve with the stale row and
+      // silently flip the toggle back (#834).
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<Sequence>(key);
+      queryClient.setQueryData<Sequence>(key, (old) =>
+        old ? { ...old, includeMusic } : old
+      );
+      return { previous };
+    },
+    onError: (error, _includeMusic, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(sequenceKeys.detail(sequenceId), ctx.previous);
+      }
+      toast.error('Could not save the music setting.');
+      posthog.captureException(error, { sequence_id: sequenceId });
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(sequenceKeys.detail(sequenceId), updated);
+      // Capture only on confirmed persistence so the metric isn't inflated by
+      // toggles that later roll back.
+      posthog.capture('sequence_music_toggled', {
+        sequence_id: sequenceId,
+        include_music: updated.includeMusic,
+      });
+    },
+    onSettled: () => {
+      // Reconcile against the server's true state once the write settles.
+      void queryClient.invalidateQueries({
+        queryKey: sequenceKeys.detail(sequenceId),
+      });
     },
   });
 }

@@ -26,6 +26,7 @@ import type { SceneInput } from '@/lib/sequence-player/concatenated-video-source
 import { cn } from '@/lib/utils';
 import {
   AlertCircle,
+  Music,
   Pause,
   Play,
   TriangleAlert,
@@ -38,6 +39,14 @@ type SequencePlayerProps = {
   scenes: SceneInput[];
   musicUrl: string | null;
   musicLoudnessGainDb: number | null;
+  /**
+   * Whether the music track plays. Pushed into the engine's music-only gain
+   * node so toggling is live and never re-prepares the player (#834). When
+   * `musicUrl` is null this is moot — no music toggle is shown.
+   */
+  musicEnabled: boolean;
+  /** Persist the music on/off choice (see TheatreView → setSequenceMusicFn). */
+  onMusicEnabledChange: (enabled: boolean) => void;
   aspectRatio: AspectRatio;
   className?: string;
   /** Slot rendered as an overlay (top-right) — e.g. the Share dropdown. */
@@ -48,6 +57,8 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
   scenes,
   musicUrl,
   musicLoudnessGainDb,
+  musicEnabled,
+  onMusicEnabledChange,
   aspectRatio,
   className,
   overlayActions,
@@ -76,6 +87,7 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
       scenes,
       musicUrl,
       musicLoudnessGainDb,
+      musicEnabled,
       onTimeUpdate: (t) => {
         if (!cancelled) setCurrentTime(t);
       },
@@ -104,8 +116,9 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
       engine.dispose();
       engineRef.current = null;
     };
-    // The scene list/music identity drives the engine lifecycle; volume/muted
-    // are pushed through setters below.
+    // The scene list/music identity drives the engine lifecycle; volume/muted/
+    // musicEnabled are pushed through setters below (toggling music must not
+    // re-prepare the engine, #834).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenes, musicUrl, musicLoudnessGainDb]);
 
@@ -116,6 +129,10 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
   useEffect(() => {
     engineRef.current?.setMuted(muted);
   }, [muted]);
+
+  useEffect(() => {
+    engineRef.current?.setMusicEnabled(musicEnabled);
+  }, [musicEnabled]);
 
   const togglePlay = () => {
     const engine = engineRef.current;
@@ -206,10 +223,13 @@ export const SequencePlayer: React.FC<SequencePlayerProps> = ({
           volume={volume}
           muted={muted || !meta.hasAudio}
           hasAudio={meta.hasAudio}
+          hasMusic={Boolean(musicUrl)}
+          musicEnabled={musicEnabled}
           onTogglePlay={togglePlay}
           onSeek={seek}
           onVolumeChange={setVolume}
           onToggleMute={() => setMuted((m) => !m)}
+          onToggleMusic={() => onMusicEnabledChange(!musicEnabled)}
         />
       )}
     </div>
@@ -223,10 +243,14 @@ type PlayerControlsProps = {
   volume: number;
   muted: boolean;
   hasAudio: boolean;
+  /** The sequence has a music track, so the music on/off toggle is shown. */
+  hasMusic: boolean;
+  musicEnabled: boolean;
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
   onVolumeChange: (v: number) => void;
   onToggleMute: () => void;
+  onToggleMusic: () => void;
 };
 
 const PlayerControls: React.FC<PlayerControlsProps> = ({
@@ -236,10 +260,13 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
   volume,
   muted,
   hasAudio,
+  hasMusic,
+  musicEnabled,
   onTogglePlay,
   onSeek,
   onVolumeChange,
   onToggleMute,
+  onToggleMusic,
 }) => {
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -278,6 +305,34 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
           {formatTimestamp(currentTime)} / {formatTimestamp(duration)}
         </span>
         <div className="flex-1" />
+        {hasMusic && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-white hover:bg-white/10 hover:text-white"
+                onClick={onToggleMusic}
+                aria-pressed={musicEnabled}
+                aria-label={musicEnabled ? 'Turn music off' : 'Turn music on'}
+              >
+                <span className="relative inline-flex">
+                  <Music className="h-4 w-4" />
+                  {!musicEnabled && (
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute left-1/2 top-1/2 h-px w-5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-full bg-current"
+                    />
+                  )}
+                </span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {musicEnabled ? 'Music on' : 'Music off'} — applies to playback
+              and export
+            </TooltipContent>
+          </Tooltip>
+        )}
         {hasAudio && (
           <div className="flex items-center gap-2">
             <Button

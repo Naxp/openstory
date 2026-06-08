@@ -44,6 +44,7 @@ const mockSequence: Sequence = {
   musicPrompt: null,
   musicTags: null,
   musicPromptInputHash: null,
+  includeMusic: true,
   posterUrl: null,
   autoGenerateMotion: false,
   autoGenerateMusic: false,

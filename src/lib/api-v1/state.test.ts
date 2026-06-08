@@ -83,6 +83,7 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     musicPrompt: null,
     musicTags: null,
     musicPromptInputHash: null,
+    includeMusic: true,
     statusError: null,
     workflowRunId: null,
     posterUrl: null,

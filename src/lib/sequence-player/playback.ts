@@ -34,6 +34,7 @@ import {
   type SceneInput,
 } from './concatenated-video-source';
 import { decodeAudioTrack } from './decode-audio-track';
+import { computeMusicGain } from './music-gain';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -49,6 +50,12 @@ export type SequencePlayerOptions = {
    * `sequence_music_variants.loudness_gain_db`.
    */
   musicLoudnessGainDb: number | null;
+  /**
+   * Whether the music track is audible. `false` mutes only the music-only gain
+   * node, leaving scene/dialogue audio untouched. Toggle live via
+   * `setMusicEnabled` without re-preparing the engine (#834). Defaults to true.
+   */
+  musicEnabled?: boolean;
   onTimeUpdate?: (time: number) => void;
   onEnded?: () => void;
   onError?: (error: Error) => void;
@@ -119,6 +126,7 @@ export class SequencePlayerEngine {
   private disposed = false;
   private volume = 1;
   private muted = false;
+  private musicEnabled = true;
 
   constructor(opts: SequencePlayerOptions) {
     const ctx = opts.canvas.getContext('2d');
@@ -127,6 +135,7 @@ export class SequencePlayerEngine {
     }
     this.opts = opts;
     this.canvasContext = ctx;
+    this.musicEnabled = opts.musicEnabled ?? true;
     this.videoSource = new ConcatenatedVideoSource(opts.scenes);
   }
 
@@ -310,6 +319,16 @@ export class SequencePlayerEngine {
     this.applyGain();
   }
 
+  /**
+   * Toggle the music track without touching scene/dialogue audio. Gates the
+   * music-only gain node, so this is instant and does not require re-preparing
+   * the engine (#834).
+   */
+  setMusicEnabled(enabled: boolean): void {
+    this.musicEnabled = enabled;
+    this.applyGain();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -334,7 +353,8 @@ export class SequencePlayerEngine {
     if (!this.masterGain || !this.musicGain) return;
     const masterLinear = this.muted ? 0 : this.volume ** 2;
     this.masterGain.gain.value = masterLinear;
-    this.musicGain.gain.value = loudnessDbToLinear(
+    this.musicGain.gain.value = computeMusicGain(
+      this.musicEnabled,
       this.opts.musicLoudnessGainDb
     );
   }
@@ -510,9 +530,4 @@ export class SequencePlayerEngine {
       }
     }
   }
-}
-
-function loudnessDbToLinear(loudnessGainDb: number | null): number {
-  if (loudnessGainDb === null || !Number.isFinite(loudnessGainDb)) return 1;
-  return Math.pow(10, loudnessGainDb / 20);
 }

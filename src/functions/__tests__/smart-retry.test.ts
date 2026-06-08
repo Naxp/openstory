@@ -77,6 +77,7 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     musicPrompt: 'ambient synths',
     musicTags: null,
     musicPromptInputHash: null,
+    includeMusic: true,
     posterUrl: null,
     autoGenerateMotion: false,
     autoGenerateMusic: false,

@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SequencePlayer } from '@/components/theatre/sequence-player';
 import { useSequenceExport } from '@/components/theatre/use-sequence-export';
 import { useFramesBySequence } from '@/hooks/use-frames';
+import { useSetSequenceMusic } from '@/hooks/use-sequences';
 import type { ExportProgress } from '@/lib/sequence-player/export';
 import type { Sequence } from '@/types/database';
 import { Download, Film, Link, Loader2, Share2 } from 'lucide-react';
@@ -33,6 +34,7 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
   const posthog = usePostHog();
   const { data: frames } = useFramesBySequence(sequence.id);
   const sequenceExport = useSequenceExport(sequence);
+  const setMusicEnabled = useSetSequenceMusic(sequence.id);
 
   const scenes = useMemo(() => {
     if (!frames) return [];
@@ -134,6 +136,8 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
       scenes={scenes}
       musicUrl={sequence.musicUrl ?? null}
       musicLoudnessGainDb={null}
+      musicEnabled={sequence.includeMusic}
+      onMusicEnabledChange={(enabled) => setMusicEnabled.mutate(enabled)}
       aspectRatio={sequence.aspectRatio}
       overlayActions={overlay}
     />
