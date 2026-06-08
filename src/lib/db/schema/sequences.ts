@@ -100,6 +100,11 @@ export const sequences = snakeCase.table(
     // prompt (musicDesign + analysis model). Null when no AI prompt has been
     // generated yet, or when the most recent variant was a user-edit.
     musicPromptInputHash: text(),
+    // Whether the sequence's background music is included in theatre playback
+    // and MP4 export. Default on (mirrors the old #687 "Include music in merged
+    // video" checkbox). Toggling it off mutes only the music track — scene and
+    // dialogue audio are unaffected (#834).
+    includeMusic: integer({ mode: 'boolean' }).default(true).notNull(),
 
     // Poster image (sequence-level preview from script, ephemeral CDN URL)
     posterUrl: text(),

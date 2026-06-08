@@ -84,7 +84,9 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
       const { blob, durationSeconds, reEncoded, resolutionsLabel } =
         await exportSequence({
           scenes,
-          musicUrl: sequence.musicUrl ?? null,
+          // Omit the music track entirely when the sequence's music toggle is
+          // off — the exported MP4 then carries only scene/dialogue audio (#834).
+          musicUrl: sequence.includeMusic ? (sequence.musicUrl ?? null) : null,
           musicLoudnessGainDb: null,
           onProgress: setProgress,
           signal,

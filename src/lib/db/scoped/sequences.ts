@@ -181,6 +181,7 @@ export function createSequencesMethods(
       musicPath?: string;
       musicGeneratedAt?: Date;
       posterUrl?: string | null;
+      includeMusic?: boolean;
     }): Promise<Sequence> => {
       // Scoped by teamId like every other write here — `workflowRunId` in
       // particular is the generation-mutex column (#839), so a cross-team id

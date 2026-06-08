@@ -28,6 +28,7 @@ const baseSequence: Sequence = {
   musicPrompt: null,
   musicTags: null,
   musicPromptInputHash: null,
+  includeMusic: true,
   statusError: null,
   workflowRunId: null,
   posterUrl: null,
