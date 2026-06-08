@@ -262,13 +262,12 @@ const enhanceScriptInputSchema = z.object({
     .min(10, 'Script must be at least 10 characters')
     .max(50000, 'Script too long'),
   targetDuration: z.number().min(5).max(180).optional(),
-  tone: z.enum(['dramatic', 'comedic', 'documentary', 'action']).optional(),
-  style: z.string().optional(),
-  styleConfig: StyleConfigSchema.partial().optional(),
-  // Style identity (name/category/description) — drives genre-appropriate
-  // events in the script, distinct from the aesthetic-only styleConfig.
-  styleMeta: z
+  // The chosen style, narrowed to what the enhancer reads: the aesthetic recipe
+  // (`config`) drives the LOOK; name/category/tags drive WHAT HAPPENS. One
+  // cohesive object — built by `toEnhanceInputs` so the UI and API match.
+  style: z
     .object({
+      config: StyleConfigSchema.partial().optional(),
       name: z.string().optional(),
       category: z.string().nullable().optional(),
       description: z.string().nullable().optional(),
@@ -317,8 +316,7 @@ export async function* streamScriptEnhancement(
   const { prompt, compiled } = await getPrompt('script/enhance');
   const elements = data.elements ?? [];
   const userPrompt = createUserPrompt(sanitized, {
-    styleConfig: data.styleConfig,
-    styleMeta: data.styleMeta,
+    style: data.style,
     aspectRatio: data.aspectRatio,
     targetDuration: data.targetDuration,
     elements: elements.length > 0 ? elements : undefined,

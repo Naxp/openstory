@@ -3,7 +3,7 @@
  *
  * Mirrors the app's real "enhance" path headlessly:
  *   1. `getPrompt('script/enhance')` (Langfuse, or the bundled local fallback)
- *      + `createUserPrompt(brief, { styleConfig, aspectRatio, targetDuration })`
+ *      + `createUserPrompt(brief, { style, aspectRatio, targetDuration })`
  *      → the same style-aware enhance the UI uses (`enhanceScriptStreamFn`).
  *   2. A structured scene split turns the enhanced prose into render-ready beats.
  *
@@ -12,10 +12,9 @@
  */
 import { getEnv } from '#env';
 import { callLLM, RECOMMENDED_MODELS } from '@/lib/ai/llm-client';
-import type { StyleMeta } from '@/lib/ai/enhance-inputs';
+import type { EnhanceStyle } from '@/lib/ai/enhance-inputs';
 import { createUserPrompt } from '@/lib/ai/script-enhancer';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
-import type { StyleConfig } from '@/lib/db/schema/libraries';
 import { getPrompt } from '@/lib/prompts';
 import {
   CANONICAL_TARGET_SECONDS,
@@ -62,14 +61,12 @@ function openRouterKey(): string {
 /** Run the brief through the app's `script/enhance` prompt → enhanced script prose. */
 async function enhanceBrief(args: {
   brief: string;
-  styleConfig: StyleConfig;
-  styleMeta?: StyleMeta;
+  style: EnhanceStyle;
   aspectRatio: AspectRatio;
 }): Promise<string> {
   const { prompt, compiled } = await getPrompt('script/enhance');
   const userPrompt = createUserPrompt(args.brief, {
-    styleConfig: args.styleConfig,
-    styleMeta: args.styleMeta,
+    style: args.style,
     aspectRatio: args.aspectRatio,
     targetDuration: CANONICAL_TARGET_SECONDS,
   });
@@ -142,8 +139,7 @@ async function splitIntoBeats(args: {
 /** Full canonical script for a style: brief → enhance → scene split → beats. */
 export async function generateCanonicalScript(args: {
   brief: string;
-  styleConfig: StyleConfig;
-  styleMeta?: StyleMeta;
+  style: EnhanceStyle;
   aspectRatio: AspectRatio;
 }): Promise<{ enhancedScript: string; beats: SampleBeat[] }> {
   const enhancedScript = await enhanceBrief(args);

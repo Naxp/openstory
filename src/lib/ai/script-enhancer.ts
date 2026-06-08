@@ -1,59 +1,14 @@
-import { getEnv } from '#env';
-import { callLLM, RECOMMENDED_MODELS } from '@/lib/ai/llm-client';
-import {
-  checkForInjectionAttempts,
-  validateAIResponse,
-} from '@/lib/ai/prompt-validation';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
-import type { StyleConfig } from '@/lib/db/schema/libraries';
-import type { StyleMeta } from '@/lib/ai/enhance-inputs';
-import { getPrompt } from '@/lib/prompts';
+import type { EnhanceStyle } from '@/lib/ai/enhance-inputs';
 import { z } from 'zod';
 
-import { getLogger } from '@/lib/observability/logger';
-
-const logger = getLogger(['openstory', 'ai', 'script-enhancer']);
-
-export const enhanceElementSchema = z.object({
+const enhanceElementSchema = z.object({
   token: z.string().min(1),
   description: z.string().nullable().optional(),
   imageUrl: z.string().url(),
 });
 
-export type EnhanceElement = z.infer<typeof enhanceElementSchema>;
-
-const EnhanceScriptOptionsSchema = z.object({
-  originalScript: z
-    .string()
-    .min(1, 'Script cannot be empty')
-    .max(50000, 'Script too long'),
-  targetDuration: z.number().min(5).max(180).optional().default(30),
-  tone: z
-    .enum(['dramatic', 'comedic', 'documentary', 'action'])
-    .optional()
-    .default('dramatic'),
-  style: z.string().optional(),
-  elements: z.array(enhanceElementSchema).optional(),
-});
-
-const EnhancedScriptSchema = z.object({
-  enhanced_script: z.string(),
-  style_stack_recommendation: z.object({
-    recommended_style_stack: z.string(),
-    reasoning: z.string(),
-  }),
-});
-
-type EnhanceScriptOptions = {
-  originalScript: string;
-  targetDuration?: number;
-  tone?: 'dramatic' | 'comedic' | 'documentary' | 'action';
-  style?: string;
-  /** Override OpenRouter API key (e.g., user-provided key). Falls back to platform env key. */
-  openRouterApiKey?: string;
-};
-
-type EnhancedScript = z.infer<typeof EnhancedScriptSchema>;
+type EnhanceElement = z.infer<typeof enhanceElementSchema>;
 
 /**
  * Convert a target duration in seconds to approximate scene count and word count guidance.
@@ -80,8 +35,7 @@ function formatDuration(seconds: number): string {
 export function createUserPrompt(
   originalScript: string,
   options?: {
-    styleConfig?: Partial<StyleConfig>;
-    styleMeta?: StyleMeta;
+    style?: EnhanceStyle;
     aspectRatio?: AspectRatio;
     targetDuration?: number;
     elements?: EnhanceElement[];
@@ -123,23 +77,24 @@ Non-negotiables (each scene becomes a still that is animated into a ~5s clip):
     parts.push(`\n${lines.join('\n')}`);
   }
 
-  const meta = options?.styleMeta;
+  const style = options?.style;
   if (
-    meta &&
-    (meta.name || meta.category || meta.description || meta.tags?.length)
+    style &&
+    (style.name || style.category || style.description || style.tags?.length)
   ) {
-    const genre = [meta.name, meta.category].filter(Boolean).join(' / ');
+    const genre = [style.name, style.category].filter(Boolean).join(' / ');
     const lines = [
       'Style & genre (let this drive WHAT HAPPENS, not just the look):',
     ];
     if (genre) lines.push(`- Style: ${genre}`);
-    if (meta.description) lines.push(`- About: ${meta.description}`);
-    if (meta.tags?.length) lines.push(`- Genre cues: ${meta.tags.join(', ')}`);
+    if (style.description) lines.push(`- About: ${style.description}`);
+    if (style.tags?.length)
+      lines.push(`- Genre cues: ${style.tags.join(', ')}`);
     parts.push(`\n${lines.join('\n')}`);
   }
 
-  if (options?.styleConfig) {
-    const s = options.styleConfig;
+  if (style?.config) {
+    const s = style.config;
     const lines = ['Style context (apply these aesthetics throughout):'];
     if (s.mood) lines.push(`- Mood: ${s.mood}`);
     if (s.artStyle) lines.push(`- Art style: ${s.artStyle}`);
@@ -163,44 +118,6 @@ Non-negotiables (each scene becomes a still that is animated into a ~5s clip):
   }
 
   return parts.join('\n');
-}
-
-export async function enhanceScript(
-  options: EnhanceScriptOptions
-): Promise<EnhancedScript> {
-  const validatedOptions = EnhanceScriptOptionsSchema.parse(options);
-
-  if (checkForInjectionAttempts(validatedOptions.originalScript)) {
-    logger.warn('Script enhancement: Potential injection attempt detected');
-  }
-
-  const openRouterKey = options.openRouterApiKey ?? getEnv().OPENROUTER_KEY;
-  if (!openRouterKey) {
-    throw new Error('OpenRouter API key not configured');
-  }
-
-  const { prompt, compiled } = await getPrompt('script/enhance');
-  const userPrompt = createUserPrompt(validatedOptions.originalScript);
-
-  const enhanced = await callLLM({
-    model: RECOMMENDED_MODELS.structured,
-    messages: [
-      { role: 'system' as const, content: compiled },
-      { role: 'user' as const, content: userPrompt },
-    ],
-    max_tokens: 4000,
-    temperature: 0.7,
-    prompt,
-    observationName: 'script-enhancement',
-    responseSchema: EnhancedScriptSchema,
-    apiKey: openRouterKey,
-  });
-
-  // Security check still runs on text — scan the serialized output for
-  // injection patterns. callLLM already validated the schema upstream.
-  validateAIResponse(JSON.stringify(enhanced));
-
-  return enhanced;
 }
 
 // In-memory sliding-window rate limiter

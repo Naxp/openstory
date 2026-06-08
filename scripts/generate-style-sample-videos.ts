@@ -262,8 +262,8 @@ async function prepareBeats(job: RenderJob): Promise<SampleBeat[]> {
 
   const { enhancedScript, beats } = await generateCanonicalScript({
     brief: job.brief,
-    styleConfig: job.config,
-    styleMeta: {
+    style: {
+      config: job.config,
       name: job.styleName,
       category: job.category,
       tags: job.tags,

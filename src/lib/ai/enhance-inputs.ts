@@ -7,11 +7,13 @@
 import type { StyleConfig } from '@/lib/db/schema/libraries';
 
 /**
- * Identity of the chosen style — name/category/description/tags — threaded into
- * the enhancer so the genre drives WHAT HAPPENS, not just the look. The
- * aesthetic fields (mood, lighting, …) live on {@link StyleConfig}; these do not.
+ * A style as the enhancer sees it: the aesthetic recipe (`config`) plus the
+ * identity that drives WHAT HAPPENS — name/category/tags decide whether "action"
+ * gets a chase and "rom-com" gets a meet-cute, not just how the frame looks.
+ * One cohesive narrowing of a `Style` row rather than two parallel bags.
  */
-export type StyleMeta = {
+export type EnhanceStyle = {
+  config?: Partial<StyleConfig>;
   name?: string;
   category?: string | null;
   description?: string | null;
@@ -45,15 +47,14 @@ type EnhanceElement = {
 };
 
 /**
- * Map a style row + ingested elements to the enhancer inputs. Spread the result
- * into the enhance request so both call sites stay in lockstep.
+ * Narrow a style row + ingested elements to the enhancer inputs. Spread the
+ * result into the enhance request so both call sites stay in lockstep.
  */
 export function toEnhanceInputs(args: {
   style?: StyleLike | null;
   elements?: readonly ElementLike[] | null;
 }): {
-  styleConfig?: Partial<StyleConfig>;
-  styleMeta?: StyleMeta;
+  style?: EnhanceStyle;
   elements?: EnhanceElement[];
 } {
   const { style, elements } = args;
@@ -71,9 +72,9 @@ export function toEnhanceInputs(args: {
   );
 
   return {
-    styleConfig: style?.config ?? undefined,
-    styleMeta: style
+    style: style
       ? {
+          config: style.config ?? undefined,
           name: style.name ?? undefined,
           category: style.category,
           description: style.description,

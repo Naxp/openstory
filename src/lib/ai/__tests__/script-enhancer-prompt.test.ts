@@ -16,7 +16,7 @@ describe('createUserPrompt (issue #855)', () => {
 
   it('threads style name/category/tags so the genre drives the events', () => {
     const prompt = createUserPrompt('a cinematic short-film scene', {
-      styleMeta: {
+      style: {
         name: 'Action',
         category: 'film',
         description: 'Kinetic chases and stunts',
@@ -29,23 +29,27 @@ describe('createUserPrompt (issue #855)', () => {
     expect(prompt).toContain('Genre cues: action, blockbuster, explosive');
   });
 
-  it('omits the style block entirely when no style meta is given', () => {
+  it('omits the genre block entirely when no style is given', () => {
     const prompt = createUserPrompt('a brief');
     expect(prompt).not.toContain('drive WHAT HAPPENS');
   });
 
-  it('still renders aesthetic styleConfig fields independently of meta', () => {
+  it('renders aesthetic config and genre identity from the one style object', () => {
     const prompt = createUserPrompt('a brief', {
-      styleConfig: { mood: 'tense', lighting: 'low-key' },
+      style: {
+        config: { mood: 'tense', lighting: 'low-key' },
+        name: 'Neo-Noir',
+      },
     });
     expect(prompt).toContain('apply these aesthetics throughout');
     expect(prompt).toContain('Mood: tense');
     expect(prompt).toContain('Lighting: low-key');
+    expect(prompt).toContain('Style: Neo-Noir');
   });
 });
 
 describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
-  it('maps a style row to the same inputs the UI and API both send', () => {
+  it('narrows a style row to the one object the UI and API both send', () => {
     const result = toEnhanceInputs({
       style: {
         config: { mood: 'tense' },
@@ -55,8 +59,8 @@ describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
         tags: ['action', 'blockbuster'],
       },
     });
-    expect(result.styleConfig).toEqual({ mood: 'tense' });
-    expect(result.styleMeta).toEqual({
+    expect(result.style).toEqual({
+      config: { mood: 'tense' },
       name: 'Action',
       category: 'film',
       description: 'Kinetic chases',
@@ -83,8 +87,7 @@ describe('toEnhanceInputs (UI/API parity, issue #855)', () => {
 
   it('returns no keys for a missing style and no elements', () => {
     expect(toEnhanceInputs({})).toEqual({
-      styleConfig: undefined,
-      styleMeta: undefined,
+      style: undefined,
       elements: undefined,
     });
   });
