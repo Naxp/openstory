@@ -396,7 +396,9 @@ describe('llm-client', () => {
     });
 
     describe('reasoning', () => {
-      it('surfaces REASONING_MESSAGE_CONTENT as reasoningDelta without polluting the answer', async () => {
+      it('ignores REASONING_MESSAGE_CONTENT events (reasoning is not surfaced)', async () => {
+        // Reasoning is enabled for quality, but its tokens are scratch work —
+        // never accumulated into the answer or yielded to the caller.
         mockChat.mockReturnValue(
           (async function* () {
             yield { type: 'REASONING_MESSAGE_CONTENT', delta: 'let me think' };
@@ -407,21 +409,16 @@ describe('llm-client', () => {
         );
 
         const answer: string[] = [];
-        const reasoning: string[] = [];
         let finalAccumulated = '';
         for await (const chunk of callLLMStream({
           model: 'anthropic/claude-sonnet-4.6',
           messages: [{ role: 'user', content: 'test' }],
           reasoning: { enabled: true, effort: 'medium' },
         })) {
-          if (chunk.reasoningDelta) reasoning.push(chunk.reasoningDelta);
           if (chunk.delta) answer.push(chunk.delta);
           finalAccumulated = chunk.accumulated;
         }
 
-        // Reasoning is captured separately; the answer accumulator only ever
-        // holds answer text (reasoning chunks carry delta: '').
-        expect(reasoning).toEqual(['let me think', ' more']);
         expect(answer).toEqual(['Hello', ' World']);
         expect(finalAccumulated).toBe('Hello World');
       });

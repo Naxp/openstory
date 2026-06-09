@@ -2,7 +2,7 @@ import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
 import { ImageModelSelector } from '@/components/model/image-model-selector';
 import { MotionModelSelector } from '@/components/model/motion-model-selector';
 import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
-import { ReasoningPanel } from '@/components/ai/reasoning-panel';
+import { ThinkingBar } from '@/components/ai/thinking-bar';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
@@ -1022,11 +1022,9 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
 
       <TabsContent value="image-prompt">
         <div className="space-y-4">
-          {/* Model reasoning while the visual prompt regenerates */}
-          <ReasoningPanel
-            text={framePromptStream.visual.reasoning}
-            isStreaming={isAwaitingVisualPrompt}
-          />
+          {/* Thinking bar while the model reasons, before the regenerated
+              prompt starts streaming back ('pending' → first delta). */}
+          <ThinkingBar active={framePromptStream.visual.status === 'pending'} />
 
           {/* Error/Success Messages */}
           {shortenStatus.error && (
@@ -1227,11 +1225,9 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
 
       <TabsContent value="motion-prompt">
         <div className="space-y-4">
-          {/* Model reasoning while the motion prompt regenerates */}
-          <ReasoningPanel
-            text={framePromptStream.motion.reasoning}
-            isStreaming={isAwaitingMotionPrompt}
-          />
+          {/* Thinking bar while the model reasons, before the regenerated
+              prompt starts streaming back ('pending' → first delta). */}
+          <ThinkingBar active={framePromptStream.motion.status === 'pending'} />
 
           {/* Editable raw motion prompt */}
           <div className="space-y-2">

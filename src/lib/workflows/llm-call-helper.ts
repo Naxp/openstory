@@ -41,22 +41,20 @@ export type DurableLLMCallConfig<TSchema extends z.ZodType> = {
   additionalMetadata?: Record<string, unknown>;
   /**
    * Turn on the model's reasoning/thinking pass for this call (creative
-   * prompt-generation flows). Reasoning is gated OUT of E2E here so the
-   * recorded OpenRouter request shape stays deterministic for aimock.
+   * prompt-generation flows).
    */
   reasoning?: boolean;
 };
 
 /**
- * Resolve the `modelOptions.reasoning` config for a call, honouring the
- * per-call opt-in and the E2E gate. Returns `{}` (no reasoning) in E2E or when
- * not requested, so it can be spread into `modelOptions` unconditionally.
+ * Resolve the `modelOptions.reasoning` config for a call. Returns `{}` (no
+ * reasoning) when not requested, so it can be spread into `modelOptions`
+ * unconditionally.
  */
 function reasoningModelOptions(reasoning: boolean | undefined): {
   reasoning?: typeof PROMPT_REASONING;
 } {
-  if (!reasoning || getEnv().E2E_TEST === 'true') return {};
-  return { reasoning: PROMPT_REASONING };
+  return reasoning ? { reasoning: PROMPT_REASONING } : {};
 }
 
 export type DurableLLMCallContext = {
@@ -314,8 +312,6 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
       let lastExtracted = '';
       let pendingDelta = '';
       let lastEmitAt = 0;
-      let pendingReasoning = '';
-      let lastReasoningEmitAt = 0;
 
       const flushDelta = async () => {
         if (!pendingDelta) return;
@@ -323,16 +319,6 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
         pendingDelta = '';
         lastEmitAt = Date.now();
         await channel.emit('framePrompt.streaming', { promptType, delta });
-      };
-
-      // Reasoning streams on its own event so the client renders it in a
-      // separate "Thinking…" panel; same throttle as the prompt deltas.
-      const flushReasoning = async () => {
-        if (!pendingReasoning) return;
-        const delta = pendingReasoning;
-        pendingReasoning = '';
-        lastReasoningEmitAt = Date.now();
-        await channel.emit('framePrompt.reasoning', { promptType, delta });
       };
 
       try {
@@ -370,19 +356,6 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
             }
             continue;
           }
-          if (
-            event.type === 'REASONING_MESSAGE_CONTENT' &&
-            typeof event.delta === 'string'
-          ) {
-            pendingReasoning += event.delta;
-            if (
-              pendingReasoning &&
-              Date.now() - lastReasoningEmitAt >= flushIntervalMs
-            ) {
-              await flushReasoning();
-            }
-            continue;
-          }
           const runError = extractRunError(event);
           if (runError) {
             logger.error(`[LLM:${logName}:cf] Streaming call RUN_ERROR`, {
@@ -392,7 +365,6 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
           }
         }
         await flushDelta();
-        await flushReasoning();
         logger.info(`[LLM:${logName}:cf] Streaming call succeeded`);
         return accumulated;
       } finally {

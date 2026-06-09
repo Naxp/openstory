@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { CardContent, CardFooter, CardHeader } from '@/components/ui/card';
-import { ReasoningPanel } from '@/components/ai/reasoning-panel';
+import { ThinkingBar } from '@/components/ai/thinking-bar';
 import { PremiumCard } from '@/components/cards/premium-card';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
@@ -498,7 +498,6 @@ export const ScriptView: FC<{
     showRegenerateConfirm: false,
     showEnhanceNudge: false,
     canUndoEnhance: false,
-    reasoning: '',
   });
   const {
     isEnhancing,
@@ -506,7 +505,6 @@ export const ScriptView: FC<{
     showRegenerateConfirm,
     showEnhanceNudge,
     canUndoEnhance,
-    reasoning: enhanceReasoning,
   } = enhanceUI;
   const setEnhance = <K extends keyof typeof enhanceUI>(
     key: K,
@@ -630,12 +628,7 @@ export const ScriptView: FC<{
       script_length: scriptValue.length,
       aspect_ratio: aspectRatio,
     });
-    setEnhanceUI((s) => ({
-      ...s,
-      isEnhancing: true,
-      error: null,
-      reasoning: '',
-    }));
+    setEnhanceUI((s) => ({ ...s, isEnhancing: true, error: null }));
     previousScriptRef.current = scriptValue;
     setScript('');
 
@@ -652,7 +645,6 @@ export const ScriptView: FC<{
         ? (mentionElements ?? [])
         : draftElements;
       let accumulated = '';
-      let reasoning = '';
       for await (const chunk of await enhanceScriptStreamFn({
         data: {
           script: scriptValue,
@@ -666,10 +658,6 @@ export const ScriptView: FC<{
         },
       })) {
         if (abortController.signal.aborted) break;
-        if (chunk.reasoning) {
-          reasoning += chunk.reasoning;
-          setEnhance('reasoning', reasoning);
-        }
         accumulated += chunk.delta;
         setScript(accumulated);
       }
@@ -815,9 +803,10 @@ export const ScriptView: FC<{
         </CardHeader>
 
         <CardContent className="min-h-0 @container flex flex-col gap-4 py-6 overflow-hidden">
-          <ReasoningPanel
-            text={enhanceReasoning}
-            isStreaming={isEnhancing}
+          {/* Thinking bar shows during the reasoning pass — i.e. while
+              enhancing but before any enhanced text has streamed back. */}
+          <ThinkingBar
+            active={isEnhancing && !scriptValue}
             className="shrink-0"
           />
           <div className="relative min-h-0 flex flex-col">
