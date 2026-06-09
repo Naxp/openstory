@@ -17,8 +17,13 @@
  *     side-by-side comparison stays trivial. */
 
 import { createAdapter } from '@/lib/ai/create-adapter';
+import { getEnv } from '#env';
 import { computeVisualPromptInputHash } from '@/lib/ai/input-hash';
-import { extractRunError, formatRunErrorMessage } from '@/lib/ai/llm-client';
+import {
+  extractRunError,
+  formatRunErrorMessage,
+  PROMPT_REASONING,
+} from '@/lib/ai/llm-client';
 import { getContextWindow } from '@/lib/ai/models.config';
 import { narrowFramePromptContext } from '@/lib/ai/prompt-context';
 import {
@@ -178,6 +183,11 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), 300_000);
 
+      // Reasoning lifts prompt-generation quality but is gated out of E2E so
+      // the recorded OpenRouter request shape stays deterministic for aimock.
+      const reasoningOptions =
+        getEnv().E2E_TEST === 'true' ? {} : { reasoning: PROMPT_REASONING };
+
       try {
         if (!streamConfig) {
           const text = await chat({
@@ -188,6 +198,7 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
             stream: false,
             maxTokens: Math.floor(getContextWindow(analysisModelId) * 0.5),
             abortController,
+            modelOptions: reasoningOptions,
             metadata: {
               observationName: LOG_NAME,
               prompt: promptReference,
@@ -210,6 +221,8 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
         let lastExtracted = '';
         let pendingDelta = '';
         let lastEmitAt = 0;
+        let pendingReasoning = '';
+        let lastReasoningEmitAt = 0;
 
         const flushDelta = async () => {
           if (!pendingDelta) return;
@@ -222,6 +235,19 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
           });
         };
 
+        // Reasoning streams on its own event so the client renders it in a
+        // separate "Thinking…" panel; same throttle as the prompt deltas.
+        const flushReasoning = async () => {
+          if (!pendingReasoning) return;
+          const delta = pendingReasoning;
+          pendingReasoning = '';
+          lastReasoningEmitAt = Date.now();
+          await channel.emit('framePrompt.reasoning', {
+            promptType: streamConfig.promptType,
+            delta,
+          });
+        };
+
         for await (const streamEvent of chat({
           adapter,
           messages: chatMessages,
@@ -229,6 +255,7 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
           stream: true,
           maxTokens: Math.floor(getContextWindow(analysisModelId) * 0.5),
           abortController,
+          modelOptions: reasoningOptions,
           metadata: {
             observationName: LOG_NAME,
             prompt: promptReference,
@@ -258,6 +285,19 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
             }
             continue;
           }
+          if (
+            streamEvent.type === 'REASONING_MESSAGE_CONTENT' &&
+            typeof streamEvent.delta === 'string'
+          ) {
+            pendingReasoning += streamEvent.delta;
+            if (
+              pendingReasoning &&
+              Date.now() - lastReasoningEmitAt >= streamConfig.flushIntervalMs
+            ) {
+              await flushReasoning();
+            }
+            continue;
+          }
           const runError = extractRunError(streamEvent);
           if (runError) {
             logger.error(
@@ -268,6 +308,7 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
           }
         }
         await flushDelta();
+        await flushReasoning();
         logger.info(
           `[VisualPromptSceneWorkflow:cf] [LLM:${LOG_NAME}] Streaming call succeeded`
         );

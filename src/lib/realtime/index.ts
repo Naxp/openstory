@@ -50,6 +50,13 @@ export const realtimeSchema = {
       promptType: z.enum(['visual', 'motion']),
       delta: z.string(),
     }),
+    // Model reasoning/thinking deltas, streamed alongside `streaming` while a
+    // prompt regenerates. Separate event so the client can show the reasoning
+    // in its own "Thinking…" panel without it ever landing in the prompt text.
+    reasoning: z.object({
+      promptType: z.enum(['visual', 'motion']),
+      delta: z.string(),
+    }),
     completed: z.object({
       promptType: z.enum(['visual', 'motion']),
     }),

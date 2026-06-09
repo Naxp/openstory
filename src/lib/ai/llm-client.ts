@@ -16,11 +16,25 @@ import { getLogger } from '@/lib/observability/logger';
 const logger = getLogger(['openstory', 'ai', 'llm-client']);
 
 export type StreamChunk<T = never> =
-  | { done: false; delta: string; accumulated: string }
+  | {
+      done: false;
+      delta: string;
+      accumulated: string;
+      /**
+       * Incremental reasoning/thinking text for this chunk, when the model's
+       * reasoning pass is enabled (see {@link LLMRequestParams.reasoning}).
+       * Reasoning streams as separate `REASONING_MESSAGE_CONTENT` events from
+       * the answer, so `delta`/`accumulated` stay clean — a reasoning chunk
+       * carries `delta: ''` and a non-empty `reasoningDelta`. `undefined` on
+       * plain answer chunks. Callers that don't care simply ignore it.
+       */
+      reasoningDelta?: string;
+    }
   | {
       done: true;
       delta: '';
       accumulated: string;
+      reasoningDelta?: string;
       /**
        * Validated structured output. Default `T = never` makes this `undefined`
        * when no `responseSchema` was provided; with a schema, narrows to `T | undefined`
@@ -130,6 +144,22 @@ export const RECOMMENDED_MODELS = {
   fast: 'anthropic/claude-sonnet-4.6',
   premium: 'anthropic/claude-sonnet-4.6',
 } as const;
+
+/**
+ * Shared reasoning config for the creative generation paths (script enhance +
+ * prompt generation). `medium` effort balances the creativity lift against the
+ * added latency — a forward pass converges on the modal/obvious answer, and the
+ * planning step is what escapes it (see #875 and the eval notes in #870).
+ *
+ * NOT applied to utility calls (prompt shortening, duration estimation) where a
+ * forward pass is already correct and reasoning would only add latency. Gate it
+ * OUT of E2E at the call site (`getEnv().E2E_TEST === 'true'`), like web search,
+ * so the recorded OpenRouter request shape stays deterministic for aimock.
+ */
+export const PROMPT_REASONING = {
+  enabled: true,
+  effort: 'medium',
+} as const satisfies NonNullable<LLMRequestParams['reasoning']>;
 
 /**
  * System messages must be strings (they become systemPrompts on the adapter).
@@ -506,6 +536,18 @@ export async function* callLLMStream<T>(
         continue;
       }
       if (
+        event.type === 'REASONING_MESSAGE_CONTENT' &&
+        typeof event.delta === 'string'
+      ) {
+        yield {
+          delta: '',
+          accumulated,
+          reasoningDelta: event.delta,
+          done: false,
+        };
+        continue;
+      }
+      if (
         event.type === 'CUSTOM' &&
         event.name === 'structured-output.complete'
       ) {
@@ -521,6 +563,18 @@ export async function* callLLMStream<T>(
       if (event.type === 'TEXT_MESSAGE_CONTENT') {
         accumulated += event.delta;
         yield { delta: event.delta, accumulated, done: false };
+        continue;
+      }
+      if (
+        event.type === 'REASONING_MESSAGE_CONTENT' &&
+        typeof event.delta === 'string'
+      ) {
+        yield {
+          delta: '',
+          accumulated,
+          reasoningDelta: event.delta,
+          done: false,
+        };
         continue;
       }
       throwIfRunError(event);

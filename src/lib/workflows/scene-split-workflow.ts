@@ -21,7 +21,8 @@
  *     JSON-stringify around the step boundary (same pattern as
  *     `visual-prompt-scene-workflow.ts`). */
 
-import { callLLMStream } from '@/lib/ai/llm-client';
+import { getEnv } from '#env';
+import { callLLMStream, PROMPT_REASONING } from '@/lib/ai/llm-client';
 import { PREVIEW_IMAGE_MODEL } from '@/lib/ai/models';
 import { getContextWindow } from '@/lib/ai/models.config';
 import {
@@ -155,12 +156,16 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         let prevFrameId: string | undefined = undefined;
         let parsedResult: SceneSplittingResult | undefined;
 
+        // Reasoning lifts prompt-generation quality but is gated out of E2E so
+        // the recorded OpenRouter request shape stays deterministic for aimock.
+        const useReasoning = getEnv().E2E_TEST !== 'true';
         for await (const chunk of callLLMStream<SceneSplittingResult>({
           model: modelId,
           messages,
           max_tokens: Math.floor(getContextWindow(modelId) * 0.65),
           responseSchema: sceneSplittingResultSchema,
           apiKey: openRouterApiKeyInfo.key,
+          ...(useReasoning && { reasoning: PROMPT_REASONING }),
           observationName: LOG_NAME,
           prompt: promptReference,
           tags: LOG_TAGS,

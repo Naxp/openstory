@@ -24,6 +24,8 @@ export type FramePromptStreamStatus =
 
 type PerPromptState = {
   text: string;
+  /** Accumulated model reasoning/thinking text for the in-flight regen. */
+  reasoning: string;
   status: FramePromptStreamStatus;
   error?: string;
 };
@@ -33,7 +35,11 @@ export type FramePromptStreamState = {
   motion: PerPromptState;
 };
 
-const initialPerPrompt: PerPromptState = { text: '', status: 'idle' };
+const initialPerPrompt: PerPromptState = {
+  text: '',
+  reasoning: '',
+  status: 'idle',
+};
 
 const initialState: FramePromptStreamState = {
   visual: initialPerPrompt,
@@ -43,6 +49,7 @@ const initialState: FramePromptStreamState = {
 type Action =
   | { type: 'PENDING'; promptType: FramePromptKind }
   | { type: 'DELTA'; promptType: FramePromptKind; delta: string }
+  | { type: 'REASONING'; promptType: FramePromptKind; delta: string }
   | { type: 'COMPLETED'; promptType: FramePromptKind }
   | { type: 'FAILED'; promptType: FramePromptKind; error: string }
   | { type: 'RESET' };
@@ -59,14 +66,25 @@ function reducePromptState(
   switch (action.type) {
     case 'PENDING':
       // Caller-driven: the mutation enqueued a workflow and we're waiting for
-      // the first realtime delta. Clears any prior run's text so the textarea
-      // doesn't display the previous prompt during the gap.
-      return { text: '', status: 'pending', error: undefined };
+      // the first realtime delta. Clears any prior run's text + reasoning so
+      // neither carries over into the gap before the new run streams.
+      return { text: '', reasoning: '', status: 'pending', error: undefined };
     case 'DELTA':
       if (state.status === 'streaming') {
         return { ...state, text: state.text + action.delta };
       }
-      return { text: action.delta, status: 'streaming', error: undefined };
+      // First text delta of a run (reasoning, if any, arrived earlier during
+      // `pending`): keep the accumulated reasoning, start the prompt text.
+      return {
+        ...state,
+        text: action.delta,
+        status: 'streaming',
+        error: undefined,
+      };
+    case 'REASONING':
+      // Reasoning streams ahead of the prompt text; accumulate it without
+      // disturbing the pending/streaming status.
+      return { ...state, reasoning: state.reasoning + action.delta };
     case 'COMPLETED':
       return { ...state, status: 'completed', error: undefined };
     case 'FAILED':
@@ -134,6 +152,15 @@ export function useFramePromptStream(
               promptType: parsed.promptType,
               delta: parsed.delta,
             });
+          } else if (
+            evt.event === 'framePrompt.reasoning' &&
+            typeof parsed.delta === 'string'
+          ) {
+            dispatch({
+              type: 'REASONING',
+              promptType: parsed.promptType,
+              delta: parsed.delta,
+            });
           } else if (evt.event === 'framePrompt.completed') {
             dispatch({ type: 'COMPLETED', promptType: parsed.promptType });
           } else if (
@@ -171,6 +198,15 @@ export function useFramePromptStream(
           promptType: data.promptType,
           delta: data.delta,
         });
+      } else if (
+        event === 'framePrompt.reasoning' &&
+        typeof data.delta === 'string'
+      ) {
+        dispatch({
+          type: 'REASONING',
+          promptType: data.promptType,
+          delta: data.delta,
+        });
       } else if (event === 'framePrompt.completed') {
         dispatch({ type: 'COMPLETED', promptType: data.promptType });
       } else if (
@@ -191,6 +227,7 @@ export function useFramePromptStream(
     channels: channelId ? [channelId] : [],
     events: [
       'framePrompt.streaming',
+      'framePrompt.reasoning',
       'framePrompt.completed',
       'framePrompt.failed',
     ] as const,

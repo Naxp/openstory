@@ -7,6 +7,7 @@ import { getEnv } from '#env';
 import {
   callLLM,
   callLLMStream,
+  PROMPT_REASONING,
   RECOMMENDED_MODELS,
 } from '@/lib/ai/llm-client';
 import { isValidAnalysisModelId } from '@/lib/ai/models.config';
@@ -306,7 +307,7 @@ export type EnhanceScriptInput = z.infer<typeof enhanceScriptInputSchema>;
 export async function* streamScriptEnhancement(
   data: EnhanceScriptInput,
   ctx: { scopedDb: ScopedDb; userId: string; teamId: string }
-): AsyncGenerator<{ delta: string }> {
+): AsyncGenerator<{ delta: string; reasoning?: string }> {
   const deduct = await prepareBilling(ctx.scopedDb, 'Script enhancement');
 
   if (checkForInjectionAttempts(data.script)) {
@@ -382,13 +383,16 @@ export async function* streamScriptEnhancement(
   // search and OpenRouter executes it server-side within the agent loop.
   // Gate it out of E2E entirely (record + replay): live search results would
   // make the recorded OpenRouter request/response non-deterministic.
-  const useWebSearch = getEnv().E2E_TEST !== 'true';
+  // Reasoning (like web search) is gated out of E2E so the recorded OpenRouter
+  // request shape stays deterministic for aimock replay.
+  const liveLLM = getEnv().E2E_TEST !== 'true';
   for await (const chunk of callLLMStream({
     model,
     messages,
     max_tokens: 4000,
     temperature: 0.7,
-    ...(useWebSearch && { webSearch: true }),
+    ...(liveLLM && { webSearch: true }),
+    ...(liveLLM && { reasoning: PROMPT_REASONING }),
     observationName: 'script-enhance',
     prompt: promptRef,
     tags: ['script-enhance', model],
@@ -400,6 +404,9 @@ export async function* streamScriptEnhancement(
       aspectRatio: data.aspectRatio,
     },
   })) {
+    if (chunk.reasoningDelta) {
+      yield { delta: '', reasoning: chunk.reasoningDelta };
+    }
     if (chunk.delta) {
       yield { delta: chunk.delta };
     }
