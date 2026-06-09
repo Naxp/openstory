@@ -106,6 +106,7 @@ export type LLMRequestParams<T = unknown> = {
  */
 const STRUCTURED_OUTPUT_MODELS = new Set([
   'x-ai/grok-4.3',
+  'anthropic/claude-fable-5',
   'anthropic/claude-sonnet-4.6',
   'x-ai/grok-4.20',
   'anthropic/claude-opus-4.6',
