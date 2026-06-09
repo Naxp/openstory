@@ -58,6 +58,19 @@ describe('buildModelInput', () => {
     });
   });
 
+  describe('Grok Imagine Video 1.5 (default)', () => {
+    it('uses image_url and strips aspect_ratio (schema has none)', () => {
+      // v1.5's fal schema dropped aspect_ratio; the output ratio is driven by
+      // the input image instead. The transform must strip the aspect_ratio we
+      // pass so no unsupported param reaches the API.
+      const result = build('grok_imagine_video_1_5');
+      expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
+      expect(result).not.toHaveProperty('start_image_url');
+      expect(result).not.toHaveProperty('aspect_ratio');
+      expect(result.resolution).toBe('720p'); // schema default
+    });
+  });
+
   describe('Veo 3.1 (audio)', () => {
     it('overrides resolution to 1080p', () => {
       const result = build('veo3_1');
