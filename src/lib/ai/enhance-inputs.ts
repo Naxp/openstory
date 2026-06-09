@@ -1,10 +1,14 @@
 /**
  * Shared construction of the style/element inputs the script enhancer reads, so
  * the UI (`enhanceScriptStreamFn`) and the public API (`runOneShotCreate`) feed
- * the enhancer IDENTICALLY (issue #855). Kept dependency-free (type-only import
- * of StyleConfig) so it is safe to import from the client bundle.
+ * the enhancer IDENTICALLY (issue #855). Runtime deps are limited to the
+ * client-safe logger (type-only import of StyleConfig otherwise) so this stays
+ * safe to import from the client bundle.
  */
+import { getLogger } from '@/lib/observability/logger';
 import type { StyleConfig } from '@/lib/db/schema/libraries';
+
+const logger = getLogger(['openstory', 'ai', 'enhance-inputs']);
 
 /**
  * A style as the enhancer sees it: the aesthetic recipe (`config`) plus the
@@ -30,12 +34,17 @@ type StyleLike = {
 };
 
 /**
- * An ingested element, narrowed to the fields the enhancer reads. Both the UI's
- * `DraftElementUpload` and the API's `TempElementUpload` satisfy this shape.
+ * An ingested element, narrowed to the fields the enhancer reads. Satisfied by
+ * the create-flow drafts (`DraftElementUpload` / `TempElementUpload`, which
+ * carry `tempPublicUrl`) AND by persisted `SequenceElement` rows when enhancing
+ * an existing sequence (which carry `imageUrl`).
  */
 type ElementLike = {
   token?: string | null;
-  tempPublicUrl: string;
+  /** Create-flow draft upload URL. */
+  tempPublicUrl?: string | null;
+  /** Persisted sequence-element image URL (enhance-on-existing-sequence). */
+  imageUrl?: string | null;
   description?: string | null;
 };
 
@@ -58,18 +67,34 @@ export function toEnhanceInputs(args: {
   elements?: EnhanceElement[];
 } {
   const { style, elements } = args;
-  // Only elements with a token can be referenced in the script; drop the rest.
-  const mapped = (elements ?? []).flatMap((el): EnhanceElement[] =>
-    el.token
-      ? [
-          {
-            token: el.token,
-            imageUrl: el.tempPublicUrl,
-            ...(el.description ? { description: el.description } : {}),
-          },
-        ]
-      : []
-  );
+  // An element can be woven into the script only if it has BOTH a token (the
+  // script reference) and an image URL (draft `tempPublicUrl` or persisted
+  // `imageUrl`). Drop the rest.
+  const dropped: string[] = [];
+  const mapped = (elements ?? []).flatMap((el): EnhanceElement[] => {
+    const imageUrl = el.tempPublicUrl ?? el.imageUrl;
+    if (!el.token || !imageUrl) {
+      dropped.push(el.token ?? '(untokened)');
+      return [];
+    }
+    return [
+      {
+        token: el.token,
+        imageUrl,
+        ...(el.description ? { description: el.description } : {}),
+      },
+    ];
+  });
+
+  if (dropped.length > 0) {
+    // The user attached these elements but they can't be woven in (no token or
+    // no reference image). Surface it so "my reference image was ignored" is
+    // diagnosable instead of silent.
+    logger.warn(
+      'enhance-inputs dropped {count} element(s) missing token/image: {tokens}',
+      { count: dropped.length, tokens: dropped.join(', ') }
+    );
+  }
 
   return {
     style: style

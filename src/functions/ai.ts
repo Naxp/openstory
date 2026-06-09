@@ -30,6 +30,7 @@ import {
   type ChatMessageContentPart,
 } from '@/lib/prompts';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
+import { toVisionImageSource } from '@/lib/storage/external-url';
 import { createServerFn, createServerOnlyFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { zodValidator } from '@tanstack/zod-adapter';
@@ -329,15 +330,39 @@ export async function* streamScriptEnhancement(
 
   const systemMessage = `${compiled}\n\nReturn ONLY the enhanced script text. No JSON, no markdown formatting, no explanations.`;
 
+  // Element images must be made externally fetchable before the LLM call: in
+  // local dev they're `http://localhost/r2/…` URLs that only resolve on this
+  // machine, so providers can't fetch them. toVisionImageSource inlines those as
+  // base64 data parts and passes externally-reachable URLs through (it gates on
+  // local-serve mode, not the URL scheme) — the same shim the element-vision
+  // call already uses. A failed/expired image aborts the whole enhance, so log
+  // which element broke before rethrowing: the raw "Failed to read local storage
+  // object …" is otherwise undiagnosable.
+  const imageParts = await Promise.all(
+    elements.map<Promise<ChatMessageContentPart>>(async (el) => {
+      try {
+        return {
+          type: 'image',
+          source: await toVisionImageSource(el.imageUrl),
+        };
+      } catch (cause) {
+        logger.error('Script enhancement: failed to load element image', {
+          token: el.token,
+          imageUrl: el.imageUrl,
+          teamId: ctx.teamId,
+          userId: ctx.userId,
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+        throw new Error(
+          `Couldn't load element image "${el.token}" for script enhancement`,
+          { cause }
+        );
+      }
+    })
+  );
   const userContent: string | ChatMessageContentPart[] =
     elements.length > 0
-      ? [
-          { type: 'text', content: userPrompt },
-          ...elements.map<ChatMessageContentPart>((el) => ({
-            type: 'image',
-            source: { type: 'url', value: el.imageUrl },
-          })),
-        ]
+      ? [{ type: 'text', content: userPrompt }, ...imageParts]
       : userPrompt;
 
   const messages: ChatMessage[] = [

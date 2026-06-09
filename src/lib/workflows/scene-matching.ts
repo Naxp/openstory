@@ -143,11 +143,15 @@ export function matchLocationsToScene<T extends LocationMatchInput>(
 type ElementMatchInput = Pick<SequenceElementMinimal, 'token'>;
 
 /**
- * Match user-uploaded elements to a scene by UPPERCASE token.
+ * Match user-uploaded elements to a scene or prompt by their UPPERCASE_SNAKE
+ * `token` — the single element identifier used everywhere: the script,
+ * `continuity.elementTags[]`, the prompts, reference-image binding, and the
+ * editor pills. (The vision-LLM `consistencyTag` is a descriptive slug used
+ * only to label reference-sheet generation, never as an identifier.)
  *
  * Primary match: `elementTags[]` (emitted by the LLM during scene-split).
- * Fallback match: token appears in the raw scene script text — catches
- * cases where the model forgets to populate `elementTags`.
+ * Fallback match: the token appears verbatim in the text — catches references
+ * the model forgot to put in `elementTags[]`.
  *
  * Generic so we can reuse it on `ElementBibleEntry` (same token shape) when
  * narrowing the bible for prompt-input hashing.
@@ -165,8 +169,15 @@ export function matchElementsToScene<T extends ElementMatchInput>(
   return allElements.filter((el) => {
     const token = el.token.toUpperCase();
     if (tagsUpper.has(token)) return true;
-    // Match whole-token occurrence in script text (avoid substring hits in a longer word)
-    const re = new RegExp(`(?:^|[^A-Z0-9_])${token}(?:[^A-Z0-9_]|$)`);
+    // Whole-token match in the script text. Escape the token (arbitrary user
+    // text) so regex metacharacters can't false-match or throw.
+    const re = new RegExp(
+      `(?:^|[^A-Z0-9_])${escapeRegex(token)}(?:[^A-Z0-9_]|$)`
+    );
     return re.test(scriptUpper);
   });
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -190,4 +190,13 @@ describe('matchElementsToScene', () => {
     const result = matchElementsToScene(elements, ['LOGO', 'BOTTLE']);
     expect(result.map((e) => e.token).sort()).toEqual(['BOTTLE', 'LOGO']);
   });
+
+  it('matches the UPPERCASE token verbatim in prompt text', () => {
+    const result = matchElementsToScene(
+      [{ token: 'BIG_CORP' }],
+      [],
+      'displaying the BIG_CORP banner on the wall'
+    );
+    expect(result.map((e) => e.token)).toEqual(['BIG_CORP']);
+  });
 });
