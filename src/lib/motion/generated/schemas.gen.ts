@@ -410,64 +410,77 @@ export const Veo31ImageToVideoInputSchema = {
         'prompt',
         'image_url'
     ],
-    title: 'Veo31ImageToVideoInput',
-    type: 'object',
-    'x-fal-order-properties': [
-        'prompt',
-        'aspect_ratio',
-        'duration',
-        'negative_prompt',
-        'resolution',
-        'generate_audio',
-        'seed',
-        'auto_fix',
-        'safety_tolerance',
-        'image_url'
-    ],
     properties: {
-        auto_fix: {
-            title: 'Auto Fix',
-            type: 'boolean',
-            default: false,
-            description: 'Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.'
-        },
-        prompt: {
-            description: 'The text prompt describing the video you want to generate',
-            examples: [
-                'A monkey and polar bear host a casual podcast about AI inference, bringing their unique perspectives from different environments (tropical vs. arctic) to discuss how AI systems make decisions and process information.\nSample Dialogue:\nMonkey (Banana): "Welcome back to Bananas & Ice! I am Banana"\nPolar Bear (Ice): "And I\'m Ice!"'
-            ],
-            title: 'Prompt',
-            type: 'string',
-            maxLength: 20000
-        },
         generate_audio: {
-            title: 'Generate Audio',
+            description: 'Whether to generate audio for the video.',
             type: 'boolean',
             default: true,
-            description: 'Whether to generate audio for the video.'
+            title: 'Generate Audio'
+        },
+        duration: {
+            description: 'The duration of the generated video.',
+            type: 'string',
+            default: '8s',
+            enum: [
+                '4s',
+                '6s',
+                '8s'
+            ],
+            title: 'Duration'
         },
         aspect_ratio: {
-            title: 'Aspect Ratio',
+            type: 'string',
+            description: 'The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.',
+            default: 'auto',
             enum: [
                 'auto',
                 '16:9',
                 '9:16'
             ],
-            type: 'string',
-            default: 'auto',
-            description: 'The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.'
+            title: 'Aspect Ratio'
         },
-        seed: {
-            title: 'Seed',
+        resolution: {
+            description: 'The resolution of the generated video.',
+            type: 'string',
+            default: '720p',
+            enum: [
+                '720p',
+                '1080p',
+                '4k'
+            ],
+            title: 'Resolution'
+        },
+        negative_prompt: {
             anyOf: [
                 {
-                    type: 'integer'
+                    type: 'string'
                 },
                 {
                     type: 'null'
                 }
             ],
-            description: 'The seed for the random number generator.'
+            description: 'A negative prompt to guide the video generation.',
+            title: 'Negative Prompt'
+        },
+        auto_fix: {
+            description: 'Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.',
+            type: 'boolean',
+            default: false,
+            title: 'Auto Fix'
+        },
+        safety_tolerance: {
+            type: 'string',
+            description: 'The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.',
+            default: '4',
+            enum: [
+                '1',
+                '2',
+                '3',
+                '4',
+                '5',
+                '6'
+            ],
+            title: 'Safety Tolerance'
         },
         image_url: {
             anyOf: [
@@ -480,121 +493,13 @@ export const Veo31ImageToVideoInputSchema = {
                 }
             ],
             'x-fal-file-input': true,
+            description: 'URL of the input image to animate. Should be 720p or higher resolution in 16:9 or 9:16 aspect ratio. If the image is not in 16:9 or 9:16 aspect ratio, it will be cropped to fit.',
+            title: 'Image URL',
             examples: [
                 'https://storage.googleapis.com/falserverless/example_inputs/veo31_i2v_input.jpg'
-            ],
-            title: 'Image URL',
-            description: 'URL of the input image to animate. Should be 720p or higher resolution in 16:9 or 9:16 aspect ratio. If the image is not in 16:9 or 9:16 aspect ratio, it will be cropped to fit.'
-        },
-        duration: {
-            title: 'Duration',
-            enum: [
-                '4s',
-                '6s',
-                '8s'
-            ],
-            type: 'string',
-            default: '8s',
-            description: 'The duration of the generated video.'
-        },
-        safety_tolerance: {
-            title: 'Safety Tolerance',
-            enum: [
-                '1',
-                '2',
-                '3',
-                '4',
-                '5',
-                '6'
-            ],
-            type: 'string',
-            default: '4',
-            description: 'The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.'
-        },
-        resolution: {
-            title: 'Resolution',
-            enum: [
-                '720p',
-                '1080p',
-                '4k'
-            ],
-            type: 'string',
-            default: '720p',
-            description: 'The resolution of the generated video.'
-        },
-        negative_prompt: {
-            title: 'Negative Prompt',
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            description: 'A negative prompt to guide the video generation.'
-        }
-    }
-} as const;
-
-export const Veo31ImageToVideoOutputSchema = {
-    required: [
-        'video'
-    ],
-    title: 'Veo31ImageToVideoOutput',
-    type: 'object',
-    'x-fal-order-properties': [
-        'video'
-    ],
-    properties: {
-        video: {
-            description: 'The generated video.',
-            $ref: '#/components/schemas/File',
-            examples: [
-                {
-                    url: 'https://storage.googleapis.com/falserverless/model_tests/gallery/veo3-1-i2v.mp4'
-                }
-            ]
-        }
-    }
-} as const;
-
-export const FileSchema = {
-    required: [
-        'url'
-    ],
-    title: 'File',
-    type: 'object',
-    'x-fal-order-properties': [
-        'url',
-        'content_type',
-        'file_name',
-        'file_size'
-    ],
-    properties: {
-        content_type: {
-            description: 'The mime type of the file.',
-            title: 'Content Type',
-            anyOf: [
-                {
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            examples: [
-                'image/png'
             ]
         },
-        url: {
-            title: 'Url',
-            type: 'string',
-            description: 'The URL where the file can be downloaded from.'
-        },
-        file_size: {
-            description: 'The size of the file in bytes.',
-            title: 'File Size',
+        seed: {
             anyOf: [
                 {
                     type: 'integer'
@@ -603,13 +508,83 @@ export const FileSchema = {
                     type: 'null'
                 }
             ],
+            description: 'The seed for the random number generator.',
+            title: 'Seed'
+        },
+        prompt: {
+            description: 'The text prompt describing the video you want to generate',
+            type: 'string',
+            maxLength: 20000,
+            title: 'Prompt',
+            examples: [
+                'A monkey and polar bear host a casual podcast about AI inference, bringing their unique perspectives from different environments (tropical vs. arctic) to discuss how AI systems make decisions and process information.\nSample Dialogue:\nMonkey (Banana): "Welcome back to Bananas & Ice! I am Banana"\nPolar Bear (Ice): "And I\'m Ice!"'
+            ]
+        }
+    },
+    'x-fal-order-properties': [
+        'prompt',
+        'aspect_ratio',
+        'duration',
+        'negative_prompt',
+        'resolution',
+        'generate_audio',
+        'seed',
+        'auto_fix',
+        'safety_tolerance',
+        'image_url'
+    ],
+    type: 'object',
+    title: 'Veo31ImageToVideoInput'
+} as const;
+
+export const Veo31ImageToVideoOutputSchema = {
+    required: [
+        'video'
+    ],
+    properties: {
+        video: {
+            $ref: '#/components/schemas/File',
+            description: 'The generated video.',
+            examples: [
+                {
+                    url: 'https://storage.googleapis.com/falserverless/model_tests/gallery/veo3-1-i2v.mp4'
+                }
+            ]
+        }
+    },
+    'x-fal-order-properties': [
+        'video'
+    ],
+    type: 'object',
+    title: 'Veo31ImageToVideoOutput'
+} as const;
+
+export const FileSchema = {
+    required: [
+        'url'
+    ],
+    properties: {
+        url: {
+            description: 'The URL where the file can be downloaded from.',
+            type: 'string',
+            title: 'Url'
+        },
+        file_size: {
+            anyOf: [
+                {
+                    type: 'integer'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            description: 'The size of the file in bytes.',
+            title: 'File Size',
             examples: [
                 4404019
             ]
         },
-        file_name: {
-            description: 'The name of the file. It will be auto-generated if not provided.',
-            title: 'File Name',
+        content_type: {
             anyOf: [
                 {
                     type: 'string'
@@ -618,11 +593,36 @@ export const FileSchema = {
                     type: 'null'
                 }
             ],
+            description: 'The mime type of the file.',
+            title: 'Content Type',
+            examples: [
+                'image/png'
+            ]
+        },
+        file_name: {
+            anyOf: [
+                {
+                    type: 'string'
+                },
+                {
+                    type: 'null'
+                }
+            ],
+            description: 'The name of the file. It will be auto-generated if not provided.',
+            title: 'File Name',
             examples: [
                 'z9RV14K95DvU.png'
             ]
         }
-    }
+    },
+    'x-fal-order-properties': [
+        'url',
+        'content_type',
+        'file_name',
+        'file_size'
+    ],
+    type: 'object',
+    title: 'File'
 } as const;
 
 export const KlingVideoV3ProImageToVideoInputSchema = {

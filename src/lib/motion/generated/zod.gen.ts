@@ -162,30 +162,9 @@ export const zLtx23ImageToVideoOutput = z.object({
  * Veo31ImageToVideoInput
  */
 export const zVeo31ImageToVideoInput = z.object({
-    auto_fix: z.boolean().register(z.globalRegistry, {
-        description: 'Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.'
-    }).optional().default(false),
-    prompt: z.string().max(20000).register(z.globalRegistry, {
-        description: 'The text prompt describing the video you want to generate'
-    }),
     generate_audio: z.boolean().register(z.globalRegistry, {
         description: 'Whether to generate audio for the video.'
     }).optional().default(true),
-    aspect_ratio: z.enum([
-        'auto',
-        '16:9',
-        '9:16'
-    ]).register(z.globalRegistry, {
-        description: 'The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.'
-    }).optional().default('auto'),
-    seed: z.union([
-        z.int(),
-        z.unknown()
-    ]).optional(),
-    image_url: z.union([
-        z.string(),
-        z.string()
-    ]),
     duration: z.enum([
         '4s',
         '6s',
@@ -193,16 +172,13 @@ export const zVeo31ImageToVideoInput = z.object({
     ]).register(z.globalRegistry, {
         description: 'The duration of the generated video.'
     }).optional().default('8s'),
-    safety_tolerance: z.enum([
-        '1',
-        '2',
-        '3',
-        '4',
-        '5',
-        '6'
+    aspect_ratio: z.enum([
+        'auto',
+        '16:9',
+        '9:16'
     ]).register(z.globalRegistry, {
-        description: 'The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.'
-    }).optional().default('4'),
+        description: 'The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.'
+    }).optional().default('auto'),
     resolution: z.enum([
         '720p',
         '1080p',
@@ -213,22 +189,46 @@ export const zVeo31ImageToVideoInput = z.object({
     negative_prompt: z.union([
         z.string(),
         z.unknown()
-    ]).optional()
+    ]).optional(),
+    auto_fix: z.boolean().register(z.globalRegistry, {
+        description: 'Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.'
+    }).optional().default(false),
+    safety_tolerance: z.enum([
+        '1',
+        '2',
+        '3',
+        '4',
+        '5',
+        '6'
+    ]).register(z.globalRegistry, {
+        description: 'The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.'
+    }).optional().default('4'),
+    image_url: z.union([
+        z.string(),
+        z.string()
+    ]),
+    seed: z.union([
+        z.int(),
+        z.unknown()
+    ]).optional(),
+    prompt: z.string().max(20000).register(z.globalRegistry, {
+        description: 'The text prompt describing the video you want to generate'
+    })
 });
 
 /**
  * File
  */
 export const zFile = z.object({
-    content_type: z.union([
-        z.string(),
-        z.unknown()
-    ]).optional(),
     url: z.string().register(z.globalRegistry, {
         description: 'The URL where the file can be downloaded from.'
     }),
     file_size: z.union([
         z.int(),
+        z.unknown()
+    ]).optional(),
+    content_type: z.union([
+        z.string(),
         z.unknown()
     ]).optional(),
     file_name: z.union([

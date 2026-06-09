@@ -205,41 +205,11 @@ export type Ltx23ImageToVideoOutput = {
  */
 export type Veo31ImageToVideoInput = {
     /**
-     * Auto Fix
-     *
-     * Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.
-     */
-    auto_fix?: boolean;
-    /**
-     * Prompt
-     *
-     * The text prompt describing the video you want to generate
-     */
-    prompt: string;
-    /**
      * Generate Audio
      *
      * Whether to generate audio for the video.
      */
     generate_audio?: boolean;
-    /**
-     * Aspect Ratio
-     *
-     * The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.
-     */
-    aspect_ratio?: 'auto' | '16:9' | '9:16';
-    /**
-     * Seed
-     *
-     * The seed for the random number generator.
-     */
-    seed?: number | unknown;
-    /**
-     * Image URL
-     *
-     * URL of the input image to animate. Should be 720p or higher resolution in 16:9 or 9:16 aspect ratio. If the image is not in 16:9 or 9:16 aspect ratio, it will be cropped to fit.
-     */
-    image_url: string | Blob | File;
     /**
      * Duration
      *
@@ -247,11 +217,11 @@ export type Veo31ImageToVideoInput = {
      */
     duration?: '4s' | '6s' | '8s';
     /**
-     * Safety Tolerance
+     * Aspect Ratio
      *
-     * The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.
+     * The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.
      */
-    safety_tolerance?: '1' | '2' | '3' | '4' | '5' | '6';
+    aspect_ratio?: 'auto' | '16:9' | '9:16';
     /**
      * Resolution
      *
@@ -264,6 +234,36 @@ export type Veo31ImageToVideoInput = {
      * A negative prompt to guide the video generation.
      */
     negative_prompt?: string | unknown;
+    /**
+     * Auto Fix
+     *
+     * Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.
+     */
+    auto_fix?: boolean;
+    /**
+     * Safety Tolerance
+     *
+     * The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.
+     */
+    safety_tolerance?: '1' | '2' | '3' | '4' | '5' | '6';
+    /**
+     * Image URL
+     *
+     * URL of the input image to animate. Should be 720p or higher resolution in 16:9 or 9:16 aspect ratio. If the image is not in 16:9 or 9:16 aspect ratio, it will be cropped to fit.
+     */
+    image_url: string | Blob | File;
+    /**
+     * Seed
+     *
+     * The seed for the random number generator.
+     */
+    seed?: number | unknown;
+    /**
+     * Prompt
+     *
+     * The text prompt describing the video you want to generate
+     */
+    prompt: string;
 };
 
 /**
@@ -278,12 +278,6 @@ export type Veo31ImageToVideoOutput = {
  */
 export type File = {
     /**
-     * Content Type
-     *
-     * The mime type of the file.
-     */
-    content_type?: string | unknown;
-    /**
      * Url
      *
      * The URL where the file can be downloaded from.
@@ -295,6 +289,12 @@ export type File = {
      * The size of the file in bytes.
      */
     file_size?: number | unknown;
+    /**
+     * Content Type
+     *
+     * The mime type of the file.
+     */
+    content_type?: string | unknown;
     /**
      * File Name
      *
