@@ -15,6 +15,7 @@ import {
 import { estimateVideoCost } from '@/lib/billing/cost-estimation';
 import { multiplyMicros } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
+import { buildMotionReferenceImages } from '@/lib/motion/build-motion-references';
 import { resolveFrameDuration } from '@/lib/motion/resolve-frame-duration';
 import { snapDuration } from '@/lib/motion/motion-generation';
 import { generateMotionSchema } from '@/lib/schemas/frame.schemas';
@@ -55,9 +56,9 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
 
     // Auto-link any element/cast/location tags the user mentioned in their
     // edited motion prompt into frame.metadata.continuity, so downstream
-    // consumers (next image regenerate, frame-image reference attachment)
-    // see the new references. Motion itself uses image-to-video and doesn't
-    // re-attach references here, but persisting keeps the data consistent.
+    // consumers (next image regenerate, frame-image reference attachment, and
+    // the motion reference attachment below) see the new references.
+    let effectiveContinuity = frame.metadata?.continuity;
     if (userEditedPrompt && frame.metadata?.continuity) {
       const rescan = await rescanContinuityFromPrompt({
         scopedDb: context.scopedDb,
@@ -66,11 +67,28 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
         promptText: prompt,
       });
       if (rescan.changed) {
+        effectiveContinuity = rescan.continuity;
         await context.scopedDb.frames.update(frame.id, {
           metadata: { ...frame.metadata, continuity: rescan.continuity },
         });
       }
     }
+
+    // Resolve cast/element reference images so motion preserves identity across
+    // the clip, not just in the start frame (#873). Only Kling v3 Pro emits
+    // them downstream; threaded for every model so they're ready if support
+    // widens. Matches the continuity AFTER any rescan above.
+    const [characters, elements] = await Promise.all([
+      context.scopedDb.characters.listWithSheets(sequence.id),
+      context.scopedDb.sequenceElements.list(sequence.id),
+    ]);
+    const referenceImages = buildMotionReferenceImages({
+      scene: frame.metadata
+        ? { ...frame.metadata, continuity: effectiveContinuity }
+        : null,
+      characters,
+      elements,
+    });
 
     // Snap the resolved duration onto the selected model's valid set before
     // both the credit pre-flight and the workflow input — otherwise an
@@ -105,6 +123,7 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
           aspectRatio: sequence.aspectRatio,
           generateAudio: data.generateAudio,
           userEditedPrompt,
+          referenceImages,
         },
       ],
     };
@@ -190,6 +209,13 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
       });
     }
 
+    // Resolve cast/element reference images once for the whole batch (#873) —
+    // matched per frame below against each frame's continuity tags.
+    const [characters, elements] = await Promise.all([
+      context.scopedDb.characters.listWithSheets(sequence.id),
+      context.scopedDb.sequenceElements.list(sequence.id),
+    ]);
+
     // Build music config if requested
     let musicConfig: BatchMotionMusicWorkflowInput['music'];
     if (includeMusic) {
@@ -237,6 +263,11 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
           motionBucket: data.motionBucket,
           aspectRatio: sequence.aspectRatio,
           generateAudio: data.generateAudio,
+          referenceImages: buildMotionReferenceImages({
+            scene: frame.metadata,
+            characters,
+            elements,
+          }),
         };
       }),
       music: musicConfig,

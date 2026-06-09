@@ -244,6 +244,13 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    */
   userEditedPrompt?: boolean;
   /**
+   * Character + element reference images for identity consistency across the
+   * clip (#873). Resolved at trigger time from the scene's continuity tags +
+   * the cast/element library. Only consumed by Kling v3 Pro (emitted as its
+   * `elements` field); every other model ignores them.
+   */
+  referenceImages?: ReferenceImageDescription[];
+  /**
    * Variant-only mode (#547). When true, the run NEVER touches the legacy
    * `frames.video*` / `motionModel` columns — it writes only this model's
    * `frame_variants` row. Used by "add a video model to an existing sequence"
@@ -797,6 +804,8 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
     generateAudio?: boolean;
     /** See `MotionWorkflowInput.userEditedPrompt`. */
     userEditedPrompt?: boolean;
+    /** See `MotionWorkflowInput.referenceImages` (#873). */
+    referenceImages?: ReferenceImageDescription[];
   }>;
   /**
    * Video models to generate for every frame (#545). First is primary (its

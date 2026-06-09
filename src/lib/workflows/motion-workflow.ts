@@ -301,6 +301,7 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
         motionBucket: input.motionBucket,
         aspectRatio: input.aspectRatio,
         generateAudio: input.generateAudio,
+        referenceImages: input.referenceImages,
         scopedDb,
       }).catch((error) => {
         if (
