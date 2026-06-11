@@ -22,7 +22,7 @@
  *
  * Idempotent: objects already present locally are skipped, and the URL
  * rewrite only touches rows still containing a source-domain URL. Run with
- * the dev server stopped (same contract as db:fork:local).
+ * the dev server stopped (same contract as scripts/db-worktree.ts).
  */
 
 import { getLocalPlatformProxy } from './local-platform-proxy';

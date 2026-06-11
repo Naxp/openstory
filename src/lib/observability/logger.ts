@@ -114,7 +114,7 @@ function buildServerSinks(dev: boolean): Record<string, Sink> {
         //   message via `{placeholder}`, so re-listing them is redundant; the
         //   prod JSON-lines sink (below) still keeps every field for PostHog.
         // - wordWrap: false → no hanging-indent continuation. `bun --parallel`
-        //   (concurrently, e.g. `dev:all`) re-prefixes wrapped lines with
+        //   (concurrently, e.g. `bun dev`) re-prefixes wrapped lines with
         //   `dev:vite | `, making the default auto-wrap ragged; let the
         //   terminal hard-wrap instead.
         getPrettyFormatter({

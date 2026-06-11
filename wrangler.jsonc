@@ -31,11 +31,13 @@
   // PostHog log forwarder — receives every tail event from this Worker,
   // transforms our LogTape JSON lines into proper OTLP log records, and POSTs
   // them to PostHog's /i/v1/logs endpoint. The forwarder is its own Worker
-  // (workers/posthog-log-forwarder/) and must be deployed first. Previews are
-  // patched to use 'openstory-log-forwarder-stg' in deploy-cloudflare.yml.
-  // tail_consumers is NON-inheritable, so each env block below must
-  // redeclare it (or set [] to opt out).
-  "tail_consumers": [{ "service": "openstory-log-forwarder-prd" }],
+  // (workers/posthog-log-forwarder/) and must be deployed first.
+  // tail_consumers is NON-inheritable, so each env block declares its own:
+  // [env.production] uses the -prd forwarder, PR previews patch this default
+  // block to the -stg forwarder in deploy-cloudflare.yml, and the default
+  // stays empty so local dev and Deploy-to-Cloudflare button deploys don't
+  // reference a forwarder Worker that doesn't exist on the account.
+  "tail_consumers": [],
   // ─────────────────────────────────────────────────────────────────────────
   // DEFAULT env = local dev. The D1 here uses a placeholder `database_id` so
   // it can ONLY resolve to a local Miniflare D1 — there is no real Cloudflare

@@ -1,0 +1,17 @@
+# Secrets for Cloudflare Workers deploys (read by the Deploy to Cloudflare
+# button flow, which prompts for each value during setup).
+#
+# Local development does NOT use this file — `bun dev` auto-generates
+# .env.local. See .env.example for the full list of options.
+
+# Better Auth signing secret. Generate with: openssl rand -hex 32
+BETTER_AUTH_SECRET=
+
+# Encryption key for bring-your-own AI keys. Generate with: openssl rand -hex 32
+API_KEY_ENCRYPTION_KEY=
+
+# fal.ai — image, video & audio generation. https://fal.ai/dashboard/keys
+FAL_KEY=
+
+# OpenRouter — LLM access for script analysis. https://openrouter.ai/settings/keys
+OPENROUTER_KEY=

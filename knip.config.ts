@@ -68,8 +68,6 @@ export default {
   ignoreBinaries: [
     // CLI tools / shell builtins invoked from package.json scripts.
     'stripe',
-    'open',
-    'doppler',
     'printf',
   ],
 } satisfies KnipConfig;

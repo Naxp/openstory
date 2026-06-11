@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/bun-%3E%3D1.3.0-f9f1e1" alt="Bun >= 1.3.0" />
 </p>
 
+<p align="center">
+  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/openstory-so/openstory"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
+</p>
+
 ---
 
 OpenStory takes a script and produces a sequence of AI-generated frames — images, motion video, audio — with consistent style across every scene. Teams collaborate on shared libraries of characters, locations, and visual styles, and the platform handles the heavy lifting of prompt engineering, generation, and compositing.
@@ -36,13 +40,13 @@ OpenStory takes a script and produces a sequence of AI-generated frames — imag
 | **Framework**  | [TanStack Start](https://tanstack.com/start) + [TanStack Router](https://tanstack.com/router) + [Vite](https://vite.dev)                                                                      |
 | **Database**   | [Drizzle ORM](https://orm.drizzle.team) + [Cloudflare D1](https://developers.cloudflare.com/d1) (SQLite)                                                                                      |
 | **AI**         | [TanStack AI](https://tanstack.com/ai) + [Fal.ai](https://fal.ai) + [OpenRouter](https://openrouter.ai) + [Langfuse](https://langfuse.com) (observability)                                    |
-| **Workflows**  | [QStash Workflow](https://upstash.com/docs/workflow) (durable execution)                                                                                                                      |
-| **Realtime**   | [QStash Realtime](https://upstash.com/docs/realtime)                                                                                                                                          |
+| **Workflows**  | [Cloudflare Workflows](https://developers.cloudflare.com/workflows) (durable execution)                                                                                                       |
+| **Realtime**   | [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects) (SSE progress updates)                                                                                        |
 | **Storage**    | [Cloudflare R2](https://developers.cloudflare.com/r2) (S3-compatible)                                                                                                                         |
 | **Auth**       | [Better Auth](https://www.better-auth.com)                                                                                                                                                    |
 | **Styling**    | [Tailwind v4](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com)                                                                                                                   |
 | **Quality**    | [oxlint](https://oxc.rs/docs/guide/usage/linter) + [oxfmt](https://oxc.rs) + [tsgo](https://github.com/microsoft/typescript-go) + [Lefthook](https://lefthook.dev) + [Knip](https://knip.dev) |
-| **Testing**    | [bun:test](https://bun.com/docs/test) + [Playwright](https://playwright.dev)                                                                                                                  |
+| **Testing**    | [Vitest](https://vitest.dev) + [Playwright](https://playwright.dev)                                                                                                                           |
 | **Deployment** | [Cloudflare Workers](https://developers.cloudflare.com/workers)                                                                                                                               |
 
 > See [CLAUDE.md](CLAUDE.md) for full architecture documentation, server handler patterns, workflow patterns, and React conventions.
@@ -50,7 +54,8 @@ OpenStory takes a script and produces a sequence of AI-generated frames — imag
 ## Prerequisites
 
 - **Bun** >= 1.3.0 — [install](https://bun.com/docs/installation)
-- **Docker** — for the QStash workflow emulator ([OrbStack](https://orbstack.dev) recommended on macOS)
+
+That's it. No Docker, no external database, no Cloudflare account — local dev runs the full stack (D1, R2, Workflows, Durable Objects, email) inside Workerd via Miniflare.
 
 ## Quick Start
 
@@ -58,26 +63,29 @@ OpenStory takes a script and produces a sequence of AI-generated frames — imag
 git clone https://github.com/openstory-so/openstory.git
 cd openstory
 bun install
-bun setup        # Interactive setup — configures env, generates auth secret, checks prerequisites
-bun dev          # Starts dev server, QStash emulator, and Stripe listener
+bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-`bun setup` is the recommended way to get started. It interactively configures your environment, generates `BETTER_AUTH_SECRET`, sets up local SQLite + QStash defaults, and guides you through optional service configuration (AI keys, storage, OAuth, etc.).
+`bun dev` does everything: it generates `.env.local` (with auth/encryption secrets) on first run, migrates and seeds the local database, and starts the dev server.
 
-`bun dev` runs DB migration, dev server, QStash (Docker), and Stripe listener in parallel.
+To use AI generation features you need two API keys — run `bun setup` to add them interactively, or paste them into `.env.local`:
 
-See [`.env.example`](.env.example) for all configuration options.
+- `FAL_KEY` — [fal.ai](https://fal.ai/dashboard/keys) for image, video & audio generation
+- `OPENROUTER_KEY` — [OpenRouter](https://openrouter.ai/settings/keys) for LLM script analysis
+
+See [`.env.example`](.env.example) for all optional configuration (Google OAuth, Stripe, Langfuse, PostHog, remote R2).
 
 ## Scripts
 
 ### Development
 
-| Command         | Description                                 |
-| --------------- | ------------------------------------------- |
-| `bun dev`       | Start dev server + QStash + Stripe listener |
-| `bun storybook` | Start Storybook on port 6006                |
+| Command         | Description                                                |
+| --------------- | ---------------------------------------------------------- |
+| `bun dev`       | Bootstrap env, migrate + seed DB, start dev server         |
+| `bun setup`     | Interactive setup — add AI keys (`--prod` for deployments) |
+| `bun storybook` | Start Storybook on port 6006                               |
 
 ### Quality
 
@@ -94,7 +102,7 @@ See [`.env.example`](.env.example) for all configuration options.
 
 | Command             | Description                        |
 | ------------------- | ---------------------------------- |
-| `bun test`          | Run unit tests                     |
+| `bun run test`      | Run unit tests (Vitest)            |
 | `bun test:watch`    | Run tests in watch mode            |
 | `bun test:coverage` | Run tests with coverage            |
 | `bun test:e2e`      | Run Playwright end-to-end tests    |
@@ -102,29 +110,18 @@ See [`.env.example`](.env.example) for all configuration options.
 
 ### Database
 
-| Command           | Description                             |
-| ----------------- | --------------------------------------- |
-| `bun db:generate` | Generate migrations from schema changes |
-| `bun db:migrate`  | Apply migrations to local database      |
-| `bun db:studio`   | Open Drizzle Studio                     |
-| `bun db:setup`    | Migrate + seed database                 |
-
-### Setup
-
-| Command              | Description                                               |
-| -------------------- | --------------------------------------------------------- |
-| `bun setup`          | Interactive local dev setup (env, secrets, prerequisites) |
-| `bun setup:prd`      | Configure production environment                          |
-| `bun setup:deploy`   | Configure for deployment                                  |
-| `bun setup:stg`      | Configure PR preview environment                          |
-| `bun setup:previews` | Generates System Style Preview Images using 🍌            |
-| `bun db:setup`       | Migrate + seed database                                   |
+| Command                | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| `bun db:generate`      | Generate migrations from schema changes           |
+| `bun db:migrate:local` | Apply migrations (also runs as part of `bun dev`) |
+| `bun db:studio:local`  | Open Drizzle Studio against the local database    |
 
 ### Build & Deploy
 
 | Command             | Description                                  |
 | ------------------- | -------------------------------------------- |
 | `bun run build`     | Build for production (note: not `bun build`) |
+| `bun setup --prod`  | Interactive production setup + deploy        |
 | `bun cf:deploy:prd` | Deploy to Cloudflare Workers (production)    |
 
 ## Project Structure
@@ -137,7 +134,7 @@ src/
     ai/           # AI model configs and prompt schemas
     db/           # Database schema and clients (Drizzle)
     services/     # Core business services
-    workflows/    # QStash durable workflow definitions
+    workflows/    # Cloudflare Workflows durable definitions
   routes/         # TanStack Router file-based routes
     api/          # Webhooks: workflows and auth only
     _app/         # App shell (anonymous-browsable; actions gated behind login)
@@ -150,6 +147,10 @@ scripts/          # CLI utilities and setup
 ## Deployment
 
 **Cloudflare Workers** — edge runtime, R2 storage, D1 database, global CDN.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/openstory-so/openstory)
+
+The deploy button clones the repo into your Cloudflare account, provisions the resources declared in [`wrangler.jsonc`](wrangler.jsonc), and sets up CI. For a guided setup from your own clone, run `bun setup --prod`.
 
 **CI/CD:** GitHub Actions auto-deploys on push to `main`. Pull requests get preview deployments with dedicated D1 databases.
 
