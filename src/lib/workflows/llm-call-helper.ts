@@ -1,20 +1,34 @@
 /**
- * Durable LLM Call Helper
- * Encapsulates the 3-step pattern: prepare -> call -> log
- * Uses @tanstack/ai-openrouter adapters instead of context.api.openai.call
+ * Durable LLM-call helpers for Cloudflare Workflows.
+ *
+ *   - Take a `WorkflowStep` (from `cloudflare:workers`).
+ *   - Use `step.do` for durable, retried units of work.
+ *   - Throw `NonRetryableError` inside `step.do` bodies for unrecoverable
+ *     errors so CF doesn't retry validation failures (the base class only
+ *     re-wraps at the runImpl boundary).
  */
 
-import { getEnv } from '#env';
-import { createAdapter } from '@/lib/ai/create-adapter';
+import { createAdapter, getPlatformLlmKey } from '@/lib/ai/create-adapter';
+import {
+  extractRunError,
+  formatRunErrorMessage,
+  PROMPT_REASONING,
+} from '@/lib/ai/llm-client';
 import type { TextModel } from '@/lib/ai/models';
 import { getContextWindow } from '@/lib/ai/models.config';
+import { extractStreamingStringField } from '@/lib/ai/stream-extract';
 import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { getLogger } from '@/lib/observability/logger';
 import { getChatPrompt } from '@/lib/prompts';
-import { chat, convertSchemaToJsonSchema } from '@tanstack/ai';
-import type { WorkflowContext } from '@upstash/workflow';
-import { z } from 'zod';
+import { getFramePromptChannel } from '@/lib/realtime';
+import { chat } from '@tanstack/ai';
+import type { WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
+import type { z } from 'zod';
+
+const logger = getLogger(['openstory', 'workflow', 'llm-call-helper']);
 
 export type DurableLLMCallConfig<TSchema extends z.ZodType> = {
   name: string;
@@ -24,31 +38,80 @@ export type DurableLLMCallConfig<TSchema extends z.ZodType> = {
   modelId: TextModel;
   responseSchema: TSchema;
   additionalMetadata?: Record<string, unknown>;
+  /**
+   * Turn on the model's reasoning/thinking pass for this call (creative
+   * prompt-generation flows).
+   */
+  reasoning?: boolean;
 };
+
+/**
+ * Resolve the `modelOptions.reasoning` config for a call. Returns `{}` (no
+ * reasoning) when not requested, so it can be spread into `modelOptions`
+ * unconditionally.
+ */
+function reasoningModelOptions(reasoning: boolean | undefined): {
+  reasoning?: typeof PROMPT_REASONING;
+} {
+  return reasoning ? { reasoning: PROMPT_REASONING } : {};
+}
 
 export type DurableLLMCallContext = {
   sequenceId?: string;
   userId?: string;
-  /** Override OpenRouter API key (e.g., user-provided key). Falls back to platform env key. */
-  openRouterApiKey?: string;
-  /** Scoped DB context for resolving team API keys and deducting credits. Falls back to env key when absent. */
+  /**
+   * The workflow's `event.instanceId` — replay-stable, used as the
+   * idempotency-key prefix for the credit-deduction step so a step retry
+   * can't double-charge.
+   */
+  workflowRunId: string;
+  /** Scoped DB context for resolving team API keys + deducting credits. */
   scopedDb?: ScopedDb;
 };
 
+export type DurableStreamingLLMCallContext = DurableLLMCallContext & {
+  framePromptStream?: {
+    frameId: string;
+    promptType: 'visual' | 'motion';
+    flushIntervalMs?: number;
+  };
+};
+
 /**
- * Execute a durable LLM call with the standard 3-step pattern:
- * 1. Prepare: Fetch prompt from Langfuse, emit phase start
- * 2. Call: LLM call via context.run() + @tanstack/ai-openrouter
- * 3. Log & Process: Log to Langfuse, parse response, emit phase complete
- *
- * Uses context.run() instead of context.api.openai.call() to avoid
- * passing API keys in headers that get stored in Upstash logs.
+ * Resolve the key for the LLM call — the team's key via ScopedDb, or the
+ * platform key for anonymous workflows. Resolved ONCE per helper invocation,
+ * outside the steps, so the LLM call and the credit-deduction step attribute
+ * billing to the same key (re-resolving inside the deduct step could diverge
+ * if the key was marked invalid mid-run, and could throw after the LLM call
+ * already succeeded). The per-scope row cache makes this at most one D1 read.
  */
-export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
-  context: WorkflowContext<TInput>,
+async function resolveCallKey(callContext: DurableLLMCallContext) {
+  if (callContext.scopedDb) {
+    return callContext.scopedDb.apiKeys.resolveLlmKey();
+  }
+  const platform = getPlatformLlmKey();
+  if (!platform) {
+    throw new NonRetryableError(
+      'No platform LLM key available (set OPENROUTER_KEY or FAL_KEY)',
+      'WorkflowValidationError'
+    );
+  }
+  return platform;
+}
+
+/**
+ * Execute a durable LLM call. Returns the validated parsed object.
+ *
+ * Step layout (deterministic names):
+ *   1. `prepare-${name}` — fetch prompt from Langfuse
+ *   2. `${name}` — LLM call (JSON-stringified result for step boundary)
+ *   3. `deduct-llm-credits-${name}` — credit deduction (only if scopedDb passed)
+ */
+export async function durableLLMCallCf<TSchema extends z.ZodType>(
+  step: WorkflowStep,
   config: DurableLLMCallConfig<TSchema>,
   callContext: DurableLLMCallContext
-) {
+): Promise<z.infer<TSchema>> {
   const { name, phase, modelId } = config;
   const logName = `phase-${phase.number}-${name}`;
   const logTags = [name, `phase-${phase.number}`, 'analysis'];
@@ -58,34 +121,35 @@ export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
     ...config.additionalMetadata,
   };
 
-  // Step 1: Prepare -- fetch prompt
-  const { messages, promptReference } = await context.run(
-    `prepare-${name}`,
-    async () => {
-      const { messages } = await getChatPrompt(
-        config.promptName,
-        config.promptVariables
-      );
+  // Step 1: Prepare — fetch the chat prompt. promptReference (Langfuse
+  // ChatPromptClient) isn't Rpc.Serializable so we refetch inside the LLM
+  // step rather than passing it through the boundary.
+  const { messages } = await step.do(`prepare-${name}`, async () => {
+    const { messages } = await getChatPrompt(
+      config.promptName,
+      config.promptVariables
+    );
+    return { messages };
+  });
 
-      return { messages, promptReference: undefined };
-    }
-  );
+  const llmKeyInfo = await resolveCallKey(callContext);
 
-  // Step 2: Durable LLM call (QStash retries step delivery on failure)
-  const jsonResponse = await context.run(name, async () => {
-    const openRouterApiKeyInfo = callContext.scopedDb
-      ? await callContext.scopedDb.apiKeys.resolveKey('openrouter')
-      : (() => {
-          const env = getEnv();
-          if (!env.OPENROUTER_KEY)
-            throw new Error('No API key available for provider: openrouter');
-          return { key: env.OPENROUTER_KEY, source: 'platform' as const };
-        })();
-    const adapter = createAdapter(modelId, openRouterApiKeyInfo.key);
+  // Step 2: Durable LLM call. JSON-stringifies the parsed object so CF's
+  // Rpc.Serializable<T> check passes regardless of the Zod-inferred shape.
+  const jsonText = await step.do(name, async (): Promise<string> => {
+    const adapter = createAdapter(modelId, llmKeyInfo);
 
-    console.log(`[LLM:${logName}] Starting call`, {
+    // Refetch prompt inside the LLM step — promptReference can't cross the
+    // step boundary (not Rpc.Serializable).
+    const { prompt: promptReference } = await getChatPrompt(
+      config.promptName,
+      config.promptVariables
+    );
+
+    logger.info(`[LLM:${logName}:cf] Starting call`, {
       model: modelId,
-      keySource: openRouterApiKeyInfo.source,
+      keySource: llmKeyInfo.source,
+      keyVia: llmKeyInfo.via,
       messageCount: messages.length,
     });
 
@@ -94,7 +158,6 @@ export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
       role: 'user' | 'assistant';
       content: string;
     }> = [];
-
     for (const msg of messages) {
       const flat =
         typeof msg.content === 'string'
@@ -110,27 +173,18 @@ export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
       }
     }
 
-    // Abort after 5 minutes to prevent indefinite hangs on unresponsive LLM providers
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), 300_000);
-
-    // Pass the schema via modelOptions.responseFormat (not chat()'s outputSchema).
-    // outputSchema triggers @tanstack/ai's agentic-loop pre-pass, which fires a
-    // separate streaming chatStream call before the structured-output call —
-    // both share the same userMessage, so aimock's recorder collapses them onto
-    // one fixture and the schema-constrained call never reaches the upstream.
-    const strictSchema = convertSchemaToJsonSchema(config.responseSchema, {
-      forStructuredOutput: true,
-    });
 
     try {
       const text = await chat({
         adapter,
         messages: chatMessages,
-        systemPrompts,
+        systemPrompts: systemPrompts,
         stream: false,
         maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
         abortController,
+        modelOptions: reasoningModelOptions(config.reasoning),
         metadata: {
           observationName: logName,
           prompt: promptReference,
@@ -139,34 +193,27 @@ export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
           sessionId: callContext.sequenceId,
           userId: callContext.userId,
         },
-        modelOptions: {
-          responseFormat: {
-            type: 'json_schema',
-            jsonSchema: {
-              name: 'structured_output',
-              schema: strictSchema,
-              strict: true,
-            },
-          },
-        },
+        outputSchema: config.responseSchema,
         debug: false,
       });
-
-      console.log(`[LLM:${logName}] Call succeeded`);
-      return JSON.parse(text);
+      logger.info(`[LLM:${logName}:cf] Call succeeded`);
+      // Return as JSON string — round-trips through step.do without hitting
+      // CF's Rpc.Serializable constraint on the Zod-inferred shape.
+      return JSON.stringify(text);
     } finally {
       clearTimeout(timeout);
     }
   });
 
-  // Deduct LLM credits (cost tracked via Langfuse; adapter doesn't expose per-call usage)
   if (callContext.scopedDb) {
-    await context.run(`deduct-llm-credits-${name}`, async () => {
+    const scopedDb = callContext.scopedDb;
+    await step.do(`deduct-llm-credits-${name}`, async () => {
       await deductWorkflowCredits({
-        scopedDb: callContext.scopedDb,
+        scopedDb,
         costMicros: ZERO_MICROS,
-        usedOwnKey: !!callContext.openRouterApiKey,
+        usedOwnKey: llmKeyInfo.source === 'team',
         description: `LLM analysis (${modelId})`,
+        idempotencyKey: `${callContext.workflowRunId}:llm-${name}`,
         metadata: {
           model: modelId,
           phase: phase.number,
@@ -178,5 +225,174 @@ export async function durableLLMCall<TInput, TSchema extends z.ZodType>(
     });
   }
 
-  return config.responseSchema.parse(jsonResponse);
+  return config.responseSchema.parse(JSON.parse(jsonText));
+}
+
+/**
+ * Streaming variant of {@link durableLLMCallCf}: degrades to the
+ * non-streaming path when `framePromptStream` is omitted, so script-analysis
+ * flows that share these workflows don't burn realtime publishes nobody is
+ * listening to.
+ */
+export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
+  step: WorkflowStep,
+  config: DurableLLMCallConfig<TSchema>,
+  callContext: DurableStreamingLLMCallContext
+): Promise<z.infer<TSchema>> {
+  if (!callContext.framePromptStream) {
+    return durableLLMCallCf(step, config, callContext);
+  }
+
+  const { name, phase, modelId } = config;
+  const {
+    frameId,
+    promptType,
+    flushIntervalMs = 80,
+  } = callContext.framePromptStream;
+  const logName = `phase-${phase.number}-${name}`;
+  const logTags = [name, `phase-${phase.number}`, 'analysis', 'stream'];
+  const logMetadata = {
+    phase: phase.number,
+    phaseName: phase.name,
+    ...config.additionalMetadata,
+  };
+
+  const { messages } = await step.do(`prepare-${name}`, async () => {
+    const { messages } = await getChatPrompt(
+      config.promptName,
+      config.promptVariables
+    );
+    return { messages };
+  });
+
+  const llmKeyInfo = await resolveCallKey(callContext);
+
+  const jsonText = await step.do(
+    `${name}-stream`,
+    async (): Promise<string> => {
+      const adapter = createAdapter(modelId, llmKeyInfo);
+      const { prompt: promptReference } = await getChatPrompt(
+        config.promptName,
+        config.promptVariables
+      );
+
+      logger.info(`[LLM:${logName}:cf] Starting streaming call`, {
+        model: modelId,
+        keySource: llmKeyInfo.source,
+        keyVia: llmKeyInfo.via,
+        messageCount: messages.length,
+        frameId,
+        promptType,
+      });
+
+      const systemPrompts: string[] = [];
+      const chatMessages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+      }> = [];
+      for (const msg of messages) {
+        const flat =
+          typeof msg.content === 'string'
+            ? msg.content
+            : msg.content
+                .map((part) => (part.type === 'text' ? part.content : ''))
+                .filter(Boolean)
+                .join('\n');
+        if (msg.role === 'system') {
+          systemPrompts.push(flat);
+        } else {
+          chatMessages.push({ role: msg.role, content: flat });
+        }
+      }
+
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 300_000);
+
+      const channel = getFramePromptChannel(frameId);
+      let accumulated = '';
+      let lastExtracted = '';
+      let pendingDelta = '';
+      let lastEmitAt = 0;
+
+      const flushDelta = async () => {
+        if (!pendingDelta) return;
+        const delta = pendingDelta;
+        pendingDelta = '';
+        lastEmitAt = Date.now();
+        await channel.emit('framePrompt.streaming', { promptType, delta });
+      };
+
+      try {
+        for await (const event of chat({
+          adapter,
+          messages: chatMessages,
+          systemPrompts: systemPrompts,
+          stream: true,
+          maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
+          abortController,
+          modelOptions: reasoningModelOptions(config.reasoning),
+          metadata: {
+            observationName: logName,
+            prompt: promptReference,
+            tags: logTags,
+            metadata: logMetadata,
+            sessionId: callContext.sequenceId,
+            userId: callContext.userId,
+          },
+          outputSchema: config.responseSchema,
+          debug: false,
+        })) {
+          if (
+            event.type === 'TEXT_MESSAGE_CONTENT' &&
+            typeof event.delta === 'string'
+          ) {
+            accumulated += event.delta;
+            const next = extractStreamingStringField(accumulated, 'fullPrompt');
+            if (next.length > lastExtracted.length) {
+              pendingDelta += next.slice(lastExtracted.length);
+              lastExtracted = next;
+            }
+            if (pendingDelta && Date.now() - lastEmitAt >= flushIntervalMs) {
+              await flushDelta();
+            }
+            continue;
+          }
+          const runError = extractRunError(event);
+          if (runError) {
+            logger.error(`[LLM:${logName}:cf] Streaming call RUN_ERROR`, {
+              runError: runError.event,
+            });
+            throw new Error(formatRunErrorMessage(runError));
+          }
+        }
+        await flushDelta();
+        logger.info(`[LLM:${logName}:cf] Streaming call succeeded`);
+        return accumulated;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  );
+
+  if (callContext.scopedDb) {
+    const scopedDb = callContext.scopedDb;
+    await step.do(`deduct-llm-credits-${name}`, async () => {
+      await deductWorkflowCredits({
+        scopedDb,
+        costMicros: ZERO_MICROS,
+        usedOwnKey: llmKeyInfo.source === 'team',
+        description: `LLM analysis (${modelId})`,
+        idempotencyKey: `${callContext.workflowRunId}:llm-${name}`,
+        metadata: {
+          model: modelId,
+          phase: phase.number,
+          phaseName: phase.name,
+          stepName: name,
+          sequenceId: callContext.sequenceId,
+        },
+      });
+    });
+  }
+
+  return config.responseSchema.parse(JSON.parse(jsonText));
 }

@@ -1,26 +1,46 @@
 /**
- * Motion Prompt Scene Workflow
+ * Cloudflare Workflows port of `motionPromptSceneWorkflow`.
  *
- * Generates motion prompts for a single scene based on character bible and style config.
- * Uses three-step durable pattern: prepare → context.call → log
- */
+ * Mirrors the QStash version (`src/lib/workflows/motion-prompt-scene-workflow.ts`)
+ * step for step — same step names, same control flow, same side effects. The
+ * only differences are:
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads payload from `event.payload` instead of `context.requestPayload`.
+ *   - The streaming LLM call goes through `durableStreamingLLMCallCf`, driven
+ *     by `step.do`. */
 
-import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
-import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
-import { computeMotionPromptInputHash } from '../ai/input-hash';
+import { computeMotionPromptInputHash } from '@/lib/ai/input-hash';
+import { narrowFramePromptContext } from '@/lib/ai/prompt-context';
 import {
-  type MotionPrompt,
   motionPromptSchema,
-} from '../ai/scene-analysis.schema';
-import { durableLLMCall } from './llm-call-helper';
+  type MotionPrompt,
+} from '@/lib/ai/scene-analysis.schema';
+import type { ScopedDb } from '@/lib/db/scoped';
+import { getFramePromptChannel, getGenerationChannel } from '@/lib/realtime';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
+import type { MotionPromptSceneWorkflowInput } from '@/lib/workflow/types';
+import { durableStreamingLLMCallCf } from '@/lib/workflows/llm-call-helper';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { getLogger } from '@/lib/observability/logger';
 
-export const motionPromptSceneWorkflow = createScopedWorkflow<
-  MotionPromptSceneWorkflowInput,
-  { sceneId: string; motionPrompt: MotionPrompt }
->(
-  async (context, scopedDb) => {
-    const input = context.requestPayload;
+const logger = getLogger(['openstory', 'workflow', 'motion-prompt-scene']);
+
+type MotionPromptSceneWorkflowResult = {
+  sceneId: string;
+  motionPrompt: MotionPrompt;
+};
+
+export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<MotionPromptSceneWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<MotionPromptSceneWorkflowInput>>,
+    step: WorkflowStep,
+    scopedDb: ScopedDb
+  ): Promise<MotionPromptSceneWorkflowResult> {
+    const input = event.payload;
     const {
       scene,
       sceneBefore,
@@ -35,55 +55,60 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
       frameId,
     } = input;
 
-    console.log(
-      `[MotionPromptSceneWorkflow] Generating motion prompt for scene ${scene.sceneId}`
-    );
-
     // ============================================================
     // PHASE 3: Motion Prompt Generation (using durableLLMCall helper)
     // ============================================================
 
-    const { promptVariables, additionalMetadata } = await context.run(
-      'prepare-motion-prompt-generation',
-      async () => {
-        return {
-          promptVariables: {
-            sceneBefore: sceneBefore
-              ? JSON.stringify(sceneBefore, null, 2)
-              : '(none)',
-            sceneAfter: sceneAfter
-              ? JSON.stringify(sceneAfter, null, 2)
-              : '(none)',
-            scene: JSON.stringify(scene, null, 2),
-            characterBible: JSON.stringify(characterBible, null, 2),
-            locationBible: JSON.stringify(locationBible, null, 2),
-            elementBible: JSON.stringify(elementBible, null, 2),
-            styleConfig: JSON.stringify(styleConfig, null, 2),
-            aspectRatio,
-          },
-          additionalMetadata: {
-            frameId,
-          },
-        };
-      }
+    // Narrow the bibles to this scene's entities (via `scene.continuity`, set
+    // by scene-split) before the LLM call, so the model and the staleness hash
+    // see the same minimal, scene-scoped input. See #867.
+    const narrowed = narrowFramePromptContext({
+      scene,
+      styleConfig,
+      characterBible,
+      locationBible,
+      elementBible,
+      aspectRatio,
+      analysisModel: analysisModelId,
+    });
+
+    const promptVariables = {
+      sceneBefore: sceneBefore
+        ? JSON.stringify(sceneBefore, null, 2)
+        : '(none)',
+      sceneAfter: sceneAfter ? JSON.stringify(sceneAfter, null, 2) : '(none)',
+      scene: JSON.stringify(scene, null, 2),
+      characterBible: JSON.stringify(narrowed.characterBible, null, 2),
+      locationBible: JSON.stringify(narrowed.locationBible, null, 2),
+      elementBible: JSON.stringify(narrowed.elementBible, null, 2),
+      styleConfig: JSON.stringify(styleConfig, null, 2),
+      aspectRatio,
+    };
+
+    logger.info(
+      `[MotionPromptSceneWorkflow:cf] Generating motion prompt for scene ${scene.sceneId}`
     );
-    const motionPrompt = await durableLLMCall(
-      context,
+
+    const motionPrompt: MotionPrompt = await durableStreamingLLMCallCf(
+      step,
       {
         name: 'motion-prompts',
         phase: { number: 5, name: 'Writing motion prompts…' },
-
         promptName: 'phase/motion-prompt-scene-generation-chat',
         promptVariables,
-
         modelId: analysisModelId,
         responseSchema: motionPromptSchema,
-
-        additionalMetadata,
+        additionalMetadata: { frameId },
+        reasoning: true,
       },
       {
         sequenceId,
+        workflowRunId: event.instanceId,
         scopedDb,
+        framePromptStream:
+          input.emitStreaming && frameId
+            ? { frameId, promptType: 'motion' }
+            : undefined,
       }
     );
 
@@ -94,15 +119,9 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
         );
       }
 
-      const inputHash = await computeMotionPromptInputHash({
-        scene,
-        styleConfig,
-        characterBible,
-        locationBible,
-        elementBible,
-        aspectRatio,
-        analysisModel: analysisModelId,
-      });
+      // Hash the same scene-scoped `narrowed` context the LLM was given above,
+      // so the stored hash equals the verify-time recompute by construction.
+      const inputHash = await computeMotionPromptInputHash(narrowed);
 
       const enrichedScene = {
         ...scene,
@@ -112,14 +131,21 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
         },
       };
 
-      await context.run('save-motion-prompt-to-db', async () => {
+      await step.do('save-motion-prompt-to-db', async () => {
         const previous = await scopedDb.framePromptVariants.getLatest(
           frameId,
           'motion'
         );
         const source = previous ? 'regenerated' : 'ai-generated';
 
-        await scopedDb.frames.update(frameId, { metadata: enrichedScene });
+        // Clear `frame.motionPrompt` user-override when regenerating; see
+        // the matching note in visual-prompt-scene-workflow.ts. The variant
+        // row below preserves the new prompt; the prior user override is
+        // restorable from the prompt-history sheet.
+        await scopedDb.frames.update(frameId, {
+          metadata: enrichedScene,
+          motionPrompt: null,
+        });
 
         await scopedDb.framePromptVariants.write({
           frameId,
@@ -131,19 +157,47 @@ export const motionPromptSceneWorkflow = createScopedWorkflow<
           inputHash,
           analysisModel: analysisModelId,
         });
+
+        await getGenerationChannel(sequenceId).emit(
+          'generation.frame:updated',
+          {
+            frameId,
+            updateType: 'motion-prompt',
+            metadata: enrichedScene,
+          }
+        );
+
+        if (input.emitStreaming) {
+          await getFramePromptChannel(frameId).emit('framePrompt.completed', {
+            promptType: 'motion',
+          });
+        }
       });
     }
     return { sceneId: scene.sceneId, motionPrompt };
-  },
-  {
-    failureFunction: async ({ context, failStatus, failResponse }) => {
-      const error = sanitizeFailResponse(failResponse);
-      console.error('[MotionPromptSceneWorkflow] Failed', {
-        workflowRunId: context.workflowRunId,
-        failStatus,
-        failResponse: error,
-      });
-      return `Motion prompt generation failed: ${error}`;
-    },
   }
-);
+
+  protected override async onFailure({
+    event,
+    error,
+  }: {
+    event: Readonly<WorkflowEvent<MotionPromptSceneWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    logger.error('[MotionPromptSceneWorkflow:cf] Failed', { error });
+    try {
+      const payload = event.payload;
+      if (payload.emitStreaming && payload.frameId) {
+        await getFramePromptChannel(payload.frameId).emit(
+          'framePrompt.failed',
+          { promptType: 'motion', error }
+        );
+      }
+    } catch (emitErr) {
+      logger.warn('[MotionPromptSceneWorkflow:cf] failed to emit failure', {
+        err: emitErr,
+      });
+    }
+  }
+}

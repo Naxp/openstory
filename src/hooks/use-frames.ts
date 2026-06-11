@@ -1,61 +1,24 @@
 import type { Frame } from '@/types/database';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
 import type { FrameVariant } from '@/lib/db/schema';
 import {
   getFramesFn,
-  getFrameFn,
-  createFrameFn,
-  createFramesBulkFn,
-  updateFrameFn,
-  deleteFrameFn,
-  deleteFramesBySequenceFn,
-  reorderFramesFn,
   getDivergentVariantsFn,
   promoteVariantFn,
   discardVariantFn,
   undiscardVariantFn,
+  getSequenceImageModelsFn,
+  getSequenceImageVariantsFn,
+  getSequenceVideoModelsFn,
+  getSequenceVideoVariantsFn,
 } from '@/functions/frames';
 import {
-  generateFramesFn,
-  generateFrameImageFn,
   generateFrameVariantsFn,
   selectFrameVariantFn,
   setImageFromVariantFn,
+  setVideoFromVariantFn,
 } from '@/functions/frame-image';
 import type { GenerateVariantInput as SchemaGenerateVariantInput } from '@/lib/schemas/frame.schemas';
-import type { Scene } from '@/lib/ai/scene-analysis.schema';
-
-type CreateFrameInput = {
-  sequenceId: string;
-  description: string;
-  orderIndex: number;
-  thumbnailUrl?: string;
-  videoUrl?: string;
-  durationMs?: number;
-  metadata?: Scene;
-};
-
-type UpdateFrameInput = {
-  id: string;
-  description?: string;
-  orderIndex?: number;
-  thumbnailUrl?: string | null;
-  videoUrl?: string | null;
-  durationMs?: number | null;
-  metadata?: Scene;
-};
-
-type GenerateFramesInput = {
-  sequenceId: string;
-};
-
-type RegenerateFrameInput = {
-  sequenceId: string;
-  frameId: string;
-  regenerateDescription?: boolean;
-  regenerateThumbnail?: boolean;
-};
 
 type GenerateVariantInput = SchemaGenerateVariantInput & {
   sequenceId: string;
@@ -75,11 +38,69 @@ export const frameKeys = {
   list: (sequenceId: string) => [...frameKeys.lists(), sequenceId] as const,
   details: () => [...frameKeys.all, 'detail'] as const,
   detail: (id: string) => [...frameKeys.details(), id] as const,
-  imageModels: (sequenceId: string) =>
-    [...frameKeys.all, 'image-models', sequenceId] as const,
   divergentVariants: (sequenceId: string) =>
     [...frameKeys.all, 'divergent-variants', sequenceId] as const,
 };
+
+// Distinct image models that have generated a variant for this sequence.
+// Drives the header image-model dropdown (#547). Flat key matches the
+// image:progress cache invalidation in query-cache-updater.
+export function useSequenceImageModels(sequenceId?: string) {
+  return useQuery<string[]>({
+    queryKey: ['sequence-image-models', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceImageModelsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
+
+// Distinct video models that have generated a variant for this sequence (#545).
+// Drives the header video-model dropdown. The realtime video:progress handler
+// invalidates `['sequence-video-models', sequenceId]`, matching this key's tail.
+export function useSequenceVideoModels(sequenceId?: string) {
+  return useQuery<string[]>({
+    queryKey: ['sequence-video-models', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceVideoModelsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
+
+// All video FrameVariant rows for a sequence (#545). Used by the scenes view to
+// resolve each frame's displayed video through the active model's variant.
+export function useSequenceVideoVariants(sequenceId?: string) {
+  return useQuery<FrameVariant[]>({
+    queryKey: ['sequence-video-variants', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceVideoVariantsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
+
+// All image FrameVariant rows for a sequence (#547). Used by the header image
+// dropdown for sequence-wide per-model coverage, and by the scenes view to
+// resolve each frame's displayed image through the active model's variant. Key
+// matches the scenes-view query + the image:progress cache invalidation.
+export function useSequenceImageVariants(sequenceId?: string) {
+  return useQuery<FrameVariant[]>({
+    queryKey: ['sequence-image-variants', sequenceId ?? ''],
+    queryFn: async () => {
+      if (!sequenceId) throw new Error('sequenceId is required');
+      return getSequenceImageVariantsFn({ data: { sequenceId } });
+    },
+    enabled: !!sequenceId,
+    staleTime: 30_000,
+  });
+}
 
 // Hook to fetch the live (non-discarded) divergent alternates for a sequence.
 // The corner-dot indicator and inline banner both filter this list per frame.
@@ -185,305 +206,6 @@ export function useFramesBySequence(
     refetchOnMount: 'always', // Always refetch on mount to ensure fresh data
     refetchOnWindowFocus: true, // Refetch when window regains focus
     enabled: !!sequenceId,
-  });
-}
-
-// Hook for getting single frame
-export function useFrame(sequenceId: string, frameId: string) {
-  return useQuery<Frame>({
-    queryKey: frameKeys.detail(frameId),
-    queryFn: async () => {
-      return getFrameFn({ data: { sequenceId, frameId } });
-    },
-    staleTime: 5 * 60 * 1000,
-    enabled: !!sequenceId && !!frameId,
-  });
-}
-
-// Hook for creating frame
-export function useCreateFrame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<Frame, Error, CreateFrameInput>({
-    mutationFn: async (input: CreateFrameInput) => {
-      const { sequenceId, description, orderIndex, durationMs, ...rest } =
-        input;
-      const data = await createFrameFn({
-        data: {
-          sequenceId,
-          description,
-          orderIndex,
-          durationMs: durationMs ?? null,
-          ...rest,
-        } satisfies Parameters<typeof createFrameFn>[0]['data'],
-      });
-      return data;
-    },
-    onSuccess: async (data) => {
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-      if (data?.sequenceId) {
-        await queryClient.invalidateQueries({
-          queryKey: frameKeys.list(data.sequenceId),
-        });
-      }
-    },
-  });
-}
-
-// Hook for updating frame
-export function useUpdateFrame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<Frame, Error, UpdateFrameInput & { sequenceId: string }>({
-    mutationFn: async (input) => {
-      const { id, sequenceId, metadata: _metadata, ...updateData } = input;
-      const data = await updateFrameFn({
-        data: {
-          sequenceId,
-          frameId: id,
-          ...updateData,
-        } as Parameters<typeof updateFrameFn>[0]['data'],
-      });
-      if (!data) {
-        throw new Error(`Frame ${id} not found`);
-      }
-      return data;
-    },
-    onSuccess: async (data) => {
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-      if (data?.id) {
-        queryClient.setQueryData(frameKeys.detail(data.id), data);
-      }
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-      if (data?.sequenceId) {
-        await queryClient.invalidateQueries({
-          queryKey: frameKeys.list(data.sequenceId),
-        });
-      }
-    },
-  });
-}
-
-// Hook for deleting frame
-export function useDeleteFrame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    { frameId: string; sequenceId?: string },
-    Error,
-    { sequenceId: string; frameId: string }
-  >({
-    mutationFn: async ({ sequenceId, frameId }) => {
-      const frameData = queryClient.getQueryData<Frame>(
-        frameKeys.detail(frameId)
-      );
-
-      await deleteFrameFn({ data: { sequenceId, frameId } });
-
-      return { frameId, sequenceId: frameData?.sequenceId };
-    },
-    onSuccess: async ({ frameId, sequenceId }) => {
-      queryClient.removeQueries({ queryKey: frameKeys.detail(frameId) });
-      if (sequenceId) {
-        await queryClient.invalidateQueries({
-          queryKey: frameKeys.list(sequenceId),
-        });
-      }
-    },
-  });
-}
-
-// Hook for reordering frames
-export function useReorderFrames() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    { sequenceId: string },
-    Error,
-    {
-      sequenceId: string;
-      frameOrders: Array<{ id: string; orderIndex: number }>;
-    },
-    { previousFrames: Frame[] | undefined; sequenceId: string }
-  >({
-    mutationFn: async ({
-      sequenceId,
-      frameOrders,
-    }: {
-      sequenceId: string;
-      frameOrders: Array<{ id: string; orderIndex: number }>;
-    }) => {
-      await reorderFramesFn({ data: { sequenceId, frameOrders } });
-      return { sequenceId };
-    },
-    onMutate: async ({ sequenceId, frameOrders }) => {
-      await queryClient.cancelQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-
-      const previousFrames = queryClient.getQueryData<Frame[]>(
-        frameKeys.list(sequenceId)
-      );
-
-      if (previousFrames) {
-        const reorderedFrames = previousFrames
-          .map((frame) => {
-            const newOrder = frameOrders.find((o) => o.id === frame.id);
-            return newOrder
-              ? { ...frame, orderIndex: newOrder.orderIndex }
-              : frame;
-          })
-          .sort((a, b) => a.orderIndex - b.orderIndex);
-
-        queryClient.setQueryData(frameKeys.list(sequenceId), reorderedFrames);
-      }
-
-      return { previousFrames, sequenceId };
-    },
-    onError: (_, __, context) => {
-      if (context?.previousFrames && context.sequenceId) {
-        queryClient.setQueryData(
-          frameKeys.list(context.sequenceId),
-          context.previousFrames
-        );
-      }
-    },
-    onSettled: async (_, __, { sequenceId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-    },
-  });
-}
-
-// Hook for bulk creating frames
-export function useBulkCreateFrames() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    Frame[],
-    Error,
-    {
-      sequenceId: string;
-      frames: Omit<CreateFrameInput, 'sequenceId'>[];
-    }
-  >({
-    mutationFn: async ({
-      sequenceId,
-      frames,
-    }: {
-      sequenceId: string;
-      frames: Omit<CreateFrameInput, 'sequenceId'>[];
-    }) => {
-      // Transform frames to match server function schema types
-      const transformedFrames = frames.map((f) => ({
-        ...f,
-        durationMs: f.durationMs ?? null,
-      }));
-      const data = await createFramesBulkFn({
-        data: {
-          sequenceId,
-          frames: transformedFrames,
-        } satisfies Parameters<typeof createFramesBulkFn>[0]['data'],
-      });
-      return data;
-    },
-    onSuccess: async (_, { sequenceId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-    },
-  });
-}
-
-// Hook for deleting all frames in a sequence
-export function useDeleteFramesBySequence() {
-  const queryClient = useQueryClient();
-
-  return useMutation<string, Error, string>({
-    mutationFn: async (sequenceId: string) => {
-      await deleteFramesBySequenceFn({ data: { sequenceId } });
-      return sequenceId;
-    },
-    onSuccess: async (sequenceId) => {
-      queryClient.setQueryData(frameKeys.list(sequenceId), []);
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-    },
-  });
-}
-
-// Hook for generating frames with AI
-export function useGenerateFrames() {
-  const queryClient = useQueryClient();
-
-  return useMutation<
-    { workflowRunId: string },
-    Error,
-    GenerateFramesInput,
-    { previousFrames: Frame[] | undefined; sequenceId: string }
-  >({
-    mutationFn: async (input: GenerateFramesInput) => {
-      const result = await generateFramesFn({
-        data: { sequenceId: input.sequenceId },
-      });
-      return { workflowRunId: result.workflowRunId };
-    },
-    onMutate: async ({ sequenceId }) => {
-      await queryClient.cancelQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-
-      const previousFrames = queryClient.getQueryData<Frame[]>(
-        frameKeys.list(sequenceId)
-      );
-
-      return { previousFrames, sequenceId };
-    },
-    onSuccess: async (_, { sequenceId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-    },
-    onError: (_, __, context) => {
-      if (context?.previousFrames && context.sequenceId) {
-        queryClient.setQueryData(
-          frameKeys.list(context.sequenceId),
-          context.previousFrames
-        );
-      }
-    },
-  });
-}
-
-// Hook for regenerating a single frame
-export function useRegenerateFrame() {
-  const queryClient = useQueryClient();
-
-  return useMutation<{ workflowRunId: string }, Error, RegenerateFrameInput>({
-    mutationFn: async (input: RegenerateFrameInput) => {
-      const { sequenceId, frameId, ...body } = input;
-
-      const result = await generateFrameImageFn({
-        data: {
-          sequenceId,
-          frameId,
-          ...body,
-        },
-      });
-
-      return { workflowRunId: result.workflowRunId };
-    },
-    onSuccess: async (_, { sequenceId, frameId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.detail(frameId),
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: frameKeys.list(sequenceId),
-      });
-    },
   });
 }
 
@@ -671,62 +393,65 @@ export function useSetImageFromVariant() {
   });
 }
 
-// Hook to track preview image generation status for frames
-export function useFramePreviewStatus(frames: Frame[]) {
-  // Get frames that might be generating previews (no image URLs but were recently created)
-  const framesNeedingPreviews = useMemo(() => {
-    return frames.filter((frame) => {
-      if (frame.thumbnailUrl || frame.previewThumbnailUrl) return false; // Already has an image
+// Hook for setting a frame's video from an existing variant (#545) — the
+// motion analog of useSetImageFromVariant. Promotes a model's video variant to
+// the primary frames.video* columns and refreshes the video-variant cache.
+export function useSetVideoFromVariant() {
+  const queryClient = useQueryClient();
 
-      // Check if frame was created recently (within last 2 minutes for faster timeout)
-      const createdAt = new Date(frame.createdAt).getTime();
-      const now = Date.now();
-      const twoMinutesAgo = now - 2 * 60 * 1000;
-
-      return createdAt > twoMinutesAgo;
-    });
-  }, [frames]);
-
-  // Auto-refresh frames list when there are frames potentially generating previews
-  const { data: refreshedFrames = frames } = useFramesBySequence(
-    frames.length > 0 ? frames[0].sequenceId : '',
-    {
-      refetchInterval: framesNeedingPreviews.length > 0 ? 5000 : false, // Fallback poll
-      staleTime: 500, // Shorter stale time for preview updates
-    }
-  );
-
-  // Return status map for each frame
-  return useMemo(() => {
-    const statusMap = new Map<
-      string,
-      { isGenerating: boolean; hasPreview: boolean }
-    >();
-
-    refreshedFrames.forEach((frame) => {
-      const hasPreview = !!frame.previewThumbnailUrl;
-
-      // Check if this frame should show as generating
-      let isGenerating = false;
-      if (!frame.thumbnailUrl && !frame.previewThumbnailUrl) {
-        const createdAt = new Date(frame.createdAt).getTime();
-        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-        const updatedAt = frame.updatedAt
-          ? new Date(frame.updatedAt).getTime()
-          : createdAt;
-        const now = Date.now();
-        const twoMinutesAgo = now - 2 * 60 * 1000;
-
-        // Only show as generating if created recently
-        isGenerating = createdAt > twoMinutesAgo || updatedAt > twoMinutesAgo;
-      }
-
-      statusMap.set(frame.id, {
-        isGenerating,
-        hasPreview,
+  return useMutation<
+    { frameId: string; videoUrl: string },
+    Error,
+    { sequenceId: string; frameId: string; model: string }
+  >({
+    mutationFn: async (input) => {
+      return setVideoFromVariantFn({ data: input });
+    },
+    onMutate: async ({ sequenceId, frameId }) => {
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.detail(frameId),
       });
-    });
+      await queryClient.cancelQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+    },
+    onSuccess: async (data, { sequenceId, frameId, model }) => {
+      queryClient.setQueryData<Frame>(frameKeys.detail(frameId), (oldFrame) => {
+        if (!oldFrame) return oldFrame;
+        return {
+          ...oldFrame,
+          videoUrl: data.videoUrl,
+          videoStatus: 'completed' as const,
+          motionModel: model,
+        };
+      });
 
-    return statusMap;
-  }, [refreshedFrames]);
+      queryClient.setQueryData<Frame[]>(
+        frameKeys.list(sequenceId),
+        (oldFrames) => {
+          if (!oldFrames) return oldFrames;
+          return oldFrames.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  videoUrl: data.videoUrl,
+                  videoStatus: 'completed' as const,
+                  motionModel: model,
+                }
+              : f
+          );
+        }
+      );
+
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.detail(frameId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: frameKeys.list(sequenceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['sequence-video-variants', sequenceId],
+      });
+    },
+  });
 }

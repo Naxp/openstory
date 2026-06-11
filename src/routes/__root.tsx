@@ -38,7 +38,7 @@ const getCanonicalOriginFn = createIsomorphicFn().server(() => {
   if (!host) return null;
 
   // Don't redirect localhost or IP addresses (local/network dev access)
-  const hostname = host.split(':')[0];
+  const hostname = host.split(':')[0] ?? host;
   if (hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
     return null;
   }
@@ -50,7 +50,7 @@ const getCanonicalOriginFn = createIsomorphicFn().server(() => {
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ location }) => {
-    // This is to redirect from git origins to the hash origin on vercel preview branches
+    // This is to redirect from git origins to the hash origin on preview branches
     const canonicalOrigin = getCanonicalOriginFn();
     if (canonicalOrigin) {
       throw redirect({ href: canonicalOrigin + location.href });

@@ -3,19 +3,32 @@
  * Team-scoped style library CRUD (includes public styles in listing).
  */
 
-import { asc, and, eq, or } from 'drizzle-orm';
 import type { Database } from '@/lib/db/client';
-import { styles } from '@/lib/db/schema';
 import type { NewStyle, Style } from '@/lib/db/schema';
+import { styles } from '@/lib/db/schema';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 
-export function createStylesReadMethods(db: Database, teamId: string) {
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'db', 'styles']);
+
+type StylesListOptions = {
+  orderBy?: 'popular' | 'sortOrder';
+};
+
+function createStylesReadMethods(db: Database, teamId: string) {
   return {
-    list: async (): Promise<Style[]> => {
+    list: async (options: StylesListOptions = {}): Promise<Style[]> => {
+      const orderBy = options.orderBy ?? 'sortOrder';
+      const order =
+        orderBy === 'popular'
+          ? [desc(styles.usageCount), asc(styles.name)]
+          : [asc(styles.sortOrder), asc(styles.name)];
       return await db
         .select()
         .from(styles)
         .where(or(eq(styles.teamId, teamId), eq(styles.isPublic, true)))
-        .orderBy(asc(styles.sortOrder), asc(styles.name));
+        .orderBy(...order);
     },
 
     getById: async (styleId: string): Promise<Style | null> => {
@@ -26,8 +39,17 @@ export function createStylesReadMethods(db: Database, teamId: string) {
         .limit(1);
       return result[0] ?? null;
     },
+  };
+}
 
-    getPublic: async (): Promise<Style[]> => {
+/**
+ * Public (anonymous) styles reads. Takes no team scope at all, so this code
+ * path cannot express a team-scoped query — the isPublic filter is the entire
+ * data boundary for the unauthenticated style-catalogue endpoint.
+ */
+export function createPublicStylesReadMethods(db: Database) {
+  return {
+    list: async (): Promise<Style[]> => {
       return await db
         .select()
         .from(styles)
@@ -48,10 +70,14 @@ export function createStylesMethods(
     create: async (
       data: Omit<NewStyle, 'teamId' | 'createdBy'>
     ): Promise<Style> => {
-      const [style] = await db
+      const result = await db
         .insert(styles)
         .values({ ...data, teamId, createdBy: userId })
         .returning();
+      const style = result[0];
+      if (!style) {
+        throw new Error(`Failed to create Style for team ${teamId}`);
+      }
       return style;
     },
 
@@ -71,6 +97,17 @@ export function createStylesMethods(
       await db
         .delete(styles)
         .where(and(eq(styles.id, styleId), eq(styles.teamId, teamId)));
+    },
+
+    incrementUsage: async (styleId: string): Promise<void> => {
+      const rows = await db
+        .update(styles)
+        .set({ usageCount: sql`${styles.usageCount} + 1` })
+        .where(eq(styles.id, styleId))
+        .returning({ id: styles.id });
+      if (rows.length === 0) {
+        logger.warn('incrementUsage matched zero rows', { styleId });
+      }
     },
   };
 }

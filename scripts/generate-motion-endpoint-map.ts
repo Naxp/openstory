@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const GENERATED_DIR = join(
-  import.meta.dir,
+  import.meta.dirname,
   '..',
   'src',
   'lib',
@@ -23,7 +23,7 @@ const GENERATED_DIR = join(
   'generated'
 );
 
-const MOTION_DIR = join(import.meta.dir, '..', 'src', 'lib', 'motion');
+const MOTION_DIR = join(import.meta.dirname, '..', 'src', 'lib', 'motion');
 
 type EndpointInfo = {
   endpointId: string;
@@ -134,6 +134,11 @@ ${sorted.map((e) => `  ${JSON.stringify(e.endpointId)}: ${e.zodInputSchema},`).j
 
 export type MotionEndpointId = keyof typeof MOTION_INPUT_SCHEMAS;
 
+/**
+ * Input payload for a given motion endpoint. Generated API surface — kept
+ * exported even while unused so consumers of new endpoints can adopt it.
+ * @public
+ */
 export type MotionInputFor<T extends MotionEndpointId> = z.infer<
   (typeof MOTION_INPUT_SCHEMAS)[T]
 >;

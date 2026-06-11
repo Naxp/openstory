@@ -13,10 +13,8 @@ export type ImagePricing = {
   basePrice: Microdollars;
   unit: ImagePricingUnit;
   resolutionMultipliers?: Partial<Record<'0.5K' | '1K' | '2K' | '4K', number>>;
-  styleMultipliers?: Partial<Record<string, number>>;
-  qualitySizeMatrix?: Partial<
-    Record<string, Partial<Record<string, Microdollars>>>
-  >;
+  styleMultipliers?: Record<string, number>;
+  qualitySizeMatrix?: Record<string, Record<string, Microdollars>>;
   surcharges?: { webSearch?: Microdollars };
   pricingNotes?: string;
 };
@@ -40,22 +38,22 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     basePrice: micros(70_000),
     unit: 'per_megapixel',
   },
-  'fal-ai/flux-2/turbo': {
-    basePrice: micros(8_000),
-    unit: 'per_megapixel',
-    pricingNotes:
-      '- **Price**: $0.008 per megapixels\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
-  },
-  'fal-ai/flux-2/klein/4b': {
-    basePrice: micros(9_000),
-    unit: 'per_megapixel',
-  },
   'fal-ai/flux-2-max/edit': {
     basePrice: micros(70_000),
     unit: 'per_image',
   },
   'fal-ai/flux-2/edit': {
     basePrice: micros(12_000),
+    unit: 'per_image',
+  },
+  'fal-ai/flux-2/turbo': {
+    basePrice: micros(8_000),
+    unit: 'per_megapixel',
+    pricingNotes:
+      '- **Price**: $0.008 per megapixels\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
+  },
+  'fal-ai/flux-2/turbo/edit': {
+    basePrice: micros(8_000),
     unit: 'per_image',
   },
   'fal-ai/hidream-i1-full': {
@@ -134,23 +132,29 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     basePrice: micros(90_000),
     unit: 'per_image',
   },
-  'fal-ai/qwen-image-2/pro/text-to-image': {
-    basePrice: micros(75_000),
-    unit: 'per_image',
-  },
   'fal-ai/qwen-image-2/pro/edit': {
     basePrice: micros(75_000),
     unit: 'per_image',
   },
-  'xai/grok-imagine-image': {
-    basePrice: micros(20_000),
+  'fal-ai/qwen-image-2/pro/text-to-image': {
+    basePrice: micros(75_000),
     unit: 'per_image',
-    pricingNotes:
-      '- **Price**: $0.02 per images\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
-  'xai/grok-imagine-image/edit': {
-    basePrice: micros(20_000),
+  'openai/gpt-image-2': {
+    basePrice: micros(1_000_000),
     unit: 'per_image',
+  },
+  'openai/gpt-image-2/edit': {
+    basePrice: micros(1_000_000),
+    unit: 'per_image',
+  },
+  'xai/grok-imagine-image/quality/text-to-image': {
+    basePrice: micros(170),
+    unit: 'per_compute_second',
+  },
+  'xai/grok-imagine-image/quality/edit': {
+    basePrice: micros(170),
+    unit: 'per_compute_second',
   },
 };
 
@@ -166,9 +170,10 @@ type VideoPricingPerSecond = VideoPricingBase & {
   noAudioMultiplier?: number;
   audioMultiplier?: number;
   voiceControlMultiplier?: number;
-  resolutionPricing?: Partial<Record<string, Microdollars>>;
-  resolutionAudioPricing?: Partial<
-    Record<string, { noAudio: Microdollars; withAudio: Microdollars }>
+  resolutionPricing?: Record<string, Microdollars>;
+  resolutionAudioPricing?: Record<
+    string,
+    { noAudio: Microdollars; withAudio: Microdollars }
   >;
   surcharges?: { imageInput?: Microdollars };
 };
@@ -181,6 +186,10 @@ type VideoPricingPerToken = VideoPricingBase & {
 export type VideoPricing = VideoPricingPerSecond | VideoPricingPerToken;
 
 export const VIDEO_PRICING: Record<string, VideoPricing> = {
+  'bytedance/seedance-2.0/image-to-video': {
+    mode: 'per_second',
+    basePrice: micros(14_000),
+  },
   'fal-ai/kling-video/v3/pro/image-to-video': {
     mode: 'per_second',
     basePrice: micros(140_000),
@@ -218,18 +227,18 @@ export const VIDEO_PRICING: Record<string, VideoPricing> = {
     pricingNotes:
       'For every second of video you generate you will be charged **$0.20** without audio or **$0.40** with audio for 720p or 1080p. At 4k, you will be charged **$0.40** per second without audio, or **$0.60** with. For example, a **5 second video** at **1080p** with **audio on** will cost **$2.00**.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
-  'xai/grok-imagine-video/image-to-video': {
+  'xai/grok-imagine-video/v1.5/image-to-video': {
     mode: 'per_second',
-    basePrice: micros(50_000),
+    basePrice: micros(80_000),
     resolutionPricing: {
-      '480p': micros(50_000),
-      '720p': micros(70_000),
+      '480p': micros(80_000),
+      '720p': micros(140_000),
     },
     surcharges: {
-      imageInput: micros(2_000),
+      imageInput: micros(10_000),
     },
     pricingNotes:
-      'A 6s 480p video will cost **$0.302** (**$0.05** per second of 480p video + **$0.002** for image input). At an output resolution of 480p, every second costs **$0.05**, and at 720p, every second costs **$0.07**.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
+      'A 6s 480p video will cost **$0.49** (**$0.08** per second of 480p video + **$0.01** for image input). At an output resolution of 480p, every second costs **$0.08**, and at 720p, every second costs **$0.14**.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
 };
 
@@ -247,17 +256,17 @@ export type AudioPricing = {
 };
 
 export const AUDIO_PRICING: Record<string, AudioPricing> = {
-  'fal-ai/ace-step/prompt-to-audio': {
-    basePrice: micros(200),
-    unit: 'per_second',
-    pricingNotes:
-      'Your request will cost $0.0002 per second of generated audio. For $1 you can run generate 5000 seconds (83 minutes) of music from lyrics.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
-  },
   'fal-ai/ace-step-1.5': {
     basePrice: micros(300),
     unit: 'per_second',
     pricingNotes:
       'Your request will cost $0.0003 per output second.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
+  },
+  'fal-ai/ace-step/prompt-to-audio': {
+    basePrice: micros(200),
+    unit: 'per_second',
+    pricingNotes:
+      'Your request will cost $0.0002 per second of generated audio. For $1 you can run generate 5000 seconds (83 minutes) of music from lyrics.\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
   'fal-ai/elevenlabs/music': {
     basePrice: micros(800_000),
@@ -268,4 +277,4 @@ export const AUDIO_PRICING: Record<string, AudioPricing> = {
   },
 };
 
-export const PRICING_LAST_UPDATED = '2026-03-30T08:43:19.062Z';
+export const PRICING_LAST_UPDATED = '2026-05-07T00:04:14.149Z';

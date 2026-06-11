@@ -4,6 +4,7 @@
  *   bun scripts/update-fal-pricing.ts            # API pricing only
  *   bun scripts/update-fal-pricing.ts --llms-txt  # Also fetch llms.txt pricing notes
  */
+import { writeFile } from 'node:fs/promises';
 import { getEnv } from '#env';
 import {
   AUDIO_MODELS,
@@ -178,9 +179,9 @@ const VIDEO_OVERRIDES: Record<
   'wan/v2.6/image-to-video/flash': {
     resolutionPricing: { '720p': m(0.05), '1080p': m(0.075) },
   },
-  'xai/grok-imagine-video/image-to-video': {
-    resolutionPricing: { '480p': m(0.05), '720p': m(0.07) },
-    surcharges: { imageInput: m(0.002) },
+  'xai/grok-imagine-video/v1.5/image-to-video': {
+    resolutionPricing: { '480p': m(0.08), '720p': m(0.14) },
+    surcharges: { imageInput: m(0.01) },
   },
   'fal-ai/bytedance/seedance/v1/pro/image-to-video': {
     mode: 'per_token',
@@ -378,7 +379,7 @@ if (fetchLlmsTxt) {
       continue;
     }
 
-    const pricingText = pricingMatch[1].trim();
+    const pricingText = (pricingMatch[1] ?? '').trim();
     console.log(`  \u2713 ${endpointId}:`);
     console.log(`    ${pricingText.split('\n').join('\n    ')}\n`);
 
@@ -463,7 +464,11 @@ diffMap(
   'image',
   Object.keys(imagePricing),
   Object.keys(oldImagePricing),
-  (id) => getMicrosBasePrice(imagePricing[id]),
+  (id) => {
+    const entry = imagePricing[id];
+    if (!entry) throw new Error(`unknown image pricing id: ${id}`);
+    return getMicrosBasePrice(entry);
+  },
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- Record lookup returns undefined for missing keys
   (id) => (oldImagePricing[id] ? getBasePrice(oldImagePricing[id]) : undefined)
 );
@@ -471,7 +476,11 @@ diffMap(
   'video',
   Object.keys(videoPricing),
   Object.keys(oldVideoPricing),
-  (id) => getMicrosBasePrice(videoPricing[id]),
+  (id) => {
+    const entry = videoPricing[id];
+    if (!entry) throw new Error(`unknown video pricing id: ${id}`);
+    return getMicrosBasePrice(entry);
+  },
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- Record lookup returns undefined for missing keys
   (id) => (oldVideoPricing[id] ? getBasePrice(oldVideoPricing[id]) : undefined)
 );
@@ -479,7 +488,11 @@ diffMap(
   'audio',
   Object.keys(audioPricing),
   Object.keys(oldAudioPricing),
-  (id) => getMicrosBasePrice(audioPricing[id]),
+  (id) => {
+    const entry = audioPricing[id];
+    if (!entry) throw new Error(`unknown audio pricing id: ${id}`);
+    return getMicrosBasePrice(entry);
+  },
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- Record lookup returns undefined for missing keys
   (id) => (oldAudioPricing[id] ? getBasePrice(oldAudioPricing[id]) : undefined)
 );
@@ -618,7 +631,7 @@ ${serializeMap('AUDIO_PRICING', 'AudioPricing', audioPricing)}
 export const PRICING_LAST_UPDATED = '${now}';
 `;
 
-await Bun.write(outPath, output);
+await writeFile(outPath, output);
 
 const total =
   Object.keys(imagePricing).length +

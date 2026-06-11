@@ -129,23 +129,45 @@ export function updateQueryCacheFromEvent(
         'previewThumbnailUrl'
       );
       const status = data.status;
-      queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
-        old?.map((f) =>
-          f.id === frameId
-            ? {
-                ...f,
-                thumbnailUrl: thumbnailUrl ?? f.thumbnailUrl,
-                previewThumbnailUrl:
-                  previewThumbnailUrl ?? f.previewThumbnailUrl,
-                thumbnailStatus: isValidFrameStatus(status)
-                  ? status
-                  : f.thumbnailStatus,
-              }
-            : f
-        )
-      );
-      // Refresh variant data so model switcher and variant overlay stay current
-      if (status === 'completed') {
+      const errorMessage = getOptionalString(data, 'error');
+      // Variant-only (#547): an added (alternate) model finished — its output
+      // belongs in `frame_variants`, NOT on the live primary. Skip the
+      // primary frames-list write (which would flip the displayed thumbnail to
+      // the alternate) and only refresh the per-model variant/model-list
+      // queries below so the new model appears in the dropdown.
+      const variantOnly = data.variantOnly === true;
+      if (!variantOnly) {
+        queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
+          old?.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  thumbnailUrl: thumbnailUrl ?? f.thumbnailUrl,
+                  previewThumbnailUrl:
+                    previewThumbnailUrl ?? f.previewThumbnailUrl,
+                  thumbnailStatus: isValidFrameStatus(status)
+                    ? status
+                    : f.thumbnailStatus,
+                  // Surface the failure reason live (#881): set on `failed`,
+                  // clear when a new attempt starts/succeeds, and leave
+                  // untouched for status-less emits (e.g. preview-url).
+                  thumbnailError:
+                    status === 'failed'
+                      ? (errorMessage ?? f.thumbnailError)
+                      : isValidFrameStatus(status)
+                        ? null
+                        : f.thumbnailError,
+                }
+              : f
+          )
+        );
+      }
+      // Refresh variant data so model switcher and variant overlay stay current.
+      // Refresh on `failed` too (#547): image-workflow.onFailure writes a `failed`
+      // variant row, and an added model's coverage marker must reflect that
+      // terminal state instead of spinning `generating` until staleTime lapses —
+      // matching the video/audio handlers below.
+      if (status === 'completed' || status === 'failed') {
         debouncedInvalidate(
           queryClient,
           ['sequence-image-variants', sequenceId],
@@ -163,19 +185,52 @@ export function updateQueryCacheFromEvent(
     case 'generation.video:progress': {
       const videoUrl = getOptionalString(data, 'videoUrl');
       const status = data.status;
-      queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
-        old?.map((f) =>
-          f.id === frameId
-            ? {
-                ...f,
-                videoUrl: videoUrl ?? f.videoUrl,
-                videoStatus: isValidFrameStatus(status)
-                  ? status
-                  : f.videoStatus,
-              }
-            : f
-        )
-      );
+      const errorMessage = getOptionalString(data, 'error');
+      // Variant-only (#547): an added (alternate) video model finished/failed —
+      // its output belongs in `frame_variants`, NOT the live primary. Skip the
+      // primary frames-list write (which would flip the displayed video to the
+      // alternate) and only refresh the per-model variant/model-list queries
+      // below so the new model appears in the dropdown.
+      const variantOnly = data.variantOnly === true;
+      if (!variantOnly) {
+        queryClient.setQueryData<Frame[]>(frameKeys.list(sequenceId), (old) =>
+          old?.map((f) =>
+            f.id === frameId
+              ? {
+                  ...f,
+                  videoUrl: videoUrl ?? f.videoUrl,
+                  videoStatus: isValidFrameStatus(status)
+                    ? status
+                    : f.videoStatus,
+                  // Surface the failure reason live (#881) — see image handler.
+                  videoError:
+                    status === 'failed'
+                      ? (errorMessage ?? f.videoError)
+                      : isValidFrameStatus(status)
+                        ? null
+                        : f.videoError,
+                }
+              : f
+          )
+        );
+      }
+      // Refresh video variant data so the model switcher and per-model overlay
+      // stay current (#545). Unlike the image handler, refresh on `failed` too:
+      // motion-workflow.onFailure writes a `failed` variant row, and the
+      // switcher should reflect that terminal state without waiting for a
+      // background refetch.
+      if (status === 'completed' || status === 'failed') {
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-video-variants', sequenceId],
+          `video-variants:${sequenceId}`
+        );
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-video-models', sequenceId],
+          `video-models:${sequenceId}`
+        );
+      }
       break;
     }
 
@@ -201,17 +256,45 @@ export function updateQueryCacheFromEvent(
     case 'generation.audio:progress': {
       const status = data.status;
       const audioUrl = getOptionalString(data, 'audioUrl');
+      const model = getOptionalString(data, 'model');
       if (isValidMusicStatus(status)) {
         queryClient.setQueryData<Sequence>(
           sequenceKeys.detail(sequenceId),
-          (old) =>
-            old
-              ? {
-                  ...old,
-                  musicStatus: status,
-                  ...(audioUrl ? { musicUrl: audioUrl } : {}),
-                }
-              : old
+          (old) => {
+            if (!old) return old;
+            // Only the primary model owns the live `sequences.music*` columns.
+            // In a multi-model fan-out (#546) secondary models emit model-scoped
+            // events purely to refresh the per-model queries below — applying
+            // their status/url here would clobber the primary (last-writer-wins,
+            // and a secondary failure would mask a working primary track). The
+            // primary's `set-generating-status` writes `musicModel` first, so
+            // match against it; a missing `model` (single-model / legacy
+            // emitters) is treated as the primary.
+            if (model && old.musicModel && model !== old.musicModel) {
+              return old;
+            }
+            return {
+              ...old,
+              musicStatus: status,
+              ...(audioUrl ? { musicUrl: audioUrl } : {}),
+            };
+          }
+        );
+      }
+      // Refresh per-model audio data so the header model dropdown and the
+      // music-tab track switcher stay current (#546). Audio is sequence-level
+      // (sequence_music_variants), so these are separate queries from the frame
+      // image/video variant ones.
+      if (status === 'completed' || status === 'failed') {
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-audio-variants', sequenceId],
+          `audio-variants:${sequenceId}`
+        );
+        debouncedInvalidate(
+          queryClient,
+          ['sequence-audio-models', sequenceId],
+          `audio-models:${sequenceId}`
         );
       }
       break;
@@ -292,19 +375,12 @@ export function updateQueryCacheFromEvent(
           break;
 
         case 'sequence': {
-          // Sequence-level merged-video or music diverged into
-          // `sequence_video_variants` / `sequence_music_variants`. Refresh the
-          // matching divergent-list query so the inline banner appears, plus
-          // the sequence detail (its `mergedVideoStatus`/`musicStatus` may
-          // have just settled back to 'completed').
+          // Sequence-level music diverged into `sequence_music_variants`.
+          // Refresh the divergent-list query so the inline banner appears,
+          // plus the sequence detail (its `musicStatus` may have just settled
+          // back to 'completed').
           const artifact = getString(data, 'artifact');
-          if (artifact === 'merged-video') {
-            debouncedInvalidate(
-              queryClient,
-              ['sequence-divergent-video', sequenceId],
-              `sequence-divergent-video:${sequenceId}`
-            );
-          } else if (artifact === 'music') {
+          if (artifact === 'music') {
             debouncedInvalidate(
               queryClient,
               ['sequence-divergent-music', sequenceId],
@@ -331,6 +407,20 @@ export function updateQueryCacheFromEvent(
       break;
     }
 
+    case 'generation.character-sheet:progress':
+    case 'generation.talent:matched':
+      // Cast was created / cast / had its sheet generated during a run.
+      // Refresh the character list so the cast grid (TalentView) and the
+      // per-scene cast (SceneCastTab) populate live instead of only after a
+      // page refresh. Debounced because character-sheet:progress fires
+      // generating + completed for every character.
+      debouncedInvalidate(
+        queryClient,
+        sequenceCharacterKeys.list(sequenceId),
+        `sequence-characters:${sequenceId}`
+      );
+      break;
+
     case 'generation.preview:replaced':
       // Preview frames replaced by AI-analyzed frames — refetch frame list
       void queryClient.invalidateQueries({
@@ -344,6 +434,11 @@ export function updateQueryCacheFromEvent(
       // Invalidate sequence to get updated status/title
       void queryClient.invalidateQueries({
         queryKey: sequenceKeys.detail(sequenceId),
+      });
+      // Final catch-all so the cast list reflects the finished run even if an
+      // intermediate character event was missed.
+      void queryClient.invalidateQueries({
+        queryKey: sequenceCharacterKeys.list(sequenceId),
       });
       break;
 

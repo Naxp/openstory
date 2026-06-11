@@ -5,17 +5,23 @@
  * Signed URLs are not supported by R2 bindings and lazy-import the S3 SDK.
  */
 
-import { getEnv } from '../env/cloudflare';
+import { env as workerEnv } from 'cloudflare:workers';
 import {
   buildR2Key,
   getPublicUrl,
+  type MultipartPart,
   type StorageBucket,
   type StorageFileInfo,
   type UploadResult,
 } from './buckets';
 
 function getR2Bucket(): R2Bucket {
-  const bucket = getEnv().R2_STORAGE_BUCKET;
+  // Reach for the binding via `cloudflare:workers` directly so the type
+  // resolves to R2Bucket. `#env` resolves to a process.env shim at typecheck
+  // time (because tsgo doesn't apply the `workerd` import condition), which
+  // would type bindings as `string`.
+  const bucket = workerEnv.R2_STORAGE_BUCKET;
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- generated Env types the bucket as always-present; guard against wrangler.jsonc drift
   if (!bucket) {
     throw new Error(
       'R2 binding "R2_STORAGE_BUCKET" not found. Ensure r2_buckets is configured in wrangler.jsonc'
@@ -34,10 +40,10 @@ export async function uploadFile(
     cacheControl?: string;
   }
 ): Promise<UploadResult> {
-  const r2 = getR2Bucket();
   const key = buildR2Key(bucket, path);
 
   try {
+    const r2 = getR2Bucket();
     // R2 natively accepts all types in our union (ReadableStream, ArrayBuffer,
     // ArrayBufferView, Blob) — no conversion needed.
     await r2.put(key, file, {
@@ -59,6 +65,70 @@ export async function uploadFile(
       `Failed to upload file to ${bucket}/${path}: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Multipart uploads. Cloudflare Workers cap a single request body at ~100MB,
+// so large uploads (e.g. exported MP4s) are split client-side into parts and
+// streamed through the Worker via these helpers. Each helper is a distinct
+// Worker invocation, so we hold no upload object across requests — we
+// re-attach to the in-flight upload with `resumeMultipartUpload(key, uploadId)`
+// each time.
+// ───────────────────────────────────────────────────────────────────────────
+
+export async function createMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  contentType?: string
+): Promise<{ uploadId: string; key: string }> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = await r2.createMultipartUpload(key, {
+    httpMetadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000',
+    },
+  });
+  return { uploadId: upload.uploadId, key };
+}
+
+export async function uploadPart(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string,
+  partNumber: number,
+  body: ReadableStream<Uint8Array> | ArrayBuffer | ArrayBufferView | Blob
+): Promise<MultipartPart> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  const uploaded = await upload.uploadPart(partNumber, body);
+  return { partNumber: uploaded.partNumber, etag: uploaded.etag };
+}
+
+export async function completeMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string,
+  parts: MultipartPart[]
+): Promise<UploadResult> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  await upload.complete(parts);
+  const publicUrl = getPublicUrl(bucket, path);
+  return { path: key, publicUrl, fullPath: key };
+}
+
+export async function abortMultipartUpload(
+  bucket: StorageBucket,
+  path: string,
+  uploadId: string
+): Promise<void> {
+  const r2 = getR2Bucket();
+  const key = buildR2Key(bucket, path);
+  const upload = r2.resumeMultipartUpload(key, uploadId);
+  await upload.abort();
 }
 
 export async function getSignedUrl(
@@ -225,4 +295,53 @@ export async function fileExists(
   } catch {
     return false;
   }
+}
+
+/**
+ * Serve a storage object straight from the R2 binding. Backs the local
+ * `/r2/$` route (see src/routes/r2.$.ts) that stands in for the public CDN
+ * domain when `R2_PUBLIC_STORAGE_DOMAIN` is unset (local dev + e2e). Supports
+ * Range requests so `<video>` seeking works.
+ */
+export async function serveFile(
+  key: string,
+  request: Request
+): Promise<Response> {
+  const r2 = getR2Bucket();
+  // R2 accepts the request Headers directly and resolves the Range header
+  // itself; the returned object's `range` reflects what was actually served.
+  const hasRange = request.headers.has('range');
+  const object = await r2.get(
+    key,
+    hasRange ? { range: request.headers } : undefined
+  );
+  if (!object) {
+    return new Response('Not found', { status: 404 });
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('etag', object.httpEtag);
+  headers.set('accept-ranges', 'bytes');
+
+  // Only emit a 206 when the client actually sent a Range header — Miniflare
+  // populates `object.range` even on full reads, and a 206 for a plain GET
+  // confuses caches and some clients.
+  const range = hasRange ? object.range : undefined;
+  if (range) {
+    const offset = 'offset' in range ? (range.offset ?? 0) : 0;
+    const length =
+      'suffix' in range
+        ? range.suffix
+        : (('length' in range ? range.length : undefined) ??
+          object.size - offset);
+    const start = 'suffix' in range ? object.size - range.suffix : offset;
+    headers.set(
+      'content-range',
+      `bytes ${start}-${start + length - 1}/${object.size}`
+    );
+    return new Response(object.body, { status: 206, headers });
+  }
+
+  return new Response(object.body, { headers });
 }

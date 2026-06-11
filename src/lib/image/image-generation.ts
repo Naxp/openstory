@@ -19,8 +19,13 @@ import {
 
 import { getEnv } from '#env';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { ensureExternallyFetchableUrls } from '@/lib/storage/external-url';
 import { generateImage } from '@tanstack/ai';
 import { falImage } from '@tanstack/ai-fal';
+
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'image', 'image-generation']);
 
 export type ImageGenerationParams = {
   model: TextToImageModel;
@@ -102,8 +107,8 @@ function truncatePromptForModel(
   const maxLength = IMAGE_MODELS[model].maxPromptLength;
   if (prompt.length <= maxLength) return prompt;
 
-  console.warn(
-    `[Image Generation] Prompt truncated from ${prompt.length} to ${maxLength} chars for ${model}`
+  logger.warn(
+    `Prompt truncated from ${prompt.length} to ${maxLength} chars for ${model}`
   );
   return prompt.slice(0, maxLength - 3) + '...';
 }
@@ -150,10 +155,20 @@ export async function generateImageWithProvider(
 }
 // @TODO: TB Mar 2026 - this needs to be updated to be typesafe. Especially after the work put in on Tanstack AI to keep it safe
 async function generateImageInternal(
-  params: ImageGenerationParams,
+  rawParams: ImageGenerationParams,
   modelId: string,
   options?: ImageGenerationOptions
 ): Promise<ImageGenerationResult> {
+  // Locally-served /r2/ reference URLs aren't reachable by real fal — swap
+  // them for fal-storage uploads first (no-op in prod and e2e replay).
+  const params: ImageGenerationParams = rawParams.referenceImageUrls?.length
+    ? {
+        ...rawParams,
+        referenceImageUrls: await ensureExternallyFetchableUrls(
+          rawParams.referenceImageUrls
+        ),
+      }
+    : rawParams;
   const prompt = truncatePromptForModel(params.prompt, params.model);
   const startTime = Date.now();
 
@@ -172,11 +187,39 @@ async function generateImageInternal(
   }
 
   const adapter = createFalAdapter(endpoint, falApiKeyInfo.key);
+
+  logger.info('generateImage request', {
+    data: JSON.stringify(
+      {
+        model: params.model,
+        endpoint,
+        keySource: falApiKeyInfo.source,
+        prompt,
+        modelOptions,
+        referenceImageUrls: params.referenceImageUrls ?? [],
+      },
+      null,
+      2
+    ),
+  });
+
   const result = await generateImage({
     adapter,
     prompt,
     modelOptions,
     debug: false,
+  });
+
+  logger.info('generateImage response', {
+    data: JSON.stringify(
+      {
+        model: params.model,
+        endpoint,
+        imageUrls: result.images.map((img) => img.url),
+      },
+      null,
+      2
+    ),
   });
 
   const imageUrls = result.images

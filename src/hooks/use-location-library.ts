@@ -1,10 +1,10 @@
 /**
- * Hooks for team-level location library operations
+ * Hooks for location library operations — team-scoped for authenticated
+ * users, plus public ("system") reads for anonymous visitors.
  */
 
 import {
   useMutation,
-  useQuery,
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
@@ -14,10 +14,12 @@ import {
   deleteLibraryLocationFn,
   deleteLocationSheetFn,
   getLibraryLocationByIdFn,
+  getPublicLibraryLocationByIdFn,
   presignLocationUploadFn,
   finalizeLocationUploadFn,
   updateLibraryLocationFn,
 } from '@/functions/location-library';
+import { usePublicOrTeamQuery } from '@/hooks/use-public-or-team-query';
 import { putToR2 } from '@/lib/utils/upload';
 import {
   libraryLocationKeys,
@@ -37,6 +39,8 @@ export type LibraryLocationWithSheets = LibraryLocation & {
 export const locationLibraryKeys = {
   all: ['location-library'] as const,
   detail: (id: string) => [...locationLibraryKeys.all, 'detail', id] as const,
+  publicDetail: (id: string) =>
+    [...locationLibraryKeys.all, 'detail', 'public', id] as const,
 };
 
 /**
@@ -59,12 +63,16 @@ function invalidateLocationQueries(
 }
 
 /**
- * Hook to fetch a single location with details and reference sheets
+ * Hook to fetch a single location with details and reference sheets. Anonymous
+ * visitors get the public ("system") location so they can open a location
+ * detail page read-only.
  */
 export function useLibraryLocationById(locationId: string) {
-  return useQuery<LibraryLocationWithSheets>({
-    queryKey: locationLibraryKeys.detail(locationId),
-    queryFn: () => getLibraryLocationByIdFn({ data: { locationId } }),
+  return usePublicOrTeamQuery<LibraryLocationWithSheets>({
+    teamKey: locationLibraryKeys.detail(locationId),
+    publicKey: locationLibraryKeys.publicDetail(locationId),
+    teamFn: () => getLibraryLocationByIdFn({ data: { locationId } }),
+    publicFn: () => getPublicLibraryLocationByIdFn({ data: { locationId } }),
     enabled: !!locationId,
   });
 }

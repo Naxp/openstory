@@ -17,7 +17,7 @@ import {
 } from '@/lib/constants/aspect-ratios';
 import { cn } from '@/lib/utils';
 import type { Frame } from '@/types/database';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import {
   AlertCircle,
   Download,
@@ -35,13 +35,35 @@ type ScenePlayerProps = {
   frames?: Frame[];
   selectedFrameId?: string;
   aspectRatio: AspectRatio;
-  onSelectFrame: (frameId: string) => void;
+  /**
+   * Accepted but unused: the player no longer auto-advances between scenes
+   * (single-scene review shouldn't roll into the next clip — use Theatre for
+   * continuous playback). Frame selection is driven by the scene list.
+   */
+  onSelectFrame?: (frameId: string) => void;
   className?: string;
   wrapperClassName?: string;
   selectedTab?: TabValue;
   overrideImageUrl?: string | null;
+  /**
+   * Per-scene video-variant preview (#545). When set (motion tab), the player
+   * plays this url for the current frame instead of its primary video — the
+   * motion analog of `overrideImageUrl`.
+   */
+  overrideVideoUrl?: string | null;
   badgeMessage?: string | null;
+  /**
+   * Warning badge shown when the pinned image model has not generated this
+   * scene (#547) — the displayed image is the primary fallback, not the
+   * pinned model's output.
+   */
+  modelMismatchLabel?: string | null;
   progressMessage?: string;
+  /**
+   * In-flight retry state for the selected frame (#882) — rendered as
+   * "Retrying (N/M)…" (or "Retrying…") in the player overlay.
+   */
+  retry?: { attempt: number; maxAttempts?: number };
   posterUrl?: string;
   onTimeUpdate?: (currentTime: number) => void;
   onEnded?: () => void;
@@ -55,10 +77,12 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   aspectRatio,
   selectedTab,
   overrideImageUrl,
+  overrideVideoUrl,
   badgeMessage,
+  modelMismatchLabel,
   progressMessage,
+  retry,
   posterUrl,
-  onSelectFrame,
   onTimeUpdate,
   onEnded,
 }) => {
@@ -139,16 +163,13 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
     setShouldAutoPlay(false);
   }, []);
 
-  // Handle video end - move to next frame or call onEnded
+  // Video end: stop on the current scene. We intentionally do NOT auto-advance
+  // to the next scene — single-scene review shouldn't roll into the next clip.
+  // Continuous playback of the whole sequence lives in Theatre.
   const handleEnded = useCallback(() => {
-    if (nextFrame) {
-      setShouldAutoPlay(true); // Enable autoplay for next video
-      // Select the next frame - not this may cause a re-render of the scene list
-      onSelectFrame(nextFrame.id);
-    } else {
-      onEnded?.();
-    }
-  }, [nextFrame, onEnded, onSelectFrame]);
+    setShouldAutoPlay(false);
+    onEnded?.();
+  }, [onEnded]);
 
   // Show blob loader during generation, skeleton otherwise
   if (!frames || frames.length === 0) {
@@ -164,7 +185,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
           >
             {posterUrl ? (
               <>
-                <Image
+                <AppImage
                   src={posterUrl}
                   alt=""
                   width={imageDimensions.width}
@@ -201,7 +222,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
               getAspectRatioClassName(aspectRatio)
             )}
           >
-            <Image
+            <AppImage
               src={posterUrl}
               alt=""
               width={imageDimensions.width}
@@ -254,6 +275,22 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   const isVariantPreview =
     !!overrideImageUrl && overrideImageUrl !== currentFrame.thumbnailUrl;
 
+  // The image-focused tabs (the still image + the shot-variant grid) keep
+  // showing the image; every other tab (script, motion, cast, location,
+  // elements) shows the scene's video when one exists.
+  const showsStillImage =
+    selectedTab === 'image-prompt' || selectedTab === 'scene-variants';
+
+  // Per-scene video-variant preview (#545): on the motion tab, play the
+  // override variant for this frame instead of its primary video.
+  const isVariantVideoPreview =
+    !!overrideVideoUrl &&
+    !showsStillImage &&
+    overrideVideoUrl !== currentFrame.videoUrl;
+  const playbackVideoUrl = showsStillImage
+    ? ''
+    : (overrideVideoUrl ?? currentFrame.videoUrl ?? '');
+
   return (
     <div className={cn('flex w-full flex-col', wrapperClassName)}>
       {hasFailedVideo ? (
@@ -274,7 +311,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
               rel="noopener noreferrer"
               className="block w-full h-full"
             >
-              <Image
+              <AppImage
                 src={displayImage}
                 alt={title || 'Scene thumbnail'}
                 className="w-full h-full object-cover"
@@ -363,22 +400,23 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          {/* Clickable overlay to open image in new tab when poster is showing */}
-          {currentFrame.thumbnailUrl &&
-            (selectedTab === 'image-prompt' || !currentFrame.videoUrl) && (
-              <a
-                href={currentFrame.thumbnailUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="absolute inset-0 z-[5] cursor-pointer"
-                aria-label="Open image in new tab"
-              />
-            )}
+          {/* Clickable overlay to open the displayed image in a new tab — only
+              when the poster (image) is what's showing, i.e. there's no
+              playable video. Keyed off `playbackVideoUrl` (and href = the
+              image actually displayed) so it never covers the video's play
+              button or opens a different image than the poster. */}
+          {displayImage && !playbackVideoUrl && (
+            <a
+              href={displayImage}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="absolute inset-0 z-[5] cursor-pointer"
+              aria-label="Open image in new tab"
+            />
+          )}
           <VideoPlayer
-            key={currentFrame.videoUrl} // Force re-render when video changes
-            src={
-              selectedTab === 'image-prompt' ? '' : currentFrame.videoUrl || ''
-            }
+            key={playbackVideoUrl} // Force re-render when video changes
+            src={playbackVideoUrl}
             posterSrc={displayImage}
             aspectRatio={aspectRatio}
             className="w-full"
@@ -390,12 +428,22 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
           {/* Show overlay for image/video generation states */}
           <VideoStateOverlay
             thumbnailUrl={displayImage}
-            videoStatus={currentFrame.videoStatus ?? null}
+            videoStatus={
+              isVariantVideoPreview
+                ? 'completed'
+                : (currentFrame.videoStatus ?? null)
+            }
             progressMessage={progressMessage}
+            retry={retry}
           />
           {badgeMessage && (
             <span className="absolute top-2 left-2 z-10 rounded bg-primary/80 px-2 py-1 text-xs font-medium text-primary-foreground backdrop-blur-sm">
               {badgeMessage}
+            </span>
+          )}
+          {modelMismatchLabel && !badgeMessage && (
+            <span className="absolute top-2 left-2 z-10 rounded bg-amber-500/90 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              {modelMismatchLabel}
             </span>
           )}
           {isPreviewImage && !isVariantPreview && (

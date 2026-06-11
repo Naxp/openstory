@@ -1,4 +1,3 @@
-import { XIcon } from '@/components/icons/x-icon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,16 +23,7 @@ import {
 } from '@/functions/gift-tokens';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useBillingGateQuery } from '@/hooks/use-billing-gate';
-import {
-  Check,
-  Copy,
-  Gift,
-  Layers,
-  LinkIcon,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react';
+import { Check, Copy, Gift, Layers, LinkIcon, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -45,11 +35,9 @@ export function GiftCodeSettings() {
     queryFn: () => isSystemAdminFn(),
     staleTime: 5 * 60 * 1000,
   });
-  const { data: gateStatus } = useBillingGateQuery();
 
   return (
     <div className="space-y-6">
-      {gateStatus && !gateStatus.hasRedeemedGift && <FollowOnXCard />}
       <RedeemSection />
       {adminLoading ? (
         <Skeleton className="h-48 w-full" />
@@ -57,43 +45,6 @@ export function GiftCodeSettings() {
         <AdminSection />
       ) : null}
     </div>
-  );
-}
-
-function FollowOnXCard() {
-  return (
-    <Card className="border-primary/20 bg-primary/[0.02]">
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-            <XIcon className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <CardTitle>Get $10 Free Credits</CardTitle>
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                <Sparkles className="size-2.5" />
-                Free
-              </span>
-            </div>
-            <CardDescription>
-              Follow @openstory_so on X and DM us to get a gift code worth $10
-            </CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Button asChild>
-          <a
-            href="https://x.com/openstory_so"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Follow @openstory_so on X
-          </a>
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -196,7 +147,7 @@ function AdminSection() {
 const INITIAL_BATCH_FORM = {
   count: '100',
   amount: '10',
-  note: 'X follow reward',
+  note: '',
   expiresInDays: '',
 };
 
@@ -261,7 +212,7 @@ function BatchCreateCard() {
           <div>
             <CardTitle>Batch Create Gift Codes</CardTitle>
             <CardDescription>
-              Generate multiple single-use codes for X follow rewards
+              Generate multiple single-use codes (e.g. for promotions)
             </CardDescription>
           </div>
         </div>
@@ -322,7 +273,7 @@ function BatchCreateCard() {
               <Label htmlFor="batch-note">Note</Label>
               <Input
                 id="batch-note"
-                placeholder="e.g. X follow reward…"
+                placeholder="e.g. Promo batch…"
                 value={form.note}
                 onChange={(e) => updateField('note', e.target.value)}
                 autoComplete="off"

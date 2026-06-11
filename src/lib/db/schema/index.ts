@@ -6,7 +6,7 @@
  * (Drizzle Relations v2 — single consolidated definition, no per-table relations() calls).
  */
 
-import { account, passkey, session, user, verification } from './auth';
+import { account, apikey, passkey, session, user, verification } from './auth';
 
 import { teamInvitations, teamMembers, teams } from './teams';
 
@@ -26,8 +26,8 @@ import { framePromptVariants } from './frame-prompt-variants';
 
 import { sequenceMusicPromptVariants } from './sequence-music-prompt-variants';
 
-import { sequenceVideoVariants } from './sequence-video-variants';
 import { sequenceMusicVariants } from './sequence-music-variants';
+import { sequenceExports } from './sequence-exports';
 
 import { characters } from './characters';
 
@@ -44,7 +44,13 @@ import { sequenceElements } from './sequence-elements';
 
 import { talent, talentMedia, talentSheets } from './talent';
 
-import { audio, StyleConfigSchema, styles, vfx } from './libraries';
+import {
+  audio,
+  StyleConfigSchema,
+  StyleSampleVideoSchema,
+  styles,
+  vfx,
+} from './libraries';
 
 import {
   creditBatches,
@@ -57,29 +63,20 @@ import { teamApiKeys } from './team-api-keys';
 
 import { giftTokenRedemptions, giftTokens } from './gift-tokens';
 
-// Better Auth tables
-export { account, passkey, session, user, verification };
+import { appMetadata } from './app-metadata';
 
-export type { Account, Passkey, Session, User, Verification } from './auth';
+// Better Auth tables
+export { account, apikey, passkey, session, user, verification };
+
+export type { User } from './auth';
 
 // Teams
 export { teamInvitations, teamMembers, teams };
 
-export type {
-  InvitationStatus,
-  NewTeam,
-  NewTeamInvitation,
-  NewTeamMember,
-  Team,
-  TeamInvitation,
-  TeamMember,
-  TeamMemberRole,
-} from './teams';
-
 // Sequences
 export { sequences };
 
-export type { NewSequence, Sequence, SequenceStatus } from './sequences';
+export type { NewSequence, Sequence } from './sequences';
 
 // Frames
 export { frames };
@@ -89,18 +86,13 @@ export type { Frame, NewFrame } from './frames';
 // Frame Variants
 export { frameVariants };
 
-export type {
-  FrameVariant,
-  NewFrameVariant,
-  VariantType,
-} from './frame-variants';
+export type { FrameVariant, NewFrameVariant } from './frame-variants';
 
 // Sheet Variants (Stage 2: divergent character/location/talent sheet outputs)
 export { characterSheetVariants };
 
 export type {
   CharacterSheetVariant,
-  CharacterSheetVariantStatus,
   NewCharacterSheetVariant,
 } from './character-sheet-variants';
 
@@ -109,58 +101,45 @@ export { locationSheetVariants };
 export type {
   LocationSheetVariant,
   LocationSheetVariantParentType,
-  LocationSheetVariantStatus,
   NewLocationSheetVariant,
 } from './location-sheet-variants';
-
-export { LOCATION_SHEET_VARIANT_PARENT_TYPES } from './location-sheet-variants';
 
 export { talentSheetVariants };
 
 export type {
   NewTalentSheetVariant,
   TalentSheetVariant,
-  TalentSheetVariantStatus,
 } from './talent-sheet-variants';
 
 // Frame Prompt Variants (visual/motion prompt history)
 export { framePromptVariants };
 
-export {
-  FRAME_PROMPT_TYPES,
-  PROMPT_VARIANT_SOURCES,
-} from './frame-prompt-variants';
+export { FRAME_PROMPT_TYPES } from './frame-prompt-variants';
 
 export type {
   FramePromptType,
   FramePromptVariant,
   FramePromptVariantComponents,
-  NewFramePromptVariant,
   PromptVariantSource,
 } from './frame-prompt-variants';
 
 // Sequence Music Prompt Variants (music prompt history)
 export { sequenceMusicPromptVariants };
 
-export type {
-  NewSequenceMusicPromptVariant,
-  SequenceMusicPromptVariant,
-} from './sequence-music-prompt-variants';
+export type { SequenceMusicPromptVariant } from './sequence-music-prompt-variants';
 
-// Sequence-level variants (merged video + music)
-export { sequenceVideoVariants, sequenceMusicVariants };
-
-export type {
-  NewSequenceVideoVariant,
-  SequenceVideoVariantStatus,
-  SequenceVideoVariant,
-} from './sequence-video-variants';
+// Sequence-level variants (music)
+export { sequenceMusicVariants };
 
 export type {
   NewSequenceMusicVariant,
   SequenceMusicVariant,
-  SequenceMusicVariantStatus,
 } from './sequence-music-variants';
+
+// Sequence exports (browser-rendered MP4 snapshots)
+export { sequenceExports };
+
+export type { NewSequenceExport, SequenceExport } from './sequence-exports';
 
 // Characters (scripted roles)
 export { characters };
@@ -176,11 +155,7 @@ export type {
 // Location Library (team-level templates)
 export { locationLibrary };
 
-export type {
-  LibraryLocation,
-  LibraryLocationMinimal,
-  NewLibraryLocation,
-} from './location-library';
+export type { LibraryLocation, NewLibraryLocation } from './location-library';
 
 // Sequence Locations (extracted from script)
 export { sequenceLocations };
@@ -190,17 +165,12 @@ export type {
   ReferenceStatus,
   SequenceLocation,
   SequenceLocationMinimal,
-  SequenceLocationWithDetails,
 } from './sequence-locations';
 
 // Location Sheets (location-specific variations for library locations)
 export { locationSheets };
 
-export type {
-  LocationSheet,
-  LocationSheetSource,
-  NewLocationSheet,
-} from './location-sheets';
+export type { LocationSheet, NewLocationSheet } from './location-sheets';
 
 // Sequence Elements (per-sequence uploaded reference images)
 export { sequenceElements };
@@ -221,61 +191,38 @@ export type {
   NewTalentSheet,
   Talent,
   TalentMediaRecord,
-  TalentMediaType,
   TalentSheet,
-  TalentSheetSource,
-  TalentWithRelations,
   TalentWithSheets,
 } from './talent';
 
 // Library Resources
-export { audio, StyleConfigSchema, styles, vfx };
+export { audio, StyleConfigSchema, StyleSampleVideoSchema, styles, vfx };
 
-export type {
-  Audio,
-  NewAudio,
-  NewStyle,
-  NewVfx,
-  Style,
-  StyleConfig,
-  Vfx,
-} from './libraries';
+export type { Audio, NewStyle, Style, StyleConfig, Vfx } from './libraries';
 
 // Credits, Transactions, and Billing
-export { creditBatches, credits, transactions, teamBillingSettings };
+export { credits, transactions };
 
-export type {
-  Credit,
-  CreditBatch,
-  CreditBatchSource,
-  NewCredit,
-  NewCreditBatch,
-  NewTeamBillingSetting,
-  NewTransaction,
-  TeamBillingSetting,
-  Transaction,
-  TransactionType,
-} from './credits';
+/**
+ * drizzle-kit only diffs TOP-LEVEL exported tables — tables reachable only
+ * through the `schema` object below are treated as deleted and produce
+ * DROP TABLE migrations (this bit us when the knip sweep removed these two).
+ * Keep every table individually exported.
+ *
+ * @public used by drizzle-kit generate, not the app graph
+ */
+export { creditBatches, teamBillingSettings };
 
 // Team API Keys
 export { teamApiKeys };
 
-export type {
-  ApiKeyProvider,
-  ApiKeySource,
-  NewTeamApiKey,
-  TeamApiKey,
-} from './team-api-keys';
+export type { ApiKeyProvider } from './team-api-keys';
 
 // Gift Tokens
 export { giftTokens, giftTokenRedemptions };
 
-export type {
-  GiftToken,
-  GiftTokenRedemption,
-  NewGiftToken,
-  NewGiftTokenRedemption,
-} from './gift-tokens';
+// App Metadata (key/value bookkeeping, e.g. system-template seed hash)
+export { appMetadata };
 
 /**
  * Complete schema object for Drizzle client initialization (tables only).
@@ -288,6 +235,7 @@ export const schema = {
   account,
   verification,
   passkey,
+  apikey,
 
   // Teams
   teams,
@@ -303,8 +251,8 @@ export const schema = {
   talentSheetVariants,
   framePromptVariants,
   sequenceMusicPromptVariants,
-  sequenceVideoVariants,
   sequenceMusicVariants,
+  sequenceExports,
 
   // Characters (scripted roles extracted from script)
   characters,
@@ -343,4 +291,7 @@ export const schema = {
   // Gift Tokens
   giftTokens,
   giftTokenRedemptions,
+
+  // App Metadata
+  appMetadata,
 };

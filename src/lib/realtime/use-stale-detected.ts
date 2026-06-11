@@ -5,6 +5,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'realtime', 'use-stale-detected']);
+
 const TOAST_DEBOUNCE_MS = 5_000;
 
 /**
@@ -53,6 +57,8 @@ export function useStaleDetected(sequenceId: string | undefined) {
   // sequence's toast.
   const handleEvent = useCallback(
     (event: StaleDetectedEvent) => {
+      // Defensive: subscription is bound to this event but kept narrow for safety if more event types are added.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (event.event !== 'generation.stale:detected') return;
       if (!sequenceId) return;
       const scheduledFor = sequenceId;
@@ -99,7 +105,7 @@ export function useStaleDetected(sequenceId: string | undefined) {
   useEffect(() => {
     if (!sequenceId) return;
     if (status === 'error') {
-      console.error('[useStaleDetected] realtime channel error', {
+      logger.error('realtime channel error', {
         sequenceId,
       });
     }

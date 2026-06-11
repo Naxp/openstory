@@ -12,6 +12,10 @@ import { teamInvitations, teamMembers, user } from '@/lib/db/schema';
 import { ValidationError } from '@/lib/errors';
 import crypto from 'node:crypto';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'db', 'team-management']);
+
 type TeamMember = {
   userId: string;
   email: string;
@@ -41,7 +45,7 @@ type AcceptInvitationParams = {
 /**
  * Read-only team management methods + acceptInvitation (needed by invitation flow).
  */
-export function createTeamManagementReadMethods(db: Database, teamId: string) {
+function createTeamManagementReadMethods(db: Database, teamId: string) {
   async function getMembers(): Promise<TeamMember[]> {
     const members: TeamMember[] = await db
       .select({
@@ -149,10 +153,7 @@ export function createTeamManagementReadMethods(db: Database, teamId: string) {
         })
         .where(eq(teamInvitations.id, invitation.id));
     } catch (error) {
-      console.error(
-        '[TeamManagement] Failed to update invitation status:',
-        error
-      );
+      logger.error('Failed to update invitation status:', { err: error });
     }
 
     return invitation.teamId;
@@ -231,8 +232,8 @@ export function createTeamManagementMethods(
       throw new Error('No invitation returned from database');
     }
 
-    console.log(
-      `[TeamManagement] Invitation created for ${params.email}. Token should be sent via email.`
+    logger.info(
+      `Invitation created for ${params.email}. Token should be sent via email.`
     );
 
     return {

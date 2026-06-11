@@ -25,9 +25,12 @@ import {
   regenerateFrameSchema,
 } from '@/lib/schemas/frame.schemas';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
+import { rescanContinuityFromPrompt } from '@/lib/scenes/rescan-continuity-from-prompt';
 import { triggerWorkflow } from '@/lib/workflow/client';
+import { triggerStoryboard } from '@/lib/workflow/launchers';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
 import type {
+  FrameImageSceneSnapshot,
   ImageWorkflowInput,
   StoryboardWorkflowInput,
   ShotVariantWorkflowInput,
@@ -36,7 +39,9 @@ import type {
 import {
   matchCharactersToScene,
   matchElementsToScene,
+  matchLocationsToScene,
 } from '@/lib/workflows/scene-matching';
+import { computeFrameImageSceneHash } from '@/lib/workflows/sheet-snapshots';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
@@ -80,10 +85,9 @@ export const generateFramesFn = createServerFn({ method: 'POST' })
           DEFAULT_IMAGE_MODEL
         ),
         aspectRatio: sequence.aspectRatio,
-        videoModel: safeImageToVideoModel(
-          sequence.videoModel,
-          DEFAULT_VIDEO_MODEL
-        ),
+        videoModels: [
+          safeImageToVideoModel(sequence.videoModel, DEFAULT_VIDEO_MODEL),
+        ],
       }),
       {
         providers: ['fal', 'openrouter'],
@@ -104,10 +108,12 @@ export const generateFramesFn = createServerFn({ method: 'POST' })
       },
     };
 
-    const workflowRunId = await triggerWorkflow('/storyboard', workflowInput, {
-      deduplicationId: `storyboard-${sequence.id}-${Date.now()}`,
-      label: buildWorkflowLabel(sequence.id),
-    });
+    // Owns the generation mutex, the 'processing' status write, and the
+    // run-id persistence (#839).
+    const { workflowRunId } = await triggerStoryboard(
+      context.scopedDb,
+      workflowInput
+    );
 
     return { workflowRunId, frames: [] };
   });
@@ -138,32 +144,61 @@ export const generateFrameImageFn = createServerFn({ method: 'POST' })
       throw new Error('Frame has no prompt or description to regenerate from');
     }
 
+    // Auto-link any element/cast/location tags the user mentioned in their
+    // edited prompt before computing reference attachment, so a freshly-
+    // mentioned LOGO gets its reference image attached to THIS regeneration.
+    // updateFrameFn does the same rescan, but the UI never calls it — the
+    // regenerate buttons are the only persistence path for prompts today.
+    const userEditedPrompt = data.prompt !== undefined;
+    const baseContinuity = frame.metadata?.continuity;
+    let continuity = baseContinuity;
+    if (userEditedPrompt && frame.metadata && baseContinuity) {
+      const rescan = await rescanContinuityFromPrompt({
+        scopedDb: context.scopedDb,
+        sequenceId: sequence.id,
+        existing: baseContinuity,
+        promptText: prompt,
+      });
+      if (rescan.changed) {
+        continuity = rescan.continuity;
+        await context.scopedDb.frames.update(frame.id, {
+          metadata: { ...frame.metadata, continuity: rescan.continuity },
+        });
+      }
+    }
+
     const allCharacters = await context.scopedDb.characters.listWithSheets(
       sequence.id
     );
-    const characterTags = frame.metadata?.continuity?.characterTags ?? [];
-    const characterReferences = buildCharacterReferenceImages(
-      matchCharactersToScene(allCharacters, characterTags)
+    const matchedCharacters = matchCharactersToScene(
+      allCharacters,
+      continuity?.characterTags ?? []
     );
+    const characterReferences =
+      buildCharacterReferenceImages(matchedCharacters);
 
     const allLocations =
       await context.scopedDb.sequenceLocations.listWithReferences(sequence.id);
+    const matchedLocations = matchLocationsToScene(
+      allLocations,
+      continuity?.environmentTag ?? '',
+      frame.metadata?.metadata?.location ?? ''
+    );
     const locationReferences = getSceneLocationReferenceImages(
       allLocations,
-      frame.metadata?.continuity?.environmentTag ?? '',
+      continuity?.environmentTag ?? '',
       frame.metadata?.metadata?.location ?? ''
     );
 
     const allElements = await context.scopedDb.sequenceElements.list(
       sequence.id
     );
-    const elementReferences = buildElementReferenceImages(
-      matchElementsToScene(
-        allElements,
-        frame.metadata?.continuity?.elementTags ?? [],
-        frame.metadata?.originalScript.extract ?? ''
-      )
+    const matchedElements = matchElementsToScene(
+      allElements,
+      continuity?.elementTags ?? [],
+      frame.metadata?.originalScript.extract ?? ''
     );
+    const elementReferences = buildElementReferenceImages(matchedElements);
 
     const model =
       data.model || safeTextToImageModel(frame.imageModel, DEFAULT_IMAGE_MODEL);
@@ -172,6 +207,36 @@ export const generateFrameImageFn = createServerFn({ method: 'POST' })
       context.scopedDb,
       estimateImageCost(model, sequence.aspectRatio, 1),
       { errorMessage: 'Insufficient credits for image generation' }
+    );
+
+    // Build a per-scene snapshot so the image workflow records a non-null
+    // `thumbnailInputHash`. Without this the convergent write path stores
+    // `null`, and the staleness check loses the ability to flip back to
+    // 'stale' on a future prompt regenerate. The sceneId fallback covers
+    // legacy frames generated before scene metadata was attached.
+    const sortedHashes = (
+      values: ReadonlyArray<string | null | undefined>
+    ): string[] =>
+      values
+        .filter((v): v is string => typeof v === 'string' && v.length > 0)
+        .sort();
+    const sceneSnapshot: FrameImageSceneSnapshot = {
+      sceneId: frame.metadata?.sceneId ?? frame.id,
+      visualPrompt: prompt,
+      characterSheetHashes: sortedHashes(
+        matchedCharacters.map((c) => c.sheetInputHash)
+      ),
+      locationSheetHashes: sortedHashes(
+        matchedLocations.map((l) => l.referenceInputHash)
+      ),
+      elementReferenceHashes: sortedHashes(
+        matchedElements.map((e) => e.imageUrl)
+      ),
+    };
+    const snapshotInputHash = await computeFrameImageSceneHash(
+      sceneSnapshot,
+      model,
+      sequence.aspectRatio
     );
 
     const workflowInput: ImageWorkflowInput = {
@@ -183,12 +248,15 @@ export const generateFrameImageFn = createServerFn({ method: 'POST' })
       numImages: 1,
       frameId: frame.id,
       sequenceId: sequence.id,
+      aspectRatio: sequence.aspectRatio,
+      sceneSnapshot,
+      snapshotInputHash,
       referenceImages: [
         ...characterReferences,
         ...locationReferences,
         ...elementReferences,
       ],
-      userEditedPrompt: data.prompt !== undefined,
+      userEditedPrompt,
     };
 
     const workflowRunId = await triggerWorkflow('/image', workflowInput, {
@@ -425,7 +493,13 @@ export const setImageFromVariantFn = createServerFn({ method: 'POST' })
       thumbnailStatus: 'completed',
       thumbnailError: null,
       imageModel: data.model,
-      // Clear stale video fields — video must be regenerated
+      // Adopt the promoted variant's input hash so the staleness check (which
+      // re-derives the current hash with the now-updated imageModel) compares
+      // like-for-like. Without this it diffs the new model's hash against the
+      // OLD model's stored hash and always reports a false "stale". (#545)
+      thumbnailInputHash: variant.inputHash,
+      // Clear stale video fields — the video was generated from the previous
+      // image, so it must be regenerated.
       videoUrl: null,
       videoPath: null,
       videoStatus: 'pending',
@@ -435,4 +509,48 @@ export const setImageFromVariantFn = createServerFn({ method: 'POST' })
     });
 
     return { frameId: frame.id, thumbnailUrl: variant.url };
+  });
+
+const setVideoFromVariantInputSchema = z.object({
+  sequenceId: ulidSchema,
+  frameId: ulidSchema,
+  model: z.string().min(1),
+});
+
+/**
+ * Promote a model's video variant to the frame's primary video (#545) — the
+ * motion analog of `setImageFromVariantFn`. Copies the variant's url/path into
+ * `frames.video*` so the player and exports use it, non-destructively (the
+ * variant row is retained, so the viewer can switch back). Unlike the image
+ * version there is nothing downstream to invalidate — video is the terminal
+ * artifact.
+ */
+export const setVideoFromVariantFn = createServerFn({ method: 'POST' })
+  .middleware([frameAccessMiddleware])
+  .inputValidator(zodValidator(setVideoFromVariantInputSchema))
+  .handler(async ({ context, data }) => {
+    const { frame } = context;
+
+    const variant = await context.scopedDb.frameVariants.getByFrameAndModel(
+      frame.id,
+      'video',
+      data.model
+    );
+
+    if (!variant || variant.status !== 'completed' || !variant.url) {
+      throw new Error('No completed video variant found for this model');
+    }
+
+    await context.scopedDb.frames.update(frame.id, {
+      videoUrl: variant.url,
+      videoPath: variant.storagePath,
+      videoStatus: 'completed',
+      videoError: null,
+      videoGeneratedAt: new Date(),
+      videoInputHash: variant.inputHash,
+      durationMs: variant.durationMs,
+      motionModel: data.model,
+    });
+
+    return { frameId: frame.id, videoUrl: variant.url };
   });

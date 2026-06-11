@@ -2,7 +2,6 @@
  * Type definitions for QStash Workflows
  */
 
-import type { SequenceVideoFrameSource } from '@/lib/ai/input-hash';
 import type {
   AUDIO_MODELS,
   IMAGE_MODELS,
@@ -15,6 +14,7 @@ import type {
   CharacterBibleEntry,
   ElementBibleEntry,
   LocationBibleEntry,
+  MotionPrompt,
   Scene,
 } from '@/lib/ai/scene-analysis.schema';
 import type { AspectRatio, ImageSize } from '@/lib/constants/aspect-ratios';
@@ -81,6 +81,18 @@ export interface ImageWorkflowInput extends SequenceWorkflowContext {
    * workflow appends a `user-edit` variant row.
    */
   userEditedPrompt?: boolean;
+  /**
+   * Variant-only mode (#547). When true, the run NEVER touches the live primary
+   * `frames.*` image/video columns — it writes only this model's
+   * `frame_variants` row. (See `persistImageResult`'s `variantOnly` branch and
+   * the workflow's set-generating/onFailure guards for the authoritative set of
+   * skipped columns.) Used by "add a model to an existing sequence" so a new
+   * model lands as a selectable alternate without repointing the primary,
+   * tripping staleness, or invalidating the frame's video. Promotion to primary
+   * happens later via an explicit "Set". Skips divergence detection entirely
+   * (there is no primary to protect).
+   */
+  variantOnly?: boolean;
 }
 
 /**
@@ -123,9 +135,13 @@ export interface StoryboardWorkflowInput extends SequenceWorkflowContext {
   };
   /** Multiple image models for variant generation (first is primary) */
   imageModels?: TextToImageModel[];
+  /** Multiple video models for variant generation (first is primary) */
+  videoModels?: ImageToVideoModel[];
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
+  /** Multiple audio models for variant generation (first is primary) */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
   /** Talent IDs suggested by user for AI-assisted casting */
   suggestedTalentIds?: string[];
   /** Location IDs suggested by user for visual consistency */
@@ -145,9 +161,13 @@ export interface AnalyzeScriptWorkflowInput extends SequenceWorkflowContext {
   /** Multiple image models for variant generation (first is primary) */
   imageModels?: TextToImageModel[];
   videoModel?: ImageToVideoModel;
+  /** Multiple video models for variant generation (first is primary) */
+  videoModels?: ImageToVideoModel[];
   autoGenerateMotion?: boolean;
   autoGenerateMusic?: boolean;
   musicModel?: keyof typeof AUDIO_MODELS;
+  /** Multiple audio models for variant generation (first is primary) */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
   /** Talent IDs suggested by user for AI-assisted casting */
   suggestedTalentIds?: string[];
   /** Location IDs suggested by user for visual consistency */
@@ -177,6 +197,27 @@ export type SceneSplitWorkflowResult = {
 };
 
 /**
+ * Element sheet workflow input — generates a canonical reference image for
+ * each element-bible entry that has no user-uploaded reference (recurring
+ * products/objects detected during scene split) and ingests them as
+ * `sequence_elements` rows so frame generation can attach them.
+ */
+export interface ElementSheetWorkflowInput extends UserWorkflowContext {
+  sequenceId: string;
+  /** Element bible entries with no matching uploaded element */
+  entries: ElementBibleEntry[];
+  /** Image model to use (defaults to DEFAULT_IMAGE_MODEL) */
+  imageModel?: TextToImageModel;
+  /** Sequence style config to keep references on-style */
+  styleConfig?: StyleConfig;
+}
+
+export interface ElementSheetWorkflowResult {
+  /** Generated + ingested elements — the run fails if any entry failed */
+  elements: SequenceElementMinimal[];
+}
+
+/**
  * Motion generation workflow input
  */
 export interface MotionWorkflowInput extends SequenceWorkflowContext {
@@ -189,6 +230,12 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
   motionBucket?: number;
   aspectRatio?: AspectRatio; // "16:9", "9:16", "1:1"
   /**
+   * For audio-capable models (kling v3, veo3), pass `false` to suppress the
+   * model's native audio output (sfx/ambient/lip-sync). Omit to use the API
+   * schema default (true for audio-capable models).
+   */
+  generateAudio?: boolean;
+  /**
    * `true` when `prompt` came from a user edit (typed in the UI). `false` for
    * auto paths (batch generation, smart-retry) where `prompt` was produced by
    * `resolveMotionPrompt` and may include model-specific dialogue/audio
@@ -196,6 +243,14 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    * the workflow appends a `user-edit` variant row.
    */
   userEditedPrompt?: boolean;
+  /**
+   * Variant-only mode (#547). When true, the run NEVER touches the legacy
+   * `frames.video*` / `motionModel` columns — it writes only this model's
+   * `frame_variants` row. Used by "add a video model to an existing sequence"
+   * so the new model lands as a selectable alternate without repointing the
+   * primary video. Promotion happens later via an explicit "Set".
+   */
+  variantOnly?: boolean;
 }
 
 /**
@@ -243,13 +298,16 @@ export type RegenerateFrameSnapshot = {
   characterSheetHashes: string[];
   /** Sorted location-sheet input_hashes referenced by this frame. */
   locationSheetHashes: string[];
+  /** Sorted element reference-image identities referenced by this frame. */
+  elementReferenceHashes: string[];
   /** Reference image descriptions used for image generation. */
   characterRefs: ReferenceImageDescription[];
   locationRefs: ReferenceImageDescription[];
   /**
    * Per-frame hash of `(prompt, model, aspect, characterSheetHashes,
-   * locationSheetHashes)`. Stored on the artifact row at write time and
-   * compared to a freshly recomputed hash to detect divergence.
+   * locationSheetHashes, elementReferenceHashes)`. Stored on the artifact row
+   * at write time and compared to a freshly recomputed hash to detect
+   * divergence.
    */
   snapshotInputHash: string;
 };
@@ -331,18 +389,6 @@ export type TalentCharacterMatch = {
 };
 
 /**
- * Result from talent matching service
- */
-export type TalentMatchResult = {
-  /** Successfully matched talent to characters */
-  matches: TalentCharacterMatch[];
-  /** Talent IDs that couldn't be matched to any character */
-  unusedTalentIds: string[];
-  /** Talent names that couldn't be matched (for display) */
-  unusedTalentNames: string[];
-};
-
-/**
  * Talent matching workflow input
  */
 export interface TalentMatchingWorkflowInput extends SequenceWorkflowContext {
@@ -373,7 +419,7 @@ export interface CharacterBibleWorkflowInput extends SequenceWorkflowContext {
   styleConfig?: StyleConfig;
 }
 
-export type FrameMapping = Array<{ sceneId: string; frameId: string }>;
+type FrameMapping = Array<{ sceneId: string; frameId: string }>;
 
 export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   scenes: Scene[];
@@ -398,6 +444,14 @@ export interface VisualPromptSceneWorkflowInput extends SequenceWorkflowContext 
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameId?: string;
+  /**
+   * Stream incremental `fullPrompt` deltas over the per-frame realtime
+   * channel while the LLM generates. Set by the explicit "Regenerate Prompt"
+   * button so the active viewer sees the prompt fill in live; left unset by
+   * script-analysis / auto-staleness paths so we don't burn realtime
+   * publishes on workflows nobody is watching.
+   */
+  emitStreaming?: boolean;
 }
 
 export interface MotionPromptWorkflowInput extends SequenceWorkflowContext {
@@ -422,16 +476,12 @@ export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext 
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameId?: string;
+  /** See {@link VisualPromptSceneWorkflowInput.emitStreaming}. */
+  emitStreaming?: boolean;
 }
 /**
  * Workflow result types
  */
-export interface ImageWorkflowResult {
-  imageUrl: string;
-  frameId?: string;
-  sequenceId?: string;
-}
-
 export interface MotionWorkflowResult {
   videoUrl: string;
   duration?: number;
@@ -493,33 +543,6 @@ export interface LibraryTalentSheetWorkflowResult {
   sheetImagePath?: string;
   headshotImageUrl?: string;
   headshotImagePath?: string;
-}
-
-/**
- * Merge video workflow input
- * Stitches all frame videos into a single merged video
- */
-export interface MergeVideoWorkflowInput extends SequenceWorkflowContext {
-  /** Ordered list of video URLs to merge */
-  videoUrls: string[];
-  /**
-   * Ordered list of source frame video identities for input-hashing,
-   * parallel to `videoUrls`. Each entry is `{ kind: 'variantHash', hash }`
-   * when the source frame's video has an `input_hash` (cascades upstream
-   * staleness), or `{ kind: 'url', url }` for legacy frames without one.
-   * Frozen at trigger time; the workflow re-resolves the live hashes for
-   * within-run drift detection.
-   */
-  sourceFrameVideoHashes?: SequenceVideoFrameSource[];
-  /** Target FPS for output (1-60, defaults to lowest of inputs) */
-  targetFps?: number;
-  /** Target resolution (512-2048 per dimension) */
-  resolution?: { width: number; height: number };
-}
-
-export interface MergeVideoWorkflowResult {
-  mergedVideoUrl: string;
-  mergedVideoPath: string | null;
 }
 
 /**
@@ -634,19 +657,6 @@ export interface LocationMatchingWorkflowOutput {
   matches: LibraryLocationMatch[];
 }
 /**
- * Regenerate frames workflow input for locations
- * Bulk regenerates images for frames at a specific location after recast
- */
-export interface RegenerateLocationFramesWorkflowInput extends SequenceWorkflowContext {
-  /** Frame IDs to regenerate */
-  frameIds: string[];
-  /** Location ID that triggered regeneration (for logging/tracking) */
-  triggeringLocationId: string;
-  /** Image model to use */
-  imageModel?: TextToImageModel;
-}
-
-/**
  * Recast location workflow input
  * Orchestrates location sheet generation + frame regeneration for recast
  */
@@ -709,33 +719,19 @@ export interface MusicWorkflowInput extends SequenceWorkflowContext {
   duration: number;
   /** Audio model to use */
   model?: keyof typeof AUDIO_MODELS;
+  /**
+   * Whether this model owns the live `sequences.music*` columns (#546). In a
+   * multi-model fan-out only the primary (audioModels[0]) writes the shared
+   * sequence row + drives `musicStatus`; secondary models persist only their
+   * own `sequence_music_variants` row and emit model-scoped events. Defaults
+   * to true for single-model / legacy callers that don't set it.
+   */
+  isPrimary?: boolean;
 }
 
 export interface MusicWorkflowResult {
   audioUrl: string;
   duration?: number;
-}
-
-/**
- * Merge audio+video workflow input
- * Muxes a music track onto the merged video to produce the final output.
- *
- * The final video is a function of `(merged_video_variant, music_variant)`.
- * The variant ids identify which row in `sequence_video_variants` /
- * `sequence_music_variants` was used; the workflow resolves the source urls
- * by id (`getVideoById` / `getMusicById`) so the input cannot drift from the
- * stored variant.
- */
-export interface MergeAudioVideoWorkflowInput extends SequenceWorkflowContext {
-  /** Source merged-video variant id (from `sequence_video_variants`). */
-  mergedVideoVariantId: string;
-  /** Source music variant id (from `sequence_music_variants`). */
-  musicVariantId: string;
-}
-
-export interface MergeAudioVideoWorkflowResult {
-  mergedVideoUrl: string;
-  mergedVideoPath: string | null;
 }
 
 /**
@@ -748,15 +744,36 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
   frames: Array<{
     frameId: string;
     imageUrl: string;
+    /**
+     * Prompt assembled for the primary model. Used directly for single-model
+     * runs and as the fallback when `motionPrompt` is absent. For multi-model
+     * fan-out, `motion-batch` re-assembles per model from `motionPrompt`.
+     */
     prompt: string;
     model?: ImageToVideoModel;
+    /**
+     * Structured motion prompt (#545). When present, `motion-batch` assembles
+     * a model-specific prompt for each model in `videoModels` via
+     * `assembleMotionPrompt`. Absent on manual single-model paths, which pass
+     * a pre-assembled `prompt` instead.
+     */
+    motionPrompt?: MotionPrompt;
     duration?: number;
     fps?: number;
     motionBucket?: number;
     aspectRatio?: AspectRatio;
+    /** See `MotionWorkflowInput.generateAudio`. */
+    generateAudio?: boolean;
     /** See `MotionWorkflowInput.userEditedPrompt`. */
     userEditedPrompt?: boolean;
   }>;
+  /**
+   * Video models to generate for every frame (#545). First is primary (its
+   * output also lands in the legacy `frames.video*` columns); the rest are
+   * alternates stored only in `frame_variants`. When absent, each frame's own
+   * `model` is used (single-model behaviour).
+   */
+  videoModels?: ImageToVideoModel[];
   /** When true, generate music in parallel and mux into final video */
   includeMusic: boolean;
   /** Music config (required when includeMusic=true) */
@@ -766,6 +783,21 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
     duration: number;
     model?: keyof typeof AUDIO_MODELS;
   };
+  /**
+   * Audio models to generate for the sequence (#546). First is primary (its
+   * track also lands on the live `sequences.music*` columns); the rest are
+   * alternates stored as separate primary rows in `sequence_music_variants`
+   * keyed by (sequenceId, model). When absent, falls back to `music.model`
+   * (single-model behaviour). Each model reuses `music.prompt/tags/duration`.
+   */
+  audioModels?: (keyof typeof AUDIO_MODELS)[];
+  /**
+   * Variant-only mode (#547), threaded onto every per-frame motion child. When
+   * true, no frame writes its video to the legacy `frames.video*` columns —
+   * each model lands only in `frame_variants`. Used by "add a video model to an
+   * existing sequence" so it never repoints the primary video.
+   */
+  variantOnly?: boolean;
 }
 
 /**
@@ -808,7 +840,14 @@ export interface FrameImagesWorkflowInput extends SequenceWorkflowContext {
 }
 
 export interface FrameImagesWorkflowResult {
-  imageUrls: string[];
+  /**
+   * Primary image URL per scene, ALIGNED to the input
+   * `scenesWithVisualPrompts` order — a failed scene keeps its slot as
+   * `null`. Consumers index this by scene position (analyze-script phase 5),
+   * so compacting failures out would silently pair the wrong image with the
+   * wrong scene.
+   */
+  imageUrls: (string | null)[];
 }
 
 /**
@@ -825,6 +864,13 @@ export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   videoModel?: ImageToVideoModel;
+  /**
+   * Multiple video models for variant generation (first is primary). Only the
+   * primary is used here for model-aware duration snapping; the structured
+   * motion prompts produced are model-independent and assembled per-model
+   * downstream in `motion-batch`.
+   */
+  videoModels?: ImageToVideoModel[];
 }
 
 export interface MotionMusicPromptsWorkflowResult {
@@ -847,4 +893,59 @@ export interface ElementVisionWorkflowResult {
   elementId: string;
   description: string;
   consistencyTag: string;
+  /** Final token after any vision-driven auto-rename. */
+  token: string;
 }
+
+/**
+ * Replace element workflow input
+ * Orchestrates element image swap + per-frame image edits for affected frames.
+ *
+ * Per-frame behaviour: invokes `image-workflow` with the existing frame
+ * thumbnail as the PRIMARY SOURCE and the new element image as an ELEMENT REF.
+ * The image edit endpoint swaps the element while preserving the rest of the
+ * frame — this is by design for elements (vs cast/location which fully
+ * regenerate the frame).
+ */
+export interface ReplaceElementWorkflowInput extends SequenceWorkflowContext {
+  /** Always present for this workflow — narrowed from the optional base type. */
+  sequenceId: string;
+  elementId: string;
+  /** Token of the element being replaced (for logging + edit prompt) */
+  token: string;
+  /** Description of the prior element (for the edit prompt; null if vision never ran) */
+  previousDescription: string | null;
+  /** New image URL (already uploaded to R2 and persisted on the element row) */
+  newImageUrl: string;
+  /** Original filename of the new image (for vision analysis context) */
+  newFilename: string;
+  /** Frame IDs to edit using the new element */
+  affectedFrameIds: string[];
+  /** Image model to use for the edit (defaults to nano_banana_2 for edit support) */
+  imageModel?: TextToImageModel;
+}
+
+export interface ReplaceElementWorkflowResult {
+  elementId: string;
+  successCount: number;
+  failedCount: number;
+}
+
+/**
+ * Worker env — generated by `bun cf:typegen` (`wrangler types`) into the
+ * COMMITTED `worker-configuration.d.ts` (Cloudflare's recommendation for
+ * CI), which declares the runtime types (`WorkflowEntrypoint`,
+ * `WorkflowStep`, `WorkflowEvent`, `Workflow`, `WorkflowInstance`) and
+ * `Cloudflare.Env` globally. `bun dev` (via the Cloudflare vite plugin)
+ * regenerates it automatically; after a `wrangler.jsonc` change, commit the
+ * regenerated file. Note the var (non-binding) entries come from
+ * `.env.local` at generation time, so regenerate on a machine with a
+ * complete env file (`bun setup`).
+ *
+ * Every workflow binding is typed precisely (payload derived from each
+ * entrypoint's `run` signature), so `this.env.X_WORKFLOW` needs no cast and
+ * a binding missing from `wrangler.jsonc` fails typecheck at the access
+ * site. The remaining runtime guard (deploy-time config drift) lives in
+ * `spawnAndAwaitChild`.
+ */
+export type CloudflareEnv = Cloudflare.Env;

@@ -10,7 +10,7 @@
  *   - divergent: a character sheet was re-hashed mid-flight → alternate write
  */
 
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import type { NewFrame, NewFrameVariant } from '@/lib/db/schema';
 import type { VariantType } from '@/lib/db/schema/frame-variants';
 import type {
@@ -27,6 +27,19 @@ import {
   persistImageResult,
   type SceneForHash,
 } from './image-workflow-snapshot';
+
+/** The `generation.image:progress` payloads `persistImageResult` emits — typed
+ *  so the emit spies don't fall back to `unknown`. */
+type EmittedImageProgress = {
+  event: string;
+  payload: {
+    frameId: string;
+    status: 'pending' | 'completed';
+    model: string;
+    thumbnailUrl?: string;
+    variantOnly?: boolean;
+  };
+};
 
 const baseScene: FrameImageSceneSnapshot = {
   sceneId: 's1',
@@ -460,7 +473,7 @@ describe('persistImageResult — orchestration', () => {
       variantsInserts,
       callOrder,
     } = buildScopedDbSpy();
-    const emits: Array<{ event: string; payload: unknown }> = [];
+    const emits: EmittedImageProgress[] = [];
 
     const outcome = await persistImageResult({
       scopedDb,
@@ -489,19 +502,26 @@ describe('persistImageResult — orchestration', () => {
       'frameVariants.insertDivergent',
     ]);
 
-    const frameUpdate = framesUpdates[0].data;
+    const [frameUpdateCall] = framesUpdates;
+    if (!frameUpdateCall)
+      throw new Error('test setup: expected frames.update call');
+    const frameUpdate = frameUpdateCall.data;
     expect(frameUpdate.thumbnailUrl).toBeNull();
     expect(frameUpdate.thumbnailPath).toBeNull();
     expect(frameUpdate.thumbnailStatus).toBe('pending');
     expect(frameUpdate.thumbnailInputHash).toBeNull();
 
-    const variantRevert = variantsUpdates[0].data;
+    const [variantRevertCall] = variantsUpdates;
+    if (!variantRevertCall)
+      throw new Error('test setup: expected frameVariants.update call');
+    const variantRevert = variantRevertCall.data;
     expect(variantRevert.url).toBeNull();
     expect(variantRevert.previewUrl).toBeNull();
     expect(variantRevert.status).toBe('pending');
     expect(variantRevert.inputHash).toBeNull();
 
-    const divergentRow = variantsInserts[0];
+    const [divergentRow] = variantsInserts;
+    if (!divergentRow) throw new Error('test setup: expected divergent row');
     expect(divergentRow.frameId).toBe('f1');
     expect(divergentRow.sequenceId).toBe('seq1');
     expect(divergentRow.variantType).toBe('image');
@@ -527,7 +547,7 @@ describe('persistImageResult — orchestration', () => {
       variantsInserts,
       callOrder,
     } = buildScopedDbSpy();
-    const emits: Array<{ event: string; payload: unknown }> = [];
+    const emits: EmittedImageProgress[] = [];
 
     const outcome = await persistImageResult({
       scopedDb,
@@ -551,12 +571,18 @@ describe('persistImageResult — orchestration', () => {
       'frameVariants.updateByFrameAndModel',
     ]);
 
-    const frameUpdate = framesUpdates[0].data;
+    const [frameUpdateCall] = framesUpdates;
+    if (!frameUpdateCall)
+      throw new Error('test setup: expected frames.update call');
+    const frameUpdate = frameUpdateCall.data;
     expect(frameUpdate.thumbnailUrl).toBe(upload.url);
     expect(frameUpdate.thumbnailStatus).toBe('completed');
     expect(frameUpdate.thumbnailInputHash).toBe('snapshot-abc');
 
-    const variantWrite = variantsUpdates[0].data;
+    const [variantWriteCall] = variantsUpdates;
+    if (!variantWriteCall)
+      throw new Error('test setup: expected frameVariants.update call');
+    const variantWrite = variantWriteCall.data;
     expect(variantWrite.url).toBe(upload.url);
     expect(variantWrite.status).toBe('completed');
     expect(variantWrite.inputHash).toBe('snapshot-abc');
@@ -580,7 +606,7 @@ describe('persistImageResult — orchestration', () => {
   it('non-snapshot mode (snapshotHash null): convergent write with null inputHash, NO insertDivergent', async () => {
     const { scopedDb, framesUpdates, variantsUpdates, variantsInserts } =
       buildScopedDbSpy();
-    const emits: Array<{ event: string; payload: unknown }> = [];
+    const emits: EmittedImageProgress[] = [];
 
     const outcome = await persistImageResult({
       scopedDb,
@@ -598,8 +624,14 @@ describe('persistImageResult — orchestration', () => {
     });
 
     expect(outcome.status).toBe('convergent');
-    expect(framesUpdates[0].data.thumbnailInputHash).toBeNull();
-    expect(variantsUpdates[0].data.inputHash).toBeNull();
+    const [frameUpdateCall] = framesUpdates;
+    if (!frameUpdateCall)
+      throw new Error('test setup: expected frames.update call');
+    expect(frameUpdateCall.data.thumbnailInputHash).toBeNull();
+    const [variantWriteCall] = variantsUpdates;
+    if (!variantWriteCall)
+      throw new Error('test setup: expected frameVariants.update call');
+    expect(variantWriteCall.data.inputHash).toBeNull();
     expect(variantsInserts).toEqual([]);
   });
 
@@ -624,5 +656,62 @@ describe('persistImageResult — orchestration', () => {
     expect(framesUpdates.length).toBe(1);
     expect(variantsUpdates).toEqual([]);
     expect(variantsInserts).toEqual([]);
+  });
+
+  it('variant-only (#547): writes ONLY the variant row — no frames.update, no divergence, even when hashes differ', async () => {
+    const {
+      scopedDb,
+      framesUpdates,
+      variantsUpdates,
+      variantsInserts,
+      callOrder,
+    } = buildScopedDbSpy();
+    const emits: EmittedImageProgress[] = [];
+
+    const outcome = await persistImageResult({
+      scopedDb,
+      frameId: 'f1',
+      sequenceId: 'seq1',
+      model: 'nano_banana_2',
+      upload,
+      // Hashes differ — convergent/divergent would diverge, but variant-only
+      // skips that path entirely (there is no primary to protect).
+      snapshotHash: 'snapshot-abc',
+      currentHash: 'current-xyz',
+      promptHash: 'prompt-1',
+      variantOnly: true,
+      emit: async (event, payload) => {
+        emits.push({ event, payload });
+      },
+      now: () => NOW,
+    });
+
+    expect(outcome).toEqual({ status: 'variant-only', imageUrl: upload.url });
+    // The primary columns are never touched, and nothing diverges.
+    expect(framesUpdates).toEqual([]);
+    expect(variantsInserts).toEqual([]);
+    expect(callOrder).toEqual(['frameVariants.updateByFrameAndModel']);
+
+    const [variantWrite] = variantsUpdates;
+    if (!variantWrite) throw new Error('expected variant update call');
+    expect(variantWrite.variantType).toBe('image');
+    expect(variantWrite.model).toBe('nano_banana_2');
+    expect(variantWrite.data.url).toBe(upload.url);
+    expect(variantWrite.data.status).toBe('completed');
+    expect(variantWrite.data.inputHash).toBe('snapshot-abc');
+
+    expect(emits).toEqual([
+      {
+        event: 'generation.image:progress',
+        payload: {
+          frameId: 'f1',
+          status: 'completed',
+          thumbnailUrl: upload.url,
+          model: 'nano_banana_2',
+          // Flags the cache updater not to repoint the primary thumbnail (#547).
+          variantOnly: true,
+        },
+      },
+    ]);
   });
 });

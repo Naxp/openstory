@@ -1,16 +1,25 @@
 /**
- * Location Sheet Generation Workflow
+ * Cloudflare Workflows port of `locationSheetWorkflow`.
  *
- * Generates location reference images (establishing shots) for visual consistency.
- * These images are later used as reference images when generating scene images.
- */
+ * Mirrors the QStash version (`src/lib/workflows/location-sheet-workflow.ts`)
+ * step for step — same step names, same control flow, same side effects. The
+ * only differences are:
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads the workflow run id from `event.instanceId` instead of
+ *     `context.workflowRunId`.
+ *   - Calls the snapshot DTO computers directly instead of going through
+ *     the `context.snapshot.*` extension. */
 
-import { uploadResponse } from '@/lib/storage/upload-response';
 import { DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import {
   deductWorkflowCredits,
   extractImageCost,
 } from '@/lib/billing/workflow-deduction';
+import type { ScopedDb } from '@/lib/db/scoped';
 import { generateId } from '@/lib/db/id';
 import {
   generateImageWithProvider,
@@ -19,37 +28,49 @@ import {
 import { buildLocationSheetPrompt } from '@/lib/prompts/location-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
+import { uploadResponse } from '@/lib/storage/upload-response';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
-import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
 import type {
   LocationSheetWorkflowInput,
   LocationSheetWorkflowResult,
 } from '@/lib/workflow/types';
-import {
-  computeLocationSheetHashCurrent,
-  computeLocationSheetHashFromDto,
-} from './sheet-snapshots';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import {
   decideSheetDivergence,
   saveDivergentLocationSheet,
-} from './sheet-divergence';
+} from '@/lib/workflows/sheet-divergence';
+import {
+  computeLocationSheetHashCurrent,
+  computeLocationSheetHashFromDto,
+} from '@/lib/workflows/sheet-snapshots';
+import { getLogger } from '@/lib/observability/logger';
 
-export const locationSheetWorkflow = createScopedWorkflow<
-  LocationSheetWorkflowInput,
-  LocationSheetWorkflowResult
->(
-  async (context, scopedDb) => {
-    const input = context.requestPayload;
+const logger = getLogger(['openstory', 'workflow', 'location-sheet']);
 
-    await context.run('validate-snapshot', async () => {
-      if (context.snapshot) {
-        await context.snapshot.validate();
+export class LocationSheetWorkflow extends OpenStoryWorkflowEntrypoint<LocationSheetWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<LocationSheetWorkflowInput>>,
+    step: WorkflowStep,
+    scopedDb: ScopedDb
+  ): Promise<LocationSheetWorkflowResult> {
+    const input = event.payload;
+    const workflowRunId = event.instanceId;
+
+    await step.do('validate-snapshot', async () => {
+      if (input.snapshotInputHash) {
+        const expected = input.snapshotInputHash;
+        const recomputed = await computeLocationSheetHashFromDto(input);
+        if (recomputed !== expected) {
+          throw new WorkflowValidationError(
+            'snapshotInputHash does not match the inlined DTO; payload was tampered with or serialized inconsistently'
+          );
+        }
       }
     });
 
     // Emit realtime event that generation has started
-    await context.run('emit-start-event', async () => {
+    await step.do('emit-start-event', async () => {
       if (input.sequenceId && input.locationDbId) {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.location-sheet:progress',
@@ -62,7 +83,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
     });
 
     // Step 1: Validate and build prompt
-    const generationParams: ImageGenerationParams = await context.run(
+    const generationParams: ImageGenerationParams = await step.do(
       'build-prompt',
       async () => {
         // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
@@ -73,9 +94,8 @@ export const locationSheetWorkflow = createScopedWorkflow<
         const hasLibraryLocation = !!(
           input.referenceImageUrl || input.libraryLocationDescription
         );
-        console.log(
-          '[LocationSheetWorkflow]',
-          `Starting reference generation for location ${input.locationName}${hasLibraryLocation ? ' with library location reference' : ''}`
+        logger.info(
+          `[LocationSheetWorkflow:cf] Starting reference generation for location ${input.locationName}${hasLibraryLocation ? ' with library location reference' : ''}`
         );
 
         // Build library location overrides if data is provided
@@ -109,25 +129,22 @@ export const locationSheetWorkflow = createScopedWorkflow<
     );
 
     // Step 2: Generate the location reference image
-    const imageResult = await context.run(
-      'generate-reference-image',
-      async () => {
-        console.log(
-          '[LocationSheetWorkflow]',
-          `Generating reference for ${input.locationName} with model ${generationParams.model}`
-        );
+    const imageResult = await step.do('generate-reference-image', async () => {
+      logger.info(
+        `[LocationSheetWorkflow:cf] Generating reference for ${input.locationName} with model ${generationParams.model}`
+      );
 
-        return await generateImageWithProvider(generationParams, { scopedDb });
-      }
-    );
+      return await generateImageWithProvider(generationParams, { scopedDb });
+    });
 
     // Deduct credits for image generation (skip if team used own fal key)
-    await context.run('deduct-credits', async () => {
+    await step.do('deduct-credits', async () => {
       await deductWorkflowCredits({
         scopedDb,
         costMicros: extractImageCost(imageResult.metadata),
         usedOwnKey: imageResult.metadata.usedOwnKey,
         description: `Location sheet (${generationParams.model})`,
+        idempotencyKey: `${event.instanceId}:sheet`,
         metadata: {
           model: generationParams.model,
           locationName: input.locationName,
@@ -137,7 +154,11 @@ export const locationSheetWorkflow = createScopedWorkflow<
       });
     });
 
-    let referenceImageUrl = imageResult.imageUrls[0];
+    const initialReferenceImageUrl = imageResult.imageUrls[0];
+    if (!initialReferenceImageUrl) {
+      throw new Error('Location sheet generation did not return an image URL');
+    }
+    let referenceImageUrl: string = initialReferenceImageUrl;
     let referenceImagePath: string | undefined = undefined;
 
     if (input.locationDbId && input.teamId && input.sequenceId) {
@@ -145,17 +166,17 @@ export const locationSheetWorkflow = createScopedWorkflow<
       // `string | undefined`.
       const locationDbId = input.locationDbId;
       const sequenceId = input.sequenceId;
+      const teamId = input.teamId;
 
       // Step 3: Upload to R2 storage
-      const storageResult = await context.run('upload-to-storage', async () => {
+      const storageResult = await step.do('upload-to-storage', async () => {
         const imageUrl = imageResult.imageUrls[0];
         if (!imageUrl) {
           throw new Error('No image URL returned from generation');
         }
 
-        console.log(
-          '[LocationSheetWorkflow]',
-          `Uploading reference to storage for ${input.locationName}`
+        logger.info(
+          `[LocationSheetWorkflow:cf] Uploading reference to storage for ${input.locationName}`
         );
 
         // Fetch and stream directly to R2
@@ -168,7 +189,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
 
         // Build storage path: locations/{teamId}/{sequenceId}/{locationDbId}/{uniqueId}.png
         const uniqueId = generateId();
-        const storagePath = `${input.teamId}/${input.sequenceId}/${input.locationDbId}/${uniqueId}.png`;
+        const storagePath = `${teamId}/${sequenceId}/${locationDbId}/${uniqueId}.png`;
 
         const result = await uploadResponse(
           response,
@@ -190,22 +211,25 @@ export const locationSheetWorkflow = createScopedWorkflow<
       // artifact as a variant row (the helper emits `stale:detected`) and
       // skip the primary update so the in-flight run does not overwrite a
       // now-stale reference.
-      const snapshot = context.snapshot;
-      const reconcileOutcome = await context.run(
+      const snapshotInputHash = input.snapshotInputHash ?? null;
+      const reconcileOutcome = await step.do(
         'reconcile-database',
         async (): Promise<{ kind: 'convergent' } | { kind: 'divergent' }> => {
-          console.log(
-            '[LocationSheetWorkflow]',
-            `Updating database for ${input.locationName}`
+          logger.info(
+            `[LocationSheetWorkflow:cf] Updating database for ${input.locationName}`
           );
 
+          const currentInputHash = snapshotInputHash
+            ? await computeLocationSheetHashCurrent(input, scopedDb)
+            : null;
+
           const decision = decideSheetDivergence(
-            snapshot?.snapshotInputHash,
-            snapshot ? await snapshot.computeCurrent() : null
+            snapshotInputHash,
+            currentInputHash
           );
 
           if (decision.kind === 'divergent') {
-            console.warn('[LocationSheetWorkflow] divergence detected', {
+            logger.warn('[LocationSheetWorkflow:cf] divergence detected', {
               locationDbId,
               snapshotInputHash: decision.snapshotInputHash,
               currentInputHash: decision.currentInputHash,
@@ -221,7 +245,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
               model: generationParams.model,
               url: storageResult.url,
               storagePath: storageResult.path,
-              workflowRunId: context.workflowRunId,
+              workflowRunId,
               snapshotInputHash: decision.snapshotInputHash,
             });
             return { kind: 'divergent' };
@@ -231,7 +255,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
             locationDbId,
             storageResult.url,
             storageResult.path,
-            snapshot?.snapshotInputHash ?? null
+            snapshotInputHash
           );
           return { kind: 'convergent' };
         }
@@ -249,7 +273,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
         // null referenceImageUrl; the user can manually retry. Either way,
         // flipping status to `completed` reflects "generation finished,
         // primary unchanged, divergent variant saved alongside".
-        await context.run('settle-divergent-status', async () => {
+        await step.do('settle-divergent-status', async () => {
           await scopedDb.sequenceLocations.updateReferenceStatus(
             locationDbId,
             'completed'
@@ -262,9 +286,8 @@ export const locationSheetWorkflow = createScopedWorkflow<
             }
           );
         });
-        console.log(
-          '[LocationSheetWorkflow]',
-          `Diverged for ${input.locationName}; saved as variant`
+        logger.info(
+          `[LocationSheetWorkflow:cf] Diverged for ${input.locationName}; saved as variant`
         );
         return {
           referenceImageUrl,
@@ -275,7 +298,7 @@ export const locationSheetWorkflow = createScopedWorkflow<
     }
 
     // Emit realtime event that generation is complete
-    await context.run('emit-complete-event', async () => {
+    await step.do('emit-complete-event', async () => {
       if (input.sequenceId && input.locationDbId) {
         await getGenerationChannel(input.sequenceId).emit(
           'generation.location-sheet:progress',
@@ -288,9 +311,8 @@ export const locationSheetWorkflow = createScopedWorkflow<
       }
     });
 
-    console.log(
-      '[LocationSheetWorkflow]',
-      `Location reference workflow completed for ${input.locationName}`
+    logger.info(
+      `[LocationSheetWorkflow:cf] Location reference workflow completed for ${input.locationName}`
     );
 
     const result: LocationSheetWorkflowResult = {
@@ -300,22 +322,30 @@ export const locationSheetWorkflow = createScopedWorkflow<
     };
 
     return result;
-  },
-  {
-    failureFunction: async ({ context, scopedDb, failResponse }) => {
-      const input = context.requestPayload;
-      const error = sanitizeFailResponse(failResponse);
+  }
 
-      // Mark location reference as failed
-      if (input.locationDbId && input.teamId) {
-        await scopedDb.sequenceLocations.updateReferenceStatus(
-          input.locationDbId,
-          'failed',
-          error
-        );
+  protected override async onFailure({
+    event,
+    error,
+    scopedDb,
+  }: {
+    event: Readonly<WorkflowEvent<LocationSheetWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    const input = event.payload;
 
-        // Emit failure event for realtime UI update
-        if (input.sequenceId) {
+    // Mark location reference as failed
+    if (input.locationDbId && input.teamId) {
+      await scopedDb.sequenceLocations.updateReferenceStatus(
+        input.locationDbId,
+        'failed',
+        error
+      );
+
+      // Emit failure event for realtime UI update
+      if (input.sequenceId) {
+        try {
           await getGenerationChannel(input.sequenceId).emit(
             'generation.location-sheet:progress',
             {
@@ -324,20 +354,19 @@ export const locationSheetWorkflow = createScopedWorkflow<
               error,
             }
           );
+        } catch (emitError) {
+          logger.error(
+            `[LocationSheetWorkflow:cf] Failed to emit failure event for sequence ${input.sequenceId} location ${input.locationDbId}:`,
+            {
+              err: emitError,
+            }
+          );
         }
-
-        console.error(
-          '[LocationSheetWorkflow]',
-          `Reference generation failed for location ${input.locationName}: ${error}`
-        );
       }
 
-      return `Location reference generation failed for ${input.locationName}`;
-    },
-    snapshot: {
-      computeFromDto: (input) => computeLocationSheetHashFromDto(input),
-      computeCurrent: (input, scopedDb) =>
-        computeLocationSheetHashCurrent(input, scopedDb),
-    },
+      logger.error(
+        `[LocationSheetWorkflow:cf] Reference generation failed for location ${input.locationName}: ${error}`
+      );
+    }
   }
-);
+}

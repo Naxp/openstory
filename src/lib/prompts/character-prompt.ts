@@ -10,27 +10,20 @@
 import type { CharacterBibleEntry } from '@/lib/ai/scene-analysis.schema';
 
 import type { CharacterMinimal, StyleConfig } from '@/lib/db/schema';
-import {
-  type PromptWithReferenceImages,
-  type ReferenceImageDescription,
-  buildReferenceImagePrompt,
-} from './reference-image-prompt';
+import { type ReferenceImageDescription } from './reference-image-prompt';
 /**
  * Build a concise character description from character data
  *
  * @param character - Character with flattened fields
  * @returns Concise description string
  */
-export const buildCharacterDescription = (
-  character: CharacterMinimal
-): string => {
+const buildCharacterDescription = (character: CharacterMinimal): string => {
   const parts: string[] = [];
 
   if (character.physicalDescription) {
-    const physicalSummary = character.physicalDescription
-      .split(/[.,]/)[0]
-      .trim();
-    if (physicalSummary.length < 80) {
+    const physicalSummary =
+      character.physicalDescription.split(/[.,]/)[0]?.trim() ?? '';
+    if (physicalSummary.length > 0 && physicalSummary.length < 80) {
       parts.push(physicalSummary);
     }
   }
@@ -57,36 +50,6 @@ export const buildCharacterReferenceImages = (
       description: buildCharacterDescription(c),
       role: 'character' as const,
     }));
-};
-
-/**
- * Build prompt with multi-character reference mapping
- *
- * Enhances the base prompt with character reference information for models
- * that support multiple reference images via the `image_urls` parameter.
- *
- * @param basePrompt - The original visual prompt
- * @param characters - Array of sequence characters with completed sheets
- * @returns Enhanced prompt and array of reference URLs
- *
- * @example
- * ```ts
- * const { prompt, referenceUrls } = buildPromptWithReferences(
- *   "A tense confrontation in the dimly lit bar...",
- *   [jackCharacter, sarahCharacter]
- * );
- * // prompt now includes character reference mapping
- * // referenceUrls = [jackSheetUrl, sarahSheetUrl]
- * ```
- */
-export const buildPromptWithCharacterReferences = (
-  basePrompt: string,
-  characters: CharacterMinimal[]
-): PromptWithReferenceImages => {
-  return buildReferenceImagePrompt(
-    basePrompt,
-    buildCharacterReferenceImages(characters)
-  );
 };
 
 /**
@@ -123,7 +86,7 @@ const formatStyleForSheet = (
  * @param styleConfig - Optional sequence style to apply instead of default studio look
  * @returns Complete prompt string
  */
-export const buildBaseSheetPrompt = (
+const buildBaseSheetPrompt = (
   identitySection: string,
   /** Optional additional instructions (e.g., reference image handling) */
   additionalInstructions: string = '',
@@ -237,6 +200,40 @@ export const buildCastingAttributes = (
     // Regenerate tag from talent identity
     consistencyTag: `${scriptEntry.characterId}_${slugify(talent.talentName)}`,
   };
+};
+
+/**
+ * Apply casting across a whole character bible: every character matched to
+ * library talent gets `buildCastingAttributes` applied (the exact transform the
+ * character-bible workflow persists); unmatched characters pass through
+ * unchanged.
+ *
+ * Used so the visual/motion prompt workflows generate from — and hash — the same
+ * cast bible the DB ends up holding. Without this the prompts hash the raw,
+ * pre-cast bible while staleness verification reads the cast DB row, so every
+ * talent-matched frame reports permanently stale (#867).
+ *
+ * `talentMatches` is typed structurally (not as `TalentCharacterMatch`) to keep
+ * this prompt module free of a workflow-types dependency.
+ */
+export const buildCastCharacterBible = (
+  characterBible: readonly CharacterBibleEntry[],
+  talentMatches: readonly {
+    characterId: string;
+    talentName: string;
+    sheetMetadata?: CharacterBibleEntry;
+  }[]
+): CharacterBibleEntry[] => {
+  const byCharacterId = new Map(talentMatches.map((m) => [m.characterId, m]));
+  return characterBible.map((character) => {
+    const match = byCharacterId.get(character.characterId);
+    if (!match) return character;
+    const cast = buildCastingAttributes(character, {
+      sheetMetadata: match.sheetMetadata,
+      talentName: match.talentName,
+    });
+    return { ...character, ...cast };
+  });
 };
 
 /**

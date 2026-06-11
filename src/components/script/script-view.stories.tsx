@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
+import { AuthGateStub } from '@/components/auth/auth-gate-provider';
 import { styleKeys } from '@/hooks/use-styles';
 import type { Sequence } from '@/lib/db/schema/sequences';
 import { MOCK_SYSTEM_STYLES } from '@/lib/style/style-templates';
@@ -35,11 +36,6 @@ Oh, hi Mom. Yeah, I'm fine. Just... working on a big project.`,
   imageModel: 'nano_banana_pro',
   videoModel: 'kling_v2_5_turbo_pro',
   workflow: null,
-  mergedVideoUrl: null,
-  mergedVideoPath: null,
-  mergedVideoStatus: 'pending',
-  mergedVideoGeneratedAt: null,
-  mergedVideoError: null,
   musicUrl: null,
   musicPath: null,
   musicStatus: 'pending',
@@ -49,7 +45,9 @@ Oh, hi Mom. Yeah, I'm fine. Just... working on a big project.`,
   musicPrompt: null,
   musicTags: null,
   musicPromptInputHash: null,
+  includeMusic: true,
   statusError: null,
+  workflowRunId: null,
   posterUrl: null,
   autoGenerateMotion: false,
   autoGenerateMusic: false,
@@ -94,7 +92,9 @@ const meta: Meta<typeof ScriptView> = {
   decorators: [
     (Story) => (
       <QueryClientProvider client={createQueryClient()}>
-        <Story />
+        <AuthGateStub>
+          <Story />
+        </AuthGateStub>
       </QueryClientProvider>
     ),
   ],

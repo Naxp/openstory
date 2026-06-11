@@ -9,61 +9,56 @@
  * § prompt versioning.
  */
 
-import { type InferInsertModel, type InferSelectModel, sql } from 'drizzle-orm';
+import { type InferSelectModel, sql } from 'drizzle-orm';
 import {
   index,
   integer,
-  sqliteTable,
+  snakeCase,
   text,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 import { generateId } from '../id';
 import { user } from './auth';
-import {
-  PROMPT_VARIANT_SOURCES,
-  type PromptVariantSource,
-} from './frame-prompt-variants';
+import { type PromptVariantSource } from './frame-prompt-variants';
 import { sequences } from './sequences';
 
-export const SEQUENCE_MUSIC_PROMPT_TYPE = 'music' as const;
+const SEQUENCE_MUSIC_PROMPT_TYPE = 'music' as const;
 export type SequenceMusicPromptType = typeof SEQUENCE_MUSIC_PROMPT_TYPE;
-
-export { PROMPT_VARIANT_SOURCES };
 export type { PromptVariantSource };
 
-export const sequenceMusicPromptVariants = sqliteTable(
+export const sequenceMusicPromptVariants = snakeCase.table(
   'sequence_music_prompt_variants',
   {
     id: text()
       .$defaultFn(() => generateId())
       .primaryKey()
       .notNull(),
-    sequenceId: text('sequence_id')
+    sequenceId: text()
       .notNull()
       .references(() => sequences.id, { onDelete: 'cascade' }),
 
-    promptType: text('prompt_type')
+    promptType: text()
       .$type<SequenceMusicPromptType>()
       .default(SEQUENCE_MUSIC_PROMPT_TYPE)
       .notNull(),
 
     // The natural-language music prompt.
-    prompt: text('prompt').notNull(),
+    prompt: text().notNull(),
     // Comma-separated music tags string (mirrors `sequences.musicTags`).
-    tags: text('tags'),
+    tags: text(),
 
-    source: text('source').$type<PromptVariantSource>().notNull(),
+    source: text().$type<PromptVariantSource>().notNull(),
 
     // SHA-256 of the upstream context (musicDesign + analysis model) for AI
     // prompts; null for user-edits.
-    inputHash: text('input_hash'),
+    inputHash: text(),
 
-    analysisModel: text('analysis_model', { length: 100 }),
+    analysisModel: text({ length: 100 }),
 
-    createdAt: integer('created_at', { mode: 'timestamp' })
+    createdAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
-    createdBy: text('created_by').references(() => user.id, {
+    createdBy: text().references(() => user.id, {
       onDelete: 'set null',
     }),
   },
@@ -86,8 +81,5 @@ export const sequenceMusicPromptVariants = sqliteTable(
 );
 
 export type SequenceMusicPromptVariant = InferSelectModel<
-  typeof sequenceMusicPromptVariants
->;
-export type NewSequenceMusicPromptVariant = InferInsertModel<
   typeof sequenceMusicPromptVariants
 >;

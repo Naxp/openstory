@@ -20,6 +20,10 @@
  */
 export {};
 
+import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
+
 // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- env var can be undefined at runtime
 const BASE_URL = process.env.VITE_APP_URL ?? 'http://localhost:3000';
 const API_URL = `${BASE_URL}/api/dev/memory`;
@@ -317,35 +321,44 @@ async function mainLoop() {
   }
 
   if (mode === '--watch') {
-    console.log('Watching memory profile (Ctrl+C to stop)...');
-    let opened = false;
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- intentional infinite loop
-    while (true) {
-      try {
-        const samples = await fetchSamples();
-        const html = generateHTML(samples);
-        await Bun.write(OUTPUT_PATH, html);
-        const peakRSS = samples.length
-          ? toMB(Math.max(...samples.map((s) => s.rss))).toFixed(1)
-          : '0';
-        console.log(
-          `[${new Date().toLocaleTimeString()}] ${samples.length} samples, peak RSS: ${peakRSS} MB`
-        );
-        if (!opened) {
-          Bun.spawn(['open', OUTPUT_PATH]);
-          opened = true;
-        }
-      } catch (error) {
-        console.error(
-          'Fetch error:',
-          error instanceof Error ? error.message : error
-        );
-      }
-      await Bun.sleep(2000);
-    }
+    await watchLoop();
+    return;
   }
 
   // Default: fetch, generate, open
+  await runOnce();
+}
+
+async function watchLoop() {
+  console.log('Watching memory profile (Ctrl+C to stop)...');
+  let opened = false;
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- intentional infinite loop
+  while (true) {
+    try {
+      const samples = await fetchSamples();
+      const html = generateHTML(samples);
+      await writeFile(OUTPUT_PATH, html);
+      const peakRSS = samples.length
+        ? toMB(Math.max(...samples.map((s) => s.rss))).toFixed(1)
+        : '0';
+      console.log(
+        `[${new Date().toLocaleTimeString()}] ${samples.length} samples, peak RSS: ${peakRSS} MB`
+      );
+      if (!opened) {
+        spawn('open', [OUTPUT_PATH], { detached: true, stdio: 'ignore' });
+        opened = true;
+      }
+    } catch (error) {
+      console.error(
+        'Fetch error:',
+        error instanceof Error ? error.message : error
+      );
+    }
+    await sleep(2000);
+  }
+}
+
+async function runOnce() {
   const samples = await fetchSamples();
   if (samples.length === 0) {
     console.log('No memory samples collected yet.');
@@ -354,12 +367,12 @@ async function mainLoop() {
   }
 
   const html = generateHTML(samples);
-  await Bun.write(OUTPUT_PATH, html);
+  await writeFile(OUTPUT_PATH, html);
   console.log(`Generated ${OUTPUT_PATH} with ${samples.length} samples.`);
   console.log(
     `Peak RSS: ${toMB(Math.max(...samples.map((s) => s.rss))).toFixed(1)} MB`
   );
-  Bun.spawn(['open', OUTPUT_PATH]);
+  spawn('open', [OUTPUT_PATH], { detached: true, stdio: 'ignore' });
 }
 
 void mainLoop();

@@ -1,4 +1,3 @@
-import { getEnv } from '#env';
 import { moveFile } from '#storage';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { generateId } from '@/lib/db/id';
@@ -10,10 +9,25 @@ import type { ElementVisionWorkflowInput } from '@/lib/workflow/types';
 import { z } from 'zod';
 import { deriveTokenFromFilename } from './derive-token';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger([
+  'openstory',
+  'sequence-elements',
+  'promote-temp-elements',
+]);
+
 const tempUploadSchema = z.object({
   tempPath: z.string().min(1),
   tempPublicUrl: z.string().url(),
   filename: z.string().min(1),
+  // Optional: vision-suggested token returned by analyzeDraftElementFn during
+  // draft upload. Falls back to filename-derived when missing (legacy clients).
+  token: z.string().min(1).max(100).nullable().optional(),
+  // Optional: pre-computed by analyzeDraftElementFn during draft upload so we
+  // can write the row in `completed` state without re-running vision here.
+  description: z.string().nullable().optional(),
+  consistencyTag: z.string().nullable().optional(),
 });
 
 export type TempElementUpload = z.infer<typeof tempUploadSchema>;
@@ -60,10 +74,7 @@ export async function promoteTempElements(params: {
   for (const upload of uploads) {
     const tempPrefix = `elements/${teamId}/temp/`;
     if (!upload.tempPath.startsWith(tempPrefix)) {
-      console.warn(
-        '[promoteTempElements] Skipping non-temp path:',
-        upload.tempPath
-      );
+      logger.warn('Skipping non-temp path:', { data: upload.tempPath });
       continue;
     }
 
@@ -73,24 +84,24 @@ export async function promoteTempElements(params: {
     const permanentRelative = `${teamId}/${sequenceId}/${newId}.${ext}`;
     const permanentPath = `elements/${permanentRelative}`;
 
-    if (getEnv().E2E_TEST !== 'true') {
-      await moveFile(
-        STORAGE_BUCKETS.ELEMENTS,
-        relativeTempPath,
-        permanentRelative
-      );
-    }
+    await moveFile(
+      STORAGE_BUCKETS.ELEMENTS,
+      relativeTempPath,
+      permanentRelative
+    );
 
-    const publicUrl =
-      getEnv().E2E_TEST === 'true'
-        ? upload.tempPublicUrl
-        : getPublicUrl(STORAGE_BUCKETS.ELEMENTS, permanentRelative);
+    const publicUrl = getPublicUrl(STORAGE_BUCKETS.ELEMENTS, permanentRelative);
 
-    const rawToken = deriveTokenFromFilename(upload.filename);
+    const rawToken =
+      upload.token && upload.token.length > 0
+        ? upload.token
+        : deriveTokenFromFilename(upload.filename);
     const token = await scopedDb.sequenceElements.ensureUniqueToken(
       sequenceId,
       rawToken
     );
+
+    const hasInlineVision = !!upload.description && !!upload.consistencyTag;
 
     const element = await scopedDb.sequenceElements.create({
       id: newId,
@@ -99,10 +110,16 @@ export async function promoteTempElements(params: {
       token,
       imageUrl: publicUrl,
       imagePath: permanentPath,
-      visionStatus: 'pending',
+      description: hasInlineVision ? upload.description : null,
+      consistencyTag: hasInlineVision ? upload.consistencyTag : null,
+      visionStatus: hasInlineVision ? 'completed' : 'pending',
+      visionGeneratedAt: hasInlineVision ? new Date() : null,
     });
 
-    if (triggerVision && getEnv().E2E_TEST !== 'true') {
+    // Skip the async workflow when vision already ran inline during draft
+    // upload (the happy path). Fall back to triggering it when description
+    // is missing (vision call failed / older client).
+    if (triggerVision && !hasInlineVision) {
       await triggerElementVision(
         element.id,
         sequenceId,

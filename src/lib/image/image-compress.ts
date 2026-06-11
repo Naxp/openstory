@@ -1,3 +1,7 @@
+import { getLogger } from '@/lib/observability/logger';
+import { isLocalStorageServing } from '@/lib/storage/buckets';
+
+const logger = getLogger(['openstory', 'image', 'image-compress']);
 /**
  * Image Compression via Cloudflare Image Resizing
  *
@@ -32,10 +36,21 @@ export async function ensureImageUnderLimit(
     return null;
   }
 
+  // Locally-served storage (no R2_PUBLIC_STORAGE_DOMAIN) has no Cloudflare
+  // edge in front of it, so /cdn-cgi/image/ transform URLs don't resolve.
+  // Skip compression and let the oversize image through — rare in dev, and
+  // better than a guaranteed 404.
+  if (isLocalStorageServing()) {
+    logger.warn(
+      `Image exceeds ${(maxBytes / 1024 / 1024).toFixed(1)}MB but local storage serving has no Image Resizing edge — skipping compression`
+    );
+    return null;
+  }
+
   const originalSizeBytes = contentLength ? Number(contentLength) : 0;
 
-  console.log(
-    `[ImageCompress] Image is ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB, using Cloudflare Image Resizing to compress under ${(maxBytes / 1024 / 1024).toFixed(1)}MB limit`
+  logger.info(
+    `Image is ${(originalSizeBytes / 1024 / 1024).toFixed(1)}MB, using Cloudflare Image Resizing to compress under ${(maxBytes / 1024 / 1024).toFixed(1)}MB limit`
   );
 
   // Construct a Cloudflare Image Resizing URL.

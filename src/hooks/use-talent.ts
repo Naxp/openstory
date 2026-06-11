@@ -1,8 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createTalentFn,
   deleteTalentFn,
   generateTalentSheetFn,
+  getPublicTalentByIdFn,
+  getPublicTalentFn,
   getTalentByIdFn,
   getTalentFn,
   presignTalentUploadFn,
@@ -12,6 +14,7 @@ import {
   updateTalentFn,
   deleteTalentMediaFn,
 } from '@/functions/talent';
+import { usePublicOrTeamQuery } from '@/hooks/use-public-or-team-query';
 import { putToR2 } from '@/lib/utils/upload';
 import type {
   CreateTalentInput,
@@ -26,27 +29,41 @@ export const talentKeys = {
   lists: () => [...talentKeys.all, 'list'] as const,
   list: (filters: { favoritesOnly?: boolean }) =>
     [...talentKeys.lists(), filters] as const,
+  publicList: (filters: { favoritesOnly?: boolean }) =>
+    [...talentKeys.lists(), 'public', filters] as const,
   details: () => [...talentKeys.all, 'detail'] as const,
   detail: (id: string) => [...talentKeys.details(), id] as const,
+  publicDetail: (id: string) =>
+    [...talentKeys.details(), 'public', id] as const,
 };
 
 /**
- * Hook to fetch all talent for the current team
+ * Hook to fetch talent. Authenticated users get their team's talent plus
+ * public ("system") talent; anonymous visitors get the public talent catalogue
+ * so they can browse and pre-cast system talent on the public new-sequence
+ * screen and talent library page.
  */
 export function useTalent(options?: { favoritesOnly?: boolean }) {
-  return useQuery({
-    queryKey: talentKeys.list(options ?? {}),
-    queryFn: () => getTalentFn({ data: options }),
+  const filters = options ?? {};
+
+  return usePublicOrTeamQuery({
+    teamKey: talentKeys.list(filters),
+    publicKey: talentKeys.publicList(filters),
+    teamFn: () => getTalentFn({ data: options }),
+    publicFn: () => getPublicTalentFn({ data: options }),
   });
 }
 
 /**
- * Hook to fetch a single talent with all relations
+ * Hook to fetch a single talent with all relations. Anonymous visitors get the
+ * public ("system") talent so they can open a talent detail page read-only.
  */
 export function useTalentById(talentId: string) {
-  return useQuery({
-    queryKey: talentKeys.detail(talentId),
-    queryFn: () => getTalentByIdFn({ data: { talentId } }),
+  return usePublicOrTeamQuery({
+    teamKey: talentKeys.detail(talentId),
+    publicKey: talentKeys.publicDetail(talentId),
+    teamFn: () => getTalentByIdFn({ data: { talentId } }),
+    publicFn: () => getPublicTalentByIdFn({ data: { talentId } }),
     enabled: !!talentId,
   });
 }

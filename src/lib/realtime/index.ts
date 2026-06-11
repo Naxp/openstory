@@ -1,6 +1,11 @@
-import { getRedis } from '#redis';
-import { Realtime } from '@upstash/realtime';
+import { getEnv } from '#env';
 import { z } from 'zod';
+
+import { getLogger } from '@/lib/observability/logger';
+import type { ChannelHistoryMessage } from './realtime-channel.do';
+import type { EventData, EventPaths } from './shared-types';
+
+const logger = getLogger(['openstory', 'realtime', 'index']);
 
 /**
  * Realtime event schema for generation progress streaming.
@@ -29,6 +34,28 @@ export const realtimeSchema = {
       status: z.enum(['generating', 'completed', 'failed']),
       sheetImageUrl: z.string().optional(),
       error: z.string().optional(),
+    }),
+  },
+
+  // Per-frame prompt regeneration events. Lives on its own channel
+  // (`frame-prompt:${frameId}`) so a client only pays the realtime cost while
+  // it's actually viewing the frame, and history replay rebuilds the
+  // streaming-text state for the active prompt type if the user navigates
+  // away and back mid-generation. The `delta` carries the incremental visible
+  // characters of the `fullPrompt` field — extraction happens server-side via
+  // `extractStreamingStringField` so the client doesn't have to parse partial
+  // JSON.
+  framePrompt: {
+    streaming: z.object({
+      promptType: z.enum(['visual', 'motion']),
+      delta: z.string(),
+    }),
+    completed: z.object({
+      promptType: z.enum(['visual', 'motion']),
+    }),
+    failed: z.object({
+      promptType: z.enum(['visual', 'motion']),
+      error: z.string(),
     }),
   },
 
@@ -88,6 +115,24 @@ export const realtimeSchema = {
       thumbnailUrl: z.string().optional(),
       previewThumbnailUrl: z.string().optional(),
       model: z.string().optional(),
+      // In-flight retry state (#882). Emitted before a retry attempt while
+      // `status` stays `generating`, so the player overlay can show
+      // "Retrying (attempt/maxAttempts)…" instead of an indistinguishable
+      // hung spinner. Absent on the first attempt and on terminal events.
+      phase: z.enum(['generating', 'retrying']).optional(),
+      attempt: z.number().int().positive().optional(),
+      maxAttempts: z.number().int().positive().optional(),
+      // Variant-only (#547): this update belongs to an added (alternate) model,
+      // not the live primary. The cache updater must NOT write it onto the
+      // primary `thumbnailUrl`/`thumbnailStatus` — it only refreshes the
+      // per-model variant/model-list queries so the new model surfaces in the
+      // dropdown without clobbering the displayed primary thumbnail.
+      variantOnly: z.boolean().optional(),
+      // Failure reason (e.g. content-filter rejection). Carried on `failed`
+      // so the cache updater can write `frames.thumbnailError` live — without
+      // it the FailureSummaryBanner only ever shows "Unknown error" until a
+      // full refetch (#881).
+      error: z.string().optional(),
     }),
 
     // Fast preview frames replaced by AI-analyzed frames
@@ -107,6 +152,24 @@ export const realtimeSchema = {
       frameId: z.string(),
       status: z.enum(['pending', 'generating', 'completed', 'failed']),
       videoUrl: z.string().optional(),
+      // In-flight retry state (#882) — see `image:progress` above. Emitted
+      // before a retry attempt with `status` still `generating`.
+      phase: z.enum(['generating', 'retrying']).optional(),
+      attempt: z.number().int().positive().optional(),
+      maxAttempts: z.number().int().positive().optional(),
+      // Which video model produced this update. Optional for backward compat
+      // with emitters that predate multi-model video (#545); the model-aware
+      // cache invalidation and scenes-view variant switcher key off it.
+      model: z.string().optional(),
+      // Variant-only (#547): this update belongs to an added (alternate) model,
+      // not the live primary. The cache updater must NOT write it onto the
+      // primary `videoUrl`/`videoStatus` — it only refreshes the per-model
+      // variant/model-list queries so the new model surfaces in the dropdown
+      // without clobbering the displayed primary video.
+      variantOnly: z.boolean().optional(),
+      // Failure reason — carried on `failed` so the cache updater writes
+      // `frames.videoError` live (see image:progress.error above). (#881)
+      error: z.string().optional(),
     }),
 
     // Audio/music generation progress (frameId optional for sequence-level music)
@@ -114,13 +177,12 @@ export const realtimeSchema = {
       frameId: z.string().optional(),
       status: z.enum(['pending', 'generating', 'completed', 'failed']),
       audioUrl: z.string().optional(),
-    }),
-
-    // Merge progress (video stitching + audio-video muxing)
-    'merge:progress': z.object({
-      step: z.enum(['video', 'audio-video']),
-      status: z.enum(['merging', 'completed', 'failed']),
-      mergedVideoUrl: z.string().optional(),
+      // Which audio model produced this update. Optional for backward compat
+      // with emitters that predate multi-model audio (#546). The cache updater
+      // uses it to scope live `sequences.music*` writes to the primary model
+      // (so a secondary model can't clobber the primary) and to refresh the
+      // per-model audio queries.
+      model: z.string().optional(),
     }),
 
     // Character sheet generation progress (during recasting)
@@ -167,6 +229,26 @@ export const realtimeSchema = {
     'recast-location:failed': z.object({
       locationId: z.string(),
       error: z.string(),
+    }),
+
+    // Replace-element events: edit affected frames to swap an element
+    'replace-element:start': z.object({
+      elementId: z.string().min(1),
+      frameCount: z.number().int().nonnegative(),
+      videoCount: z.number().int().nonnegative().optional(),
+    }),
+    'replace-element:complete': z.object({
+      elementId: z.string().min(1),
+      successCount: z.number().int().nonnegative(),
+      failedCount: z.number().int().nonnegative(),
+      videoSuccessCount: z.number().int().nonnegative().optional(),
+      videoFailedCount: z.number().int().nonnegative().optional(),
+      /** Token after any vision-driven auto-rename. */
+      renamedTo: z.string().min(1).optional(),
+    }),
+    'replace-element:failed': z.object({
+      elementId: z.string().min(1),
+      error: z.string().min(1),
     }),
 
     // Location matching events
@@ -252,14 +334,13 @@ export const realtimeSchema = {
         snapshotInputHash: z.string(),
         divergedVariantId: z.string(),
       }),
-      // Sequence-level divergent artifacts: the merged video or music track
-      // diverged from the live primary. `entityId` is the sequenceId; the
-      // divergent row sits in `sequence_video_variants` /
+      // Sequence-level divergent music: the music track diverged from the
+      // live primary. `entityId` is the sequenceId; the divergent row sits in
       // `sequence_music_variants`.
       z.object({
         entityType: z.literal('sequence'),
         entityId: z.string(),
-        artifact: z.enum(['merged-video', 'music']),
+        artifact: z.literal('music'),
         snapshotInputHash: z.string(),
         divergedVariantId: z.string(),
       }),
@@ -293,27 +374,88 @@ export type StaleDetectedPayload = z.infer<
   (typeof realtimeSchema.generation)['stale:detected']
 >;
 
-let realtimeInstance: ReturnType<typeof createRealtime> | null = null;
+export type ReplaceElementStartPayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:start']
+>;
+export type ReplaceElementCompletePayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:complete']
+>;
+export type ReplaceElementFailedPayload = z.infer<
+  (typeof realtimeSchema.generation)['replace-element:failed']
+>;
 
-function createRealtime() {
-  const redis = getRedis();
-  return new Realtime({
-    schema: realtimeSchema,
-    redis,
-    history: {
-      expireAfterSecs: 60 * 60 * 24 * 30, // 30 days
-    },
-  });
-}
+/** Every dotted event path declared in `realtimeSchema`. */
+type SchemaEventPath = EventPaths<typeof realtimeSchema>;
+
+/** The inferred payload type for a given event path. */
+type SchemaEventData<K extends SchemaEventPath> =
+  EventData<typeof realtimeSchema, K> extends z.ZodType
+    ? z.infer<EventData<typeof realtimeSchema, K>>
+    : never;
 
 /**
- * Get the Realtime instance for emitting/subscribing to events.
- * Lazily initialized to avoid errors when Redis env vars are not set.
+ * Server-side channel API, backed by the `RealtimeChannel` Durable Object
+ * (#802). `emit` keeps the same typed signature the call sites used under
+ * Upstash; `history` reads the DO's persisted events for replay.
  */
-export function getRealtime() {
-  if (realtimeInstance) return realtimeInstance;
-  realtimeInstance = createRealtime();
-  return realtimeInstance;
+type RealtimeChannelApi = {
+  emit: <K extends SchemaEventPath>(
+    event: K,
+    data: SchemaEventData<K>
+  ) => Promise<void>;
+  history: () => Promise<ChannelHistoryMessage[]>;
+};
+
+/** Resolve the Durable Object stub for a channel id. */
+function channelStub(channel: string) {
+  // getEnv()'s type is platform-dependent; the Cloudflare runtime guarantees
+  // the Cloudflare.Env shape with the REALTIME Durable Object binding present.
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- platform-dependent env shape
+  const namespace = (getEnv() as unknown as Cloudflare.Env).REALTIME;
+  return namespace.get(namespace.idFromName(channel));
+}
+
+/** Build the DO-backed channel API for a concrete channel id. */
+function realtimeChannel(channel: string): RealtimeChannelApi {
+  return {
+    async emit(event, data) {
+      try {
+        const response = await channelStub(channel).fetch(
+          `https://realtime.do/emit?channel=${encodeURIComponent(channel)}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ event, data }),
+          }
+        );
+        if (!response.ok) {
+          logger.warn(`realtime emit failed for "${channel}"`, {
+            status: response.status,
+            event,
+          });
+        }
+      } catch (error) {
+        // A realtime emit is best-effort progress signalling — never let a
+        // broker hiccup fail the workflow step that produced the real artifact.
+        logger.warn(`realtime emit threw for "${channel}"`, {
+          err: error,
+          event,
+        });
+      }
+    },
+    async history() {
+      const response = await channelStub(channel).fetch(
+        `https://realtime.do/history?channel=${encodeURIComponent(channel)}`
+      );
+      if (!response.ok) {
+        logger.warn(`realtime history fetch failed for "${channel}"`, {
+          status: response.status,
+        });
+        return [];
+      }
+      return response.json<ChannelHistoryMessage[]>();
+    },
+  };
 }
 
 /**
@@ -322,30 +464,41 @@ export function getRealtime() {
  * channel-id helpers below are server-only, and a missing id is always a
  * bug at the call site.
  */
-function noopChannel(label: string): { emit: () => null } {
-  console.warn(
-    `[realtime] dropping ${label} emit: missing channel id — caller should guard on id presence before emitting`
+function noopChannel(label: string): RealtimeChannelApi {
+  logger.warn(
+    `dropping ${label} emit: missing channel id — caller should guard on id presence before emitting`
   );
-  return { emit: () => null };
+  return {
+    emit: () => Promise.resolve(),
+    history: () => Promise.resolve([]),
+  };
+}
+
+/**
+ * Read a channel's persisted event history for replay (page refresh
+ * resilience). Backed by the channel's Durable Object SQLite storage.
+ */
+export function getChannelHistory(
+  channel: string
+): Promise<ChannelHistoryMessage[]> {
+  return realtimeChannel(channel).history();
 }
 
 /**
  * Get a channel for a specific sequence to emit/receive events.
  * @param sequenceId - The sequence ID to use as the channel identifier
  */
-export function getGenerationChannel(sequenceId?: string) {
-  return sequenceId
-    ? getRealtime().channel(sequenceId)
-    : noopChannel('generation');
+export function getGenerationChannel(sequenceId?: string): RealtimeChannelApi {
+  return sequenceId ? realtimeChannel(sequenceId) : noopChannel('generation');
 }
 
 /**
  * Get a channel for talent library events.
  * @param talentId - The talent ID to use as the channel identifier
  */
-export function getTalentChannel(talentId?: string) {
+export function getTalentChannel(talentId?: string): RealtimeChannelApi {
   return talentId
-    ? getRealtime().channel(`talent:${talentId}`)
+    ? realtimeChannel(`talent:${talentId}`)
     : noopChannel('talent');
 }
 
@@ -353,8 +506,18 @@ export function getTalentChannel(talentId?: string) {
  * Get a channel for location library events.
  * @param locationId - The location ID to use as the channel identifier
  */
-export function getLocationChannel(locationId?: string) {
+export function getLocationChannel(locationId?: string): RealtimeChannelApi {
   return locationId
-    ? getRealtime().channel(`location:${locationId}`)
+    ? realtimeChannel(`location:${locationId}`)
     : noopChannel('location');
+}
+
+/**
+ * Get a channel for per-frame prompt regeneration streaming.
+ * @param frameId - The frame ID to use as the channel identifier
+ */
+export function getFramePromptChannel(frameId?: string): RealtimeChannelApi {
+  return frameId
+    ? realtimeChannel(`frame-prompt:${frameId}`)
+    : noopChannel('frame-prompt');
 }

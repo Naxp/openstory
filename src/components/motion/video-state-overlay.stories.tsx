@@ -82,3 +82,35 @@ export const Completed: Story = {
     },
   },
 };
+
+export const RetryingImage: Story = {
+  args: {
+    thumbnailUrl: null,
+    videoStatus: 'pending',
+    retry: { attempt: 2 },
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Image generation is retrying before any thumbnail exists (#882). The image side leans on CF’s default per-step retry budget (no fixed denominator), so the full loader reads a bare "Retrying…" — still distinguishable from a hung spinner.',
+      },
+    },
+  },
+};
+
+export const RetryingVideo: Story = {
+  args: {
+    thumbnailUrl: 'https://example.com/image.jpg',
+    videoStatus: 'generating',
+    retry: { attempt: 3, maxAttempts: 3 },
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Video generation is retrying after the thumbnail already exists (#882). Surfaces as a small non-blocking badge over the still image, leaving the play button clear.',
+      },
+    },
+  },
+};

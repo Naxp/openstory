@@ -3,20 +3,17 @@
  * Team-scoped sequence CRUD and per-sequence update methods.
  */
 
+import { DEFAULT_VIDEO_MODEL } from '@/lib/ai/models';
 import {
   type AspectRatio,
   DEFAULT_ASPECT_RATIO,
 } from '@/lib/constants/aspect-ratios';
 import type { Database } from '@/lib/db/client';
-import { sequences } from '@/lib/db/schema';
 import type { Frame, NewSequence, Sequence, Style } from '@/lib/db/schema';
-import type {
-  MergedVideoStatus,
-  MusicStatus,
-  SequenceStatus,
-} from '@/lib/db/schema/sequences';
+import { sequences } from '@/lib/db/schema';
+import type { MusicStatus, SequenceStatus } from '@/lib/db/schema/sequences';
 import { ValidationError } from '@/lib/errors';
-import { and, desc, eq, not } from 'drizzle-orm';
+import { and, desc, eq, isNull, not } from 'drizzle-orm';
 
 export type MusicFieldsUpdate = {
   musicStatus?: MusicStatus;
@@ -27,20 +24,12 @@ export type MusicFieldsUpdate = {
   musicGeneratedAt?: Date;
 };
 
-export type MergedVideoFieldsUpdate = {
-  mergedVideoStatus?: MergedVideoStatus;
-  mergedVideoError?: string | null;
-  mergedVideoUrl?: string | null;
-  mergedVideoPath?: string | null;
-  mergedVideoGeneratedAt?: Date;
-};
-
 type SequenceWithFrames = Sequence & {
   frames: Frame[];
   style: Style | null;
 };
 
-export function createSequencesReadMethods(db: Database, teamId: string) {
+function createSequencesReadMethods(db: Database, teamId: string) {
   return {
     list: async (): Promise<Sequence[]> => {
       return await db
@@ -126,7 +115,10 @@ export function createSequencesMethods(
         aspectRatio: params.aspectRatio ?? DEFAULT_ASPECT_RATIO,
         analysisModel: params.analysisModel,
         imageModel: params.imageModel,
-        videoModel: params.videoModel,
+        // The sequences SQL column default is the stale 'kling_v3_pro' (see
+        // schema/sequences.ts) and can't be changed without a D1 table
+        // rebuild, so default the app's choice here instead of relying on it.
+        videoModel: params.videoModel ?? DEFAULT_VIDEO_MODEL,
         musicModel: params.musicModel,
         autoGenerateMotion: params.autoGenerateMotion ?? false,
         autoGenerateMusic: params.autoGenerateMusic ?? false,
@@ -148,27 +140,61 @@ export function createSequencesMethods(
       return data;
     },
 
+    /**
+     * Compare-and-swap `workflowRunId` — the storyboard generation mutex
+     * (#839). Writes `claimId` only if the column still holds `expectedRunId`
+     * (the value the caller just read). D1 is single-writer, so exactly one
+     * of two racing claims sees `true`; the loser must not trigger.
+     */
+    claimWorkflowSlot: async (params: {
+      id: string;
+      expectedRunId: string | null;
+      claimId: string;
+    }): Promise<boolean> => {
+      const claimed = await db
+        .update(sequences)
+        .set({ workflowRunId: params.claimId, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sequences.id, params.id),
+            eq(sequences.teamId, teamId),
+            params.expectedRunId === null
+              ? isNull(sequences.workflowRunId)
+              : eq(sequences.workflowRunId, params.expectedRunId)
+          )
+        )
+        .returning({ id: sequences.id });
+      return claimed.length > 0;
+    },
+
     update: async (params: {
       id: string;
       title?: string;
       script?: string | null;
       styleId?: string;
       status?: SequenceStatus;
+      workflowRunId?: string;
       analysisModel?: string;
       aspectRatio?: AspectRatio;
       imageModel?: string;
       videoModel?: string;
+      musicModel?: string;
       musicStatus?: MusicStatus;
       musicError?: string | null;
       musicUrl?: string;
       musicPath?: string;
       musicGeneratedAt?: Date;
       posterUrl?: string | null;
+      includeMusic?: boolean;
     }): Promise<Sequence> => {
+      // Scoped by teamId like every other write here — `workflowRunId` in
+      // particular is the generation-mutex column (#839), so a cross-team id
+      // must never be able to stomp it.
+      const { id, ...values } = params;
       const [data] = await db
         .update(sequences)
-        .set(params)
-        .where(eq(sequences.id, params.id))
+        .set(values)
+        .where(and(eq(sequences.id, id), eq(sequences.teamId, teamId)))
         .returning();
 
       // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
@@ -223,7 +249,7 @@ export function createSequencesMethods(
   };
 }
 
-export function createSequenceReadMethods(db: Database, sequenceId: string) {
+function createSequenceReadMethods(db: Database, sequenceId: string) {
   return {
     getMusicStatus: async () => {
       const [row] = await db
@@ -231,17 +257,6 @@ export function createSequenceReadMethods(db: Database, sequenceId: string) {
           musicStatus: sequences.musicStatus,
           musicUrl: sequences.musicUrl,
           musicModel: sequences.musicModel,
-        })
-        .from(sequences)
-        .where(eq(sequences.id, sequenceId));
-      return row;
-    },
-
-    getMergedVideoStatus: async () => {
-      const [row] = await db
-        .select({
-          mergedVideoStatus: sequences.mergedVideoStatus,
-          mergedVideoUrl: sequences.mergedVideoUrl,
         })
         .from(sequences)
         .where(eq(sequences.id, sequenceId));
@@ -262,13 +277,6 @@ export function createSequenceMethods(db: Database, sequenceId: string) {
     },
 
     updateMusicFields: async (fields: MusicFieldsUpdate) => {
-      await db
-        .update(sequences)
-        .set({ ...fields, updatedAt: new Date() })
-        .where(eq(sequences.id, sequenceId));
-    },
-
-    updateMergedVideoFields: async (fields: MergedVideoFieldsUpdate) => {
       await db
         .update(sequences)
         .set({ ...fields, updatedAt: new Date() })

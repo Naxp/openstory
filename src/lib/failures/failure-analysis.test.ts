@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { analyzeFailures } from './failure-analysis';
 import type { Frame } from '@/lib/db/schema/frames';
 import type { Sequence } from '@/lib/db/schema/sequences';
@@ -70,11 +70,6 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     imageModel: 'nano_banana_2',
     videoModel: 'wan_i2v',
     workflow: null,
-    mergedVideoUrl: null,
-    mergedVideoPath: null,
-    mergedVideoStatus: 'pending',
-    mergedVideoGeneratedAt: null,
-    mergedVideoError: null,
     musicUrl: null,
     musicPath: null,
     musicStatus: 'pending',
@@ -84,7 +79,9 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     musicPrompt: 'Epic cinematic music',
     musicTags: 'epic,cinematic',
     musicPromptInputHash: null,
+    includeMusic: true,
     statusError: null,
+    workflowRunId: null,
     posterUrl: null,
     autoGenerateMotion: false,
     autoGenerateMusic: false,
@@ -133,9 +130,13 @@ describe('analyzeFailures', () => {
     expect(result.hasFailed).toBe(true);
     expect(result.requiresFullRetry).toBe(false);
     expect(result.groups).toHaveLength(1);
-    expect(result.groups[0].category).toBe('image');
-    expect(result.groups[0].frames).toHaveLength(1);
-    expect(result.groups[0].frames[0].error).toBe('Model timeout');
+    const [imageGroup] = result.groups;
+    if (!imageGroup) throw new Error('test setup: image group missing');
+    expect(imageGroup.category).toBe('image');
+    expect(imageGroup.frames).toHaveLength(1);
+    const [imageFrame] = imageGroup.frames;
+    if (!imageFrame) throw new Error('test setup: image frame missing');
+    expect(imageFrame.error).toBe('Model timeout');
     expect(result.headline).toContain('1 image failed');
   });
 
@@ -176,22 +177,6 @@ describe('analyzeFailures', () => {
     expect(musicGroup).toBeDefined();
     expect(musicGroup?.error).toBe('Audio model error');
     expect(result.headline).toContain('music generation failed');
-  });
-
-  test('merge failure', () => {
-    const frames = [makeFrame()];
-    const sequence = makeSequence({
-      status: 'failed',
-      mergedVideoStatus: 'failed',
-      mergedVideoError: 'FFmpeg error',
-    });
-
-    const result = analyzeFailures(frames, sequence);
-
-    expect(result.hasFailed).toBe(true);
-    const mergeGroup = result.groups.find((g) => g.category === 'merge');
-    expect(mergeGroup).toBeDefined();
-    expect(mergeGroup?.error).toBe('FFmpeg error');
   });
 
   test('mixed failures (image + motion)', () => {

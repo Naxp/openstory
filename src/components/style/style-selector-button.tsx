@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import type { Style } from '@/types/database';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { ChevronDown } from 'lucide-react';
 import { useState, type FC } from 'react';
 import { getStyleGradient } from './style-gradient';
@@ -56,7 +56,7 @@ export const StyleSelectorButton: FC<StyleSelectorButtonProps> = ({
       {selectedStyle && (
         <>
           {showImage ? (
-            <Image
+            <AppImage
               key={selectedStyle.id}
               src={previewUrl}
               layout="fullWidth"

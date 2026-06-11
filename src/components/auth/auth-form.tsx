@@ -19,6 +19,10 @@ import { usePostHog } from '@posthog/react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ui', 'auth', 'auth-form']);
+
 type AuthFormProps = {
   emailEntered?: string;
   redirectTo?: string;
@@ -91,7 +95,7 @@ export function AuthForm({
         search: { email, redirectTo },
       });
     } catch (err) {
-      console.error('[AuthForm] Send OTP error:', err);
+      logger.error('Send OTP error:', { err });
       setError(err instanceof Error ? err.message : 'Failed to send code');
       setIsLoading(false);
     }
@@ -109,7 +113,7 @@ export function AuthForm({
         callbackURL: redirectTo,
       });
     } catch (err) {
-      console.error('[AuthForm] Google sign-in error:', err);
+      logger.error('Google sign-in error:', { err });
       setError(
         err instanceof Error ? err.message : 'Failed to sign in with Google'
       );
@@ -180,7 +184,10 @@ export function AuthForm({
         )}
 
         {/* Email Form */}
-        <form onSubmit={(e) => void handleSendOtp(e)}>
+        <form
+          className="group/email-form"
+          onSubmit={(e) => void handleSendOtp(e)}
+        >
           <div className="mb-4 space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -196,7 +203,14 @@ export function AuthForm({
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={isLoading}>
+          {/* Hidden until an email is entered. CSS-driven (rather than React
+              state) so it works pre-hydration and isn't lost to the
+              controlled-input hydration race. */}
+          <Button
+            type="submit"
+            className="hidden w-full group-has-[input:not(:placeholder-shown)]/email-form:inline-flex"
+            disabled={isLoading}
+          >
             {isLoading ? 'Sending…' : 'Continue with email'}
           </Button>
         </form>

@@ -1,17 +1,42 @@
+/**
+ * Cloudflare Workflows port of `generateMusicWorkflow`.
+ *
+ * Mirrors the QStash version (`src/lib/workflows/music-workflow.ts`) step
+ * for step — same step names, same control flow, same side effects. The
+ * only differences are:
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads payload from `event.payload` instead of `context.requestPayload`. */
+
 import { computeSequenceMusicInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_MUSIC_MODEL } from '@/lib/ai/models';
 import { uploadAudioToStorage } from '@/lib/audio/audio-storage';
 import { generateMusic } from '@/lib/audio/music-generation';
-import { ZERO_MICROS, microsToUsd } from '@/lib/billing/money';
+import { ZERO_MICROS } from '@/lib/billing/money';
+import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
+import type { ScopedDb } from '@/lib/db/scoped';
 import { getGenerationChannel } from '@/lib/realtime';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
-import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
-import type { MusicWorkflowInput } from '@/lib/workflow/types';
+import type {
+  MusicWorkflowInput,
+  MusicWorkflowResult,
+} from '@/lib/workflow/types';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { getLogger } from '@/lib/observability/logger';
 
-export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
-  async (context, scopedDb) => {
-    const input = context.requestPayload;
+const logger = getLogger(['openstory', 'workflow', 'music']);
+
+export class MusicWorkflow extends OpenStoryWorkflowEntrypoint<MusicWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<MusicWorkflowInput>>,
+    step: WorkflowStep,
+    scopedDb: ScopedDb
+  ): Promise<MusicWorkflowResult> {
+    const input = event.payload;
     const { prompt, tags, duration } = input;
 
     if (!prompt || !tags || !duration) {
@@ -22,9 +47,14 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
 
     const { sequenceId, teamId } = input;
     const model = input.model || DEFAULT_MUSIC_MODEL;
+    // Only the primary model owns the live `sequences.music*` columns. In a
+    // multi-model fan-out (#546) secondary models persist only their own
+    // variant row and emit model-scoped events; writing the shared sequence row
+    // would make `musicStatus`/`musicUrl` last-writer-wins across siblings.
+    const isPrimary = input.isPrimary ?? true;
 
-    if (sequenceId) {
-      await context.run('set-generating-status', async () => {
+    if (sequenceId && isPrimary) {
+      await step.do('set-generating-status', async () => {
         await scopedDb.sequence(sequenceId).updateMusicFields({
           musicStatus: 'generating',
           musicModel: model,
@@ -35,12 +65,13 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
           'generation.audio:progress',
           {
             status: 'generating',
+            model,
           }
         );
       });
     }
 
-    const audioResult = await context.run('generate-music', async () => {
+    const audioResult = await step.do('generate-music', async () => {
       const result = await generateMusic({
         prompt,
         tags,
@@ -69,23 +100,20 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
     // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
     const musicCostMicros = audioResult.metadata?.cost ?? ZERO_MICROS;
     if (musicCostMicros > 0 && !audioResult.metadata.usedOwnKey) {
-      await context.run('deduct-credits', async () => {
-        const canAfford =
-          await scopedDb.billing.hasEnoughCredits(musicCostMicros);
-        if (!canAfford) {
-          console.warn(
-            `[MusicWorkflow] Insufficient credits for team ${teamId} (cost: $${microsToUsd(musicCostMicros).toFixed(4)}), skipping deduction`
-          );
-          return;
-        }
-        await scopedDb.billing.deductCredits(musicCostMicros, {
+      await step.do('deduct-credits', async () => {
+        await deductWorkflowCredits({
+          scopedDb,
+          costMicros: musicCostMicros,
+          usedOwnKey: audioResult.metadata.usedOwnKey,
           description: `Music generation (${model})`,
+          idempotencyKey: `${event.instanceId}:music`,
           metadata: {
             model,
             sequenceId,
             // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
             duration: audioResult.metadata?.duration,
           },
+          workflowName: 'MusicWorkflow:cf',
         });
       });
     }
@@ -95,7 +123,7 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
     }
     let audioUrl = audioResult.audioUrl;
     if (sequenceId) {
-      const storageResult = await context.run('upload-to-storage', async () => {
+      const storageResult = await step.do('upload-to-storage', async () => {
         const result = await uploadAudioToStorage({
           audioUrl,
           teamId,
@@ -120,7 +148,7 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
         audioModel: model,
       });
 
-      const writeResult = await context.run('write-music-variant', async () => {
+      const writeResult = await step.do('write-music-variant', async () => {
         return scopedDb.sequenceVariants.writeMusicVariant({
           sequenceId,
           url: audioUrl,
@@ -138,23 +166,29 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
 
       if (writeResult.divergent) {
         // Divergent run: prior primary on `sequences.music*` stays
-        // authoritative. Reset musicStatus from 'generating' (set above) back
-        // to 'completed' and emit a terminal event so the UI doesn't hang on
-        // a spinner. The alternate is preserved in `sequence_music_variants`
-        // for future surfacing.
+        // authoritative. For the primary model, reset musicStatus from
+        // 'generating' (set above) back to 'completed'; secondary models never
+        // touched the shared row. Either way emit a terminal event so the UI
+        // doesn't hang on a spinner. The alternate is preserved in
+        // `sequence_music_variants` for future surfacing.
         const divergedVariantId = writeResult.variant.id;
-        await context.run('update-sequence-music-divergent', async () => {
+        await step.do('update-sequence-music-divergent', async () => {
           const seq = scopedDb.sequence(sequenceId);
-          const status = await seq.getMusicStatus();
-          await seq.updateMusicFields({
-            musicStatus: 'completed',
-            musicError: null,
-          });
+          let liveMusicUrl: string | undefined;
+          if (isPrimary) {
+            const status = await seq.getMusicStatus();
+            await seq.updateMusicFields({
+              musicStatus: 'completed',
+              musicError: null,
+            });
+            liveMusicUrl = status?.musicUrl ?? undefined;
+          }
 
           const channel = getGenerationChannel(sequenceId);
           await channel.emit('generation.audio:progress', {
             status: 'completed',
-            ...(status?.musicUrl ? { audioUrl: status.musicUrl } : {}),
+            model,
+            ...(liveMusicUrl ? { audioUrl: liveMusicUrl } : {}),
           });
           await channel.emit('generation.stale:detected', {
             entityType: 'sequence',
@@ -164,24 +198,30 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
             divergedVariantId,
           });
         });
-        console.log(
-          `[MusicWorkflow] Diverged music result for sequence ${sequenceId}; preserved as alternate (variant=${divergedVariantId})`
+        logger.info(
+          `[MusicWorkflow:cf] Diverged music result for sequence ${sequenceId}; preserved as alternate (variant=${divergedVariantId})`
         );
       } else {
-        await context.run('update-sequence-music', async () => {
-          await scopedDb.sequence(sequenceId).updateMusicFields({
-            musicUrl: audioUrl,
-            musicPath: storageResult.path,
-            musicStatus: 'completed',
-            musicGeneratedAt: new Date(),
-            musicError: null,
-          });
+        await step.do('update-sequence-music', async () => {
+          // Primary owns the live columns; secondary models only emit a
+          // model-scoped event so the per-model audio queries refresh without
+          // clobbering the primary's `sequences.music*`.
+          if (isPrimary) {
+            await scopedDb.sequence(sequenceId).updateMusicFields({
+              musicUrl: audioUrl,
+              musicPath: storageResult.path,
+              musicStatus: 'completed',
+              musicGeneratedAt: new Date(),
+              musicError: null,
+            });
+          }
 
           await getGenerationChannel(sequenceId).emit(
             'generation.audio:progress',
             {
               status: 'completed',
               audioUrl: audioUrl,
+              model,
             }
           );
         });
@@ -190,38 +230,58 @@ export const generateMusicWorkflow = createScopedWorkflow<MusicWorkflowInput>(
       // TODO: Tom Mar 2026 - Add a step to generate a music track for each scene
     }
 
-    console.log('[MusicWorkflow]', 'Music generation workflow completed');
     return { audioUrl: audioUrl, duration: actualDuration };
-  },
-  {
-    failureFunction: async ({ context, scopedDb, failResponse }) => {
-      const input = context.requestPayload;
-      const error = sanitizeFailResponse(failResponse);
-      if (input.sequenceId) {
-        const failSeq = scopedDb.sequence(input.sequenceId);
+  }
 
-        await failSeq.updateMusicFields({
+  protected override async onFailure({
+    event,
+    error,
+    scopedDb,
+  }: {
+    event: Readonly<WorkflowEvent<MusicWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    const input = event.payload;
+    const model = input.model || DEFAULT_MUSIC_MODEL;
+    const isPrimary = input.isPrimary ?? true;
+    if (input.sequenceId) {
+      // Only the primary model owns the live music status — a secondary model's
+      // failure must not clobber a successful primary track (#546). Secondary
+      // failures still emit a model-scoped event so per-model queries refresh.
+      if (isPrimary) {
+        await scopedDb.sequence(input.sequenceId).updateMusicFields({
           musicStatus: 'failed',
           musicError: error,
         });
-
-        try {
-          await getGenerationChannel(input.sequenceId).emit(
-            'generation.audio:progress',
-            { status: 'failed' }
-          );
-        } catch (emitError) {
-          console.error(
-            `[MusicWorkflow] Failed to emit failure event for sequence ${input.sequenceId}:`,
-            emitError
-          );
-        }
       }
-      console.error(
-        '[MusicWorkflow]',
-        `Music generation failed for sequence ${input.sequenceId}: ${error}`
+
+      // Flip this model's own variant row to `failed` regardless of `isPrimary`
+      // (#547). An added (secondary) model's row was pre-stamped `pending`; left
+      // alone it would spin `generating` forever and block re-adding the model.
+      // Update-only — never inserts a row for a primary that never had one.
+      await scopedDb.sequenceVariants.markMusicFailed(
+        input.sequenceId,
+        model,
+        error
       );
-      return `Music generation failed for sequence ${input.sequenceId}`;
-    },
+
+      try {
+        await getGenerationChannel(input.sequenceId).emit(
+          'generation.audio:progress',
+          { status: 'failed', model }
+        );
+      } catch (emitError) {
+        logger.error(
+          `[MusicWorkflow:cf] Failed to emit failure event for sequence ${input.sequenceId}:`,
+          {
+            err: emitError,
+          }
+        );
+      }
+    }
+    logger.error(
+      `[MusicWorkflow:cf] Music generation failed for sequence ${input.sequenceId}: ${error}`
+    );
   }
-);
+}

@@ -7,19 +7,13 @@
  * Drizzle v1 translates `{ id, OR: [...] }` to `id = ? AND (... OR ...)` —
  * NOT to `id = ? OR ... OR ...` — which would be a cross-tenant data leak.
  *
- * Sibling test files mock `@/lib/db/scoped/talent` via `mock.module` (Bun
- * applies this process-wide), so importing the wrappers here yields stubs.
- * Direct `db.query.talent.findFirst` calls avoid the polluted module ID.
+ * Sibling test files mock `@/lib/db/scoped/talent` via vi.doMock; that
+ * mock is per-file under Vitest so it shouldn't leak, but exercising the
+ * predicate via direct `db.query.talent.findFirst` keeps this test
+ * independent of the other file's mock setup either way.
  */
 
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-} from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type Client, createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -54,7 +48,7 @@ async function seedFixtures() {
 
 beforeAll(async () => {
   client = createClient({ url: ':memory:' });
-  db = drizzle({ client, relations, casing: 'snake_case' });
+  db = drizzle({ client, relations });
   await migrate(db, { migrationsFolder: './drizzle/migrations' });
 });
 
@@ -72,6 +66,7 @@ describe('talent v1 RQB OR predicate (cross-tenant isolation)', () => {
       .insert(talent)
       .values({ teamId: teamA.id, name: 'A-private', isPublic: false })
       .returning();
+    if (!own) throw new Error('Failed to insert own talent');
 
     const found = await db.query.talent.findFirst({
       where: {
@@ -88,6 +83,7 @@ describe('talent v1 RQB OR predicate (cross-tenant isolation)', () => {
       .insert(talent)
       .values({ teamId: teamC.id, name: 'C-public', isPublic: true })
       .returning();
+    if (!pub) throw new Error('Failed to insert public talent');
 
     const found = await db.query.talent.findFirst({
       where: {
@@ -104,6 +100,7 @@ describe('talent v1 RQB OR predicate (cross-tenant isolation)', () => {
       .insert(talent)
       .values({ teamId: teamB.id, name: 'B-private', isPublic: false })
       .returning();
+    if (!other) throw new Error('Failed to insert other team talent');
 
     const found = await db.query.talent.findFirst({
       where: {
@@ -122,6 +119,7 @@ describe('talent v1 RQB OR predicate (cross-tenant isolation)', () => {
       .insert(talent)
       .values({ teamId: teamB.id, name: 'B-private', isPublic: false })
       .returning();
+    if (!other) throw new Error('Failed to insert other team talent');
 
     // Sanity: the row exists when queried unscoped.
     const unscoped = await db.query.talent.findFirst({

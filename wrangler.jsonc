@@ -4,6 +4,11 @@
   "name": "openstory",
   "compatibility_date": "2025-11-18",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    // Sweep stuck generating-status rows every 5 minutes. See
+    // src/lib/cron/reconcile-all.ts and issue #727.
+    "crons": ["*/5 * * * *"],
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
@@ -11,7 +16,11 @@
       "enabled": true,
       "head_sampling_rate": 1,
       "persist": true,
-      "invocation_logs": true,
+      // Disabled: redundant with our LogTape middleware (see
+      // src/functions/middleware.ts loggerMiddleware) which already emits
+      // per-serverFn timing/outcome. The CF-emitted "fetch OK" / "GET OK"
+      // lines flooded the dashboard with empty headlines.
+      "invocation_logs": false,
     },
     "traces": {
       "enabled": true,
@@ -19,23 +28,725 @@
       "head_sampling_rate": 1,
     },
   },
+  // PostHog log forwarder — receives every tail event from this Worker,
+  // transforms our LogTape JSON lines into proper OTLP log records, and POSTs
+  // them to PostHog's /i/v1/logs endpoint. The forwarder is its own Worker
+  // (workers/posthog-log-forwarder/) and must be deployed first.
+  // tail_consumers is NON-inheritable, so each env block declares its own:
+  // [env.production] uses the -prd forwarder, PR previews patch this default
+  // block to the -stg forwarder in deploy-cloudflare.yml, and the default
+  // stays empty so local dev and Deploy-to-Cloudflare button deploys don't
+  // reference a forwarder Worker that doesn't exist on the account.
+  "tail_consumers": [],
+  // ─────────────────────────────────────────────────────────────────────────
+  // DEFAULT env = local dev. The D1 here uses a placeholder `database_id` so
+  // it can ONLY resolve to a local Miniflare D1 — there is no real Cloudflare
+  // D1 with this id. If @cloudflare/vite-plugin ever auto-promotes a binding
+  // to remote (it has done in the past with `remoteBindings` defaulting to
+  // true), the request would 404 against Cloudflare rather than silently
+  // writing to production.
+  //
+  // PROD D1 lives in [env.production] below. Prod builds MUST set
+  // CLOUDFLARE_ENV=production (a Workers Builds build env var; see
+  // docs/deployment/cloudflare.md) and the migrate step MUST pass
+  // `--env=production` (wired in the `deploy:production` package script).
+  // PR-preview deploys patch this default block in CI before deploying.
+  // ─────────────────────────────────────────────────────────────────────────
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "openstory-prd",
-      "database_id": "d6a35f64-abb0-4a34-a092-dc20b29f5812",
-      "migrations_dir": "drizzle/migrations",
+      "database_name": "openstory-dev",
+      "database_id": "dev-local-d1",
+      // Flat *.sql rendering of drizzle/migrations (which nests files as
+      // <dir>/migration.sql — wrangler silently reads zero of those). Built
+      // by `bun scripts/flatten-migrations.ts`; consumed by
+      // `wrangler d1 migrations apply` in the `deploy` / `db:migrate:prd`
+      // package scripts. Local dev/e2e apply migrations via drizzle-orm
+      // (scripts/migrate-local-d1.ts) and don't read this.
+      "migrations_dir": "drizzle/migrations-wrangler",
     },
   ],
+  // Local-only R2 (Miniflare state in .wrangler/state). Reads are served by
+  // the worker's /r2/$ route (src/routes/r2.$.ts) because getPublicUrl()
+  // falls back to `${VITE_APP_URL}/r2/<key>` when R2_PUBLIC_STORAGE_DOMAIN
+  // is unset — so local dev needs no remote R2 and no Cloudflare credentials.
+  // To opt back into remote R2 (e.g. to repro a CDN-specific bug), set
+  // `"remote": true` here plus R2_PUBLIC_STORAGE_DOMAIN in .env.local, and
+  // revert when done.
   "r2_buckets": [
     {
       "bucket_name": "openstory-public-assets",
       "binding": "R2_PUBLIC_ASSETS_BUCKET",
-      "remote": true,
     },
     {
       "binding": "R2_STORAGE_BUCKET",
-      "bucket_name": "openstory-storage",
+      // Bucket name only matters when remote — locally it just namespaces
+      // the Miniflare state. Kept distinct from prod's `openstory-storage`;
+      // preview deploys patch this default to `openstory-storage-stg`
+      // (see deploy-cloudflare.yml).
+      "bucket_name": "openstory-dev",
     },
   ],
+  // Cloudflare Email Service (transactional sending). With no `remote` flag,
+  // local dev SIMULATES sends — wrangler logs the email content to the
+  // console instead of delivering it — so OTP sign-in works hermetically with
+  // no API key. Set `"remote": true` temporarily to send real email from
+  // local dev (requires the sending domain onboarded in the dashboard).
+  "send_email": [
+    {
+      "name": "SEND_EMAIL",
+    },
+  ],
+  "workflows": [
+    // All durable async work runs on Cloudflare Workflows. Each class is
+    // re-exported from src/server.ts (so it lands in the Worker bundle) and
+    // its binding is resolved by `triggerWorkflow()` via TRIGGER_TO_BINDING in
+    // src/lib/workflow/trigger-bindings.ts. Keep these three in sync — the
+    // wiring-consistency test enforces it.
+    {
+      "name": "image-workflow",
+      "binding": "IMAGE_WORKFLOW",
+      "class_name": "ImageWorkflow",
+    },
+    {
+      "name": "element-vision-workflow",
+      "binding": "ELEMENT_VISION_WORKFLOW",
+      "class_name": "ElementVisionWorkflow",
+    },
+    {
+      "name": "element-sheet-workflow",
+      "binding": "ELEMENT_SHEET_WORKFLOW",
+      "class_name": "ElementSheetWorkflow",
+    },
+    {
+      "name": "music-workflow",
+      "binding": "MUSIC_WORKFLOW",
+      "class_name": "MusicWorkflow",
+    },
+    {
+      "name": "motion-workflow",
+      "binding": "MOTION_WORKFLOW",
+      "class_name": "MotionWorkflow",
+    },
+    {
+      "name": "motion-batch-workflow",
+      "binding": "MOTION_BATCH_WORKFLOW",
+      "class_name": "MotionBatchWorkflow",
+    },
+    {
+      "name": "character-sheet-workflow",
+      "binding": "CHARACTER_SHEET_WORKFLOW",
+      "class_name": "CharacterSheetWorkflow",
+    },
+    {
+      "name": "location-sheet-workflow",
+      "binding": "LOCATION_SHEET_WORKFLOW",
+      "class_name": "LocationSheetWorkflow",
+    },
+    {
+      "name": "library-talent-sheet-workflow",
+      "binding": "LIBRARY_TALENT_SHEET_WORKFLOW",
+      "class_name": "LibraryTalentSheetWorkflow",
+    },
+    {
+      "name": "library-location-sheet-workflow",
+      "binding": "LIBRARY_LOCATION_SHEET_WORKFLOW",
+      "class_name": "LibraryLocationSheetWorkflow",
+    },
+    {
+      "name": "shot-variant-workflow",
+      "binding": "SHOT_VARIANT_WORKFLOW",
+      "class_name": "ShotVariantWorkflow",
+    },
+    {
+      "name": "upscale-shot-variant-workflow",
+      "binding": "UPSCALE_SHOT_VARIANT_WORKFLOW",
+      "class_name": "UpscaleShotVariantWorkflow",
+    },
+    {
+      "name": "visual-prompt-scene-workflow",
+      "binding": "VISUAL_PROMPT_SCENE_WORKFLOW",
+      "class_name": "VisualPromptSceneWorkflow",
+    },
+    {
+      "name": "motion-prompt-scene-workflow",
+      "binding": "MOTION_PROMPT_SCENE_WORKFLOW",
+      "class_name": "MotionPromptSceneWorkflow",
+    },
+    {
+      "name": "music-prompt-workflow",
+      "binding": "MUSIC_PROMPT_WORKFLOW",
+      "class_name": "MusicPromptWorkflow",
+    },
+    {
+      "name": "recast-character-workflow",
+      "binding": "RECAST_CHARACTER_WORKFLOW",
+      "class_name": "RecastCharacterWorkflow",
+    },
+    {
+      "name": "location-matching-workflow",
+      "binding": "LOCATION_MATCHING_WORKFLOW",
+      "class_name": "LocationMatchingWorkflow",
+    },
+    {
+      "name": "frame-images-workflow",
+      "binding": "FRAME_IMAGES_WORKFLOW",
+      "class_name": "FrameImagesWorkflow",
+    },
+    {
+      "name": "talent-matching-workflow",
+      "binding": "TALENT_MATCHING_WORKFLOW",
+      "class_name": "TalentMatchingWorkflow",
+    },
+    {
+      "name": "character-bible-workflow",
+      "binding": "CHARACTER_BIBLE_WORKFLOW",
+      "class_name": "CharacterBibleWorkflow",
+    },
+    {
+      "name": "location-bible-workflow",
+      "binding": "LOCATION_BIBLE_WORKFLOW",
+      "class_name": "LocationBibleWorkflow",
+    },
+    {
+      "name": "visual-prompt-workflow",
+      "binding": "VISUAL_PROMPT_WORKFLOW",
+      "class_name": "VisualPromptWorkflow",
+    },
+    {
+      "name": "motion-prompt-workflow",
+      "binding": "MOTION_PROMPT_WORKFLOW",
+      "class_name": "MotionPromptWorkflow",
+    },
+    {
+      "name": "motion-music-prompts-workflow",
+      "binding": "MOTION_MUSIC_PROMPTS_WORKFLOW",
+      "class_name": "MotionMusicPromptsWorkflow",
+    },
+    {
+      "name": "regenerate-frames-workflow",
+      "binding": "REGENERATE_FRAMES_WORKFLOW",
+      "class_name": "RegenerateFramesWorkflow",
+    },
+    {
+      "name": "recast-location-workflow",
+      "binding": "RECAST_LOCATION_WORKFLOW",
+      "class_name": "RecastLocationWorkflow",
+    },
+    {
+      "name": "replace-element-workflow",
+      "binding": "REPLACE_ELEMENT_WORKFLOW",
+      "class_name": "ReplaceElementWorkflow",
+    },
+    {
+      "name": "scene-split-workflow",
+      "binding": "SCENE_SPLIT_WORKFLOW",
+      "class_name": "SceneSplitWorkflow",
+    },
+    {
+      "name": "storyboard-workflow",
+      "binding": "STORYBOARD_WORKFLOW",
+      "class_name": "StoryboardWorkflow",
+    },
+    {
+      "name": "analyze-script-workflow",
+      "binding": "ANALYZE_SCRIPT_WORKFLOW",
+      "class_name": "AnalyzeScriptWorkflow",
+    },
+  ],
+  // Realtime broker (#802): one SQLite-backed Durable Object per channel holds
+  // SSE subscribers open and persists replayable history. The `RealtimeChannel`
+  // class is re-exported from src/server.ts. DO bindings + migrations are NOT
+  // inherited across env blocks, so they are redeclared in [env.production] and
+  // [env.test] below.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REALTIME",
+        "class_name": "RealtimeChannel",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RealtimeChannel"],
+    },
+  ],
+  "env": {
+    // Production deploy target. @cloudflare/vite-plugin selects the env at
+    // BUILD time via CLOUDFLARE_ENV — Workers Builds sets it as a dashboard
+    // build env var (manual deploys: `cf:deploy:prd` sets
+    // `CLOUDFLARE_ENV=production bun run build`), which bakes these bindings
+    // into dist/server/wrangler.json. The `--env=production` flag on
+    // `wrangler deploy` is a no-op against that generated (already-flattened)
+    // config; without CLOUDFLARE_ENV the build bakes the DEFAULT block (whose
+    // D1 id is a placeholder), so the deploy fails loudly rather than
+    // overwriting prod with the wrong DB.
+    "production": {
+      // Pin the worker name so the production env deploys to the EXISTING
+      // `openstory` worker (with its routes + custom domain). Without this,
+      // legacy_env (default true) derives the name as `<top>-<env>` =
+      // `openstory-production`, which is a DIFFERENT worker — the deploy
+      // would succeed but the live site would never update.
+      "name": "openstory",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          // `database_id` is authoritative — it's what wrangler binds and
+          // deploys against (`database_name` is just a label, and wrangler
+          // requires the id; name-only resolution doesn't exist outside
+          // auto-provisioning). The underlying D1 is still the pre-rename
+          // `velro-prd` — D1 has NO rename, so the #897 cutover runbook
+          // (docs/deployment/cloudflare.md) recreates it as `openstory-prd`:
+          // create fresh → run all migrations → import data → update the
+          // name + id here.
+          "database_name": "openstory-prd",
+          "database_id": "d5981bee-ef84-4006-b585-d1f2ebc81114",
+          "migrations_dir": "drizzle/migrations-wrangler",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "bucket_name": "openstory-public-assets",
+          "binding": "R2_PUBLIC_ASSETS_BUCKET",
+          "remote": true,
+        },
+        {
+          "binding": "R2_STORAGE_BUCKET",
+          "bucket_name": "openstory-storage",
+          "remote": true,
+        },
+      ],
+      // Email Service binding — NOT inherited from the top-level block.
+      // Deployed workers always send real email through Cloudflare Email
+      // Service (the sending domain must be onboarded in the dashboard).
+      "send_email": [
+        {
+          "name": "SEND_EMAIL",
+        },
+      ],
+      // Workflow bindings are NOT inherited from the top-level block, so
+      // they must be redeclared here. Keep this list in sync with the
+      // top-level workflows[] (the wiring-consistency test enforces parity).
+      "workflows": [
+        {
+          "name": "image-workflow",
+          "binding": "IMAGE_WORKFLOW",
+          "class_name": "ImageWorkflow",
+        },
+        {
+          "name": "element-vision-workflow",
+          "binding": "ELEMENT_VISION_WORKFLOW",
+          "class_name": "ElementVisionWorkflow",
+        },
+        {
+          "name": "element-sheet-workflow",
+          "binding": "ELEMENT_SHEET_WORKFLOW",
+          "class_name": "ElementSheetWorkflow",
+        },
+        {
+          "name": "music-workflow",
+          "binding": "MUSIC_WORKFLOW",
+          "class_name": "MusicWorkflow",
+        },
+        {
+          "name": "motion-workflow",
+          "binding": "MOTION_WORKFLOW",
+          "class_name": "MotionWorkflow",
+        },
+        {
+          "name": "motion-batch-workflow",
+          "binding": "MOTION_BATCH_WORKFLOW",
+          "class_name": "MotionBatchWorkflow",
+        },
+        {
+          "name": "character-sheet-workflow",
+          "binding": "CHARACTER_SHEET_WORKFLOW",
+          "class_name": "CharacterSheetWorkflow",
+        },
+        {
+          "name": "location-sheet-workflow",
+          "binding": "LOCATION_SHEET_WORKFLOW",
+          "class_name": "LocationSheetWorkflow",
+        },
+        {
+          "name": "library-talent-sheet-workflow",
+          "binding": "LIBRARY_TALENT_SHEET_WORKFLOW",
+          "class_name": "LibraryTalentSheetWorkflow",
+        },
+        {
+          "name": "library-location-sheet-workflow",
+          "binding": "LIBRARY_LOCATION_SHEET_WORKFLOW",
+          "class_name": "LibraryLocationSheetWorkflow",
+        },
+        {
+          "name": "shot-variant-workflow",
+          "binding": "SHOT_VARIANT_WORKFLOW",
+          "class_name": "ShotVariantWorkflow",
+        },
+        {
+          "name": "upscale-shot-variant-workflow",
+          "binding": "UPSCALE_SHOT_VARIANT_WORKFLOW",
+          "class_name": "UpscaleShotVariantWorkflow",
+        },
+        {
+          "name": "visual-prompt-scene-workflow",
+          "binding": "VISUAL_PROMPT_SCENE_WORKFLOW",
+          "class_name": "VisualPromptSceneWorkflow",
+        },
+        {
+          "name": "motion-prompt-scene-workflow",
+          "binding": "MOTION_PROMPT_SCENE_WORKFLOW",
+          "class_name": "MotionPromptSceneWorkflow",
+        },
+        {
+          "name": "music-prompt-workflow",
+          "binding": "MUSIC_PROMPT_WORKFLOW",
+          "class_name": "MusicPromptWorkflow",
+        },
+        {
+          "name": "recast-character-workflow",
+          "binding": "RECAST_CHARACTER_WORKFLOW",
+          "class_name": "RecastCharacterWorkflow",
+        },
+        {
+          "name": "location-matching-workflow",
+          "binding": "LOCATION_MATCHING_WORKFLOW",
+          "class_name": "LocationMatchingWorkflow",
+        },
+        {
+          "name": "frame-images-workflow",
+          "binding": "FRAME_IMAGES_WORKFLOW",
+          "class_name": "FrameImagesWorkflow",
+        },
+        {
+          "name": "talent-matching-workflow",
+          "binding": "TALENT_MATCHING_WORKFLOW",
+          "class_name": "TalentMatchingWorkflow",
+        },
+        {
+          "name": "character-bible-workflow",
+          "binding": "CHARACTER_BIBLE_WORKFLOW",
+          "class_name": "CharacterBibleWorkflow",
+        },
+        {
+          "name": "location-bible-workflow",
+          "binding": "LOCATION_BIBLE_WORKFLOW",
+          "class_name": "LocationBibleWorkflow",
+        },
+        {
+          "name": "visual-prompt-workflow",
+          "binding": "VISUAL_PROMPT_WORKFLOW",
+          "class_name": "VisualPromptWorkflow",
+        },
+        {
+          "name": "motion-prompt-workflow",
+          "binding": "MOTION_PROMPT_WORKFLOW",
+          "class_name": "MotionPromptWorkflow",
+        },
+        {
+          "name": "motion-music-prompts-workflow",
+          "binding": "MOTION_MUSIC_PROMPTS_WORKFLOW",
+          "class_name": "MotionMusicPromptsWorkflow",
+        },
+        {
+          "name": "regenerate-frames-workflow",
+          "binding": "REGENERATE_FRAMES_WORKFLOW",
+          "class_name": "RegenerateFramesWorkflow",
+        },
+        {
+          "name": "recast-location-workflow",
+          "binding": "RECAST_LOCATION_WORKFLOW",
+          "class_name": "RecastLocationWorkflow",
+        },
+        {
+          "name": "replace-element-workflow",
+          "binding": "REPLACE_ELEMENT_WORKFLOW",
+          "class_name": "ReplaceElementWorkflow",
+        },
+        {
+          "name": "scene-split-workflow",
+          "binding": "SCENE_SPLIT_WORKFLOW",
+          "class_name": "SceneSplitWorkflow",
+        },
+        {
+          "name": "storyboard-workflow",
+          "binding": "STORYBOARD_WORKFLOW",
+          "class_name": "StoryboardWorkflow",
+        },
+        {
+          "name": "analyze-script-workflow",
+          "binding": "ANALYZE_SCRIPT_WORKFLOW",
+          "class_name": "AnalyzeScriptWorkflow",
+        },
+      ],
+      // Realtime broker DO — redeclared because durable_objects + migrations
+      // are non-inheritable across env blocks. Keep the `v1` migration tag in
+      // sync with the top-level block.
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["RealtimeChannel"],
+        },
+      ],
+      "triggers": {
+        "crons": ["*/5 * * * *"],
+      },
+      // Same forwarder as the top-level default — redeclared because
+      // tail_consumers is non-inheritable across env blocks.
+      "tail_consumers": [
+        {
+          "service": "openstory-log-forwarder-prd",
+        },
+      ],
+    },
+    // Playwright e2e environment. D1 AND R2 are local (Miniflare) for
+    // hermetic runs — no remote bindings, so no Cloudflare credentials are
+    // needed (CI included). Uploads do real puts into local R2; reads are
+    // served by the worker's /r2/$ route (R2_PUBLIC_STORAGE_DOMAIN unset).
+    // The actual asset bytes come from the real fal.media URLs recorded in
+    // the aimock fixtures. Record mode (`E2E_RECORD=1`) also stays local:
+    // outbound URLs sent to real fal/OpenRouter are made fetchable via
+    // fal.storage.upload / data-URIs (see src/lib/storage/external-url.ts).
+    "test": {
+      // These vars are visible inside the worker via getEnv() when
+      // CLOUDFLARE_ENV=test (used by Playwright webServer + CI).
+      // E2E_TEST gates the entire /api/test/* route tree via testOnlyGuard.
+      "vars": {
+        // E2E_TEST gates /api/test/* routes (via testOnlyGuard) and many
+        // test-specific branches in storage / workflow client code.
+        "E2E_TEST": "true",
+        // Note: a developer's .env.local R2_PUBLIC_STORAGE_DOMAIN could leak
+        // into this worker env via the env-file merge, but it can't break
+        // e2e: isLocalStorageServing() (src/lib/storage/buckets.ts) forces
+        // local /r2 serving whenever E2E_TEST is true.
+        // E2E_FULL_PIPELINE and E2E_RECORD are intentionally NOT hardcoded here.
+        // They're per-run flags: Playwright's webServer envPrefix sets them in
+        // the launcher's process.env for `test:e2e:full[:record]`. Under
+        // @cloudflare/vite-plugin the worker's getEnv() is built from these
+        // `vars` + `.env*`/`.dev.vars` files, and only includes process.env when
+        // CLOUDFLARE_INCLUDE_PROCESS_ENV=true (which the envPrefix now sets — see
+        // playwright.config.ts). Hardcoding them "false" here shadowed the
+        // process.env values (this merge layers env-files/process.env over these
+        // vars, but a declared "false" still won for any path that didn't forward
+        // process.env), so the worker saw "false": triggerWorkflow() skipped
+        // every workflow and storage-cloudflare.ts's record branch never fired
+        // (fixture-miss → 500). With them absent, the worker reads them straight
+        // from the forwarded process.env; when unset (plain `bun test:e2e`, or
+        // CI's non-full .dev.vars) they're undefined, which the `!== 'true'` /
+        // `=== '1'` checks treat identically to "false" — hermetic replay intact.
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "openstory-test",
+          "database_id": "openstory-test-local",
+          "migrations_dir": "drizzle/migrations-wrangler",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "bucket_name": "openstory-public-assets",
+          "binding": "R2_PUBLIC_ASSETS_BUCKET",
+        },
+        {
+          "binding": "R2_STORAGE_BUCKET",
+          "bucket_name": "openstory-test",
+        },
+      ],
+      // Email Service binding — NOT inherited from the top-level block. No
+      // `remote` flag → e2e sends are simulated locally (logged, not
+      // delivered), keeping CI hermetic with no Cloudflare credentials.
+      "send_email": [
+        {
+          "name": "SEND_EMAIL",
+        },
+      ],
+      // Workflow bindings are NOT inherited from the top-level block, so
+      // they must be redeclared here. Keep this list in sync with the
+      // top-level workflows[] (the wiring-consistency test enforces parity).
+      "workflows": [
+        {
+          "name": "image-workflow",
+          "binding": "IMAGE_WORKFLOW",
+          "class_name": "ImageWorkflow",
+        },
+        {
+          "name": "element-vision-workflow",
+          "binding": "ELEMENT_VISION_WORKFLOW",
+          "class_name": "ElementVisionWorkflow",
+        },
+        {
+          "name": "element-sheet-workflow",
+          "binding": "ELEMENT_SHEET_WORKFLOW",
+          "class_name": "ElementSheetWorkflow",
+        },
+        {
+          "name": "music-workflow",
+          "binding": "MUSIC_WORKFLOW",
+          "class_name": "MusicWorkflow",
+        },
+        {
+          "name": "motion-workflow",
+          "binding": "MOTION_WORKFLOW",
+          "class_name": "MotionWorkflow",
+        },
+        {
+          "name": "motion-batch-workflow",
+          "binding": "MOTION_BATCH_WORKFLOW",
+          "class_name": "MotionBatchWorkflow",
+        },
+        {
+          "name": "character-sheet-workflow",
+          "binding": "CHARACTER_SHEET_WORKFLOW",
+          "class_name": "CharacterSheetWorkflow",
+        },
+        {
+          "name": "location-sheet-workflow",
+          "binding": "LOCATION_SHEET_WORKFLOW",
+          "class_name": "LocationSheetWorkflow",
+        },
+        {
+          "name": "library-talent-sheet-workflow",
+          "binding": "LIBRARY_TALENT_SHEET_WORKFLOW",
+          "class_name": "LibraryTalentSheetWorkflow",
+        },
+        {
+          "name": "library-location-sheet-workflow",
+          "binding": "LIBRARY_LOCATION_SHEET_WORKFLOW",
+          "class_name": "LibraryLocationSheetWorkflow",
+        },
+        {
+          "name": "shot-variant-workflow",
+          "binding": "SHOT_VARIANT_WORKFLOW",
+          "class_name": "ShotVariantWorkflow",
+        },
+        {
+          "name": "upscale-shot-variant-workflow",
+          "binding": "UPSCALE_SHOT_VARIANT_WORKFLOW",
+          "class_name": "UpscaleShotVariantWorkflow",
+        },
+        {
+          "name": "visual-prompt-scene-workflow",
+          "binding": "VISUAL_PROMPT_SCENE_WORKFLOW",
+          "class_name": "VisualPromptSceneWorkflow",
+        },
+        {
+          "name": "motion-prompt-scene-workflow",
+          "binding": "MOTION_PROMPT_SCENE_WORKFLOW",
+          "class_name": "MotionPromptSceneWorkflow",
+        },
+        {
+          "name": "music-prompt-workflow",
+          "binding": "MUSIC_PROMPT_WORKFLOW",
+          "class_name": "MusicPromptWorkflow",
+        },
+        {
+          "name": "recast-character-workflow",
+          "binding": "RECAST_CHARACTER_WORKFLOW",
+          "class_name": "RecastCharacterWorkflow",
+        },
+        {
+          "name": "location-matching-workflow",
+          "binding": "LOCATION_MATCHING_WORKFLOW",
+          "class_name": "LocationMatchingWorkflow",
+        },
+        {
+          "name": "frame-images-workflow",
+          "binding": "FRAME_IMAGES_WORKFLOW",
+          "class_name": "FrameImagesWorkflow",
+        },
+        {
+          "name": "talent-matching-workflow",
+          "binding": "TALENT_MATCHING_WORKFLOW",
+          "class_name": "TalentMatchingWorkflow",
+        },
+        {
+          "name": "character-bible-workflow",
+          "binding": "CHARACTER_BIBLE_WORKFLOW",
+          "class_name": "CharacterBibleWorkflow",
+        },
+        {
+          "name": "location-bible-workflow",
+          "binding": "LOCATION_BIBLE_WORKFLOW",
+          "class_name": "LocationBibleWorkflow",
+        },
+        {
+          "name": "visual-prompt-workflow",
+          "binding": "VISUAL_PROMPT_WORKFLOW",
+          "class_name": "VisualPromptWorkflow",
+        },
+        {
+          "name": "motion-prompt-workflow",
+          "binding": "MOTION_PROMPT_WORKFLOW",
+          "class_name": "MotionPromptWorkflow",
+        },
+        {
+          "name": "motion-music-prompts-workflow",
+          "binding": "MOTION_MUSIC_PROMPTS_WORKFLOW",
+          "class_name": "MotionMusicPromptsWorkflow",
+        },
+        {
+          "name": "regenerate-frames-workflow",
+          "binding": "REGENERATE_FRAMES_WORKFLOW",
+          "class_name": "RegenerateFramesWorkflow",
+        },
+        {
+          "name": "recast-location-workflow",
+          "binding": "RECAST_LOCATION_WORKFLOW",
+          "class_name": "RecastLocationWorkflow",
+        },
+        {
+          "name": "replace-element-workflow",
+          "binding": "REPLACE_ELEMENT_WORKFLOW",
+          "class_name": "ReplaceElementWorkflow",
+        },
+        {
+          "name": "scene-split-workflow",
+          "binding": "SCENE_SPLIT_WORKFLOW",
+          "class_name": "SceneSplitWorkflow",
+        },
+        {
+          "name": "storyboard-workflow",
+          "binding": "STORYBOARD_WORKFLOW",
+          "class_name": "StoryboardWorkflow",
+        },
+        {
+          "name": "analyze-script-workflow",
+          "binding": "ANALYZE_SCRIPT_WORKFLOW",
+          "class_name": "AnalyzeScriptWorkflow",
+        },
+      ],
+      // Realtime broker DO — redeclared because durable_objects + migrations
+      // are non-inheritable across env blocks. Keep the `v1` migration tag in
+      // sync with the top-level block.
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel",
+          },
+        ],
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["RealtimeChannel"],
+        },
+      ],
+      // Explicit empty array opts out of inheritance and silences wrangler's
+      // "tail_consumers not on env.test" warning. We don't want e2e runs
+      // forwarding LogTape JSON into the prod PostHog log pipeline.
+      "tail_consumers": [],
+    },
+  },
 }

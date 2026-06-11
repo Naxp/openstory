@@ -17,7 +17,6 @@ export type StalenessArtifact =
   | 'visual-prompt'
   | 'motion-prompt'
   | 'music-prompt'
-  | 'merged-video'
   | 'music';
 
 export type StalenessEntityType =
@@ -63,7 +62,6 @@ const ARTIFACT_LABEL: Record<StalenessArtifact, string> = {
   'visual-prompt': 'visual prompt',
   'motion-prompt': 'motion prompt',
   'music-prompt': 'music prompt',
-  'merged-video': 'merged video',
   music: 'music',
 };
 
@@ -87,14 +85,11 @@ export const StalenessIndicator: React.FC<StalenessIndicatorProps> = (
     // Non-interactive: corner-dot is a presentational signal that nests inside
     // tab triggers and other interactive parents. Regeneration always happens
     // from the tab body's inline banner where there's room for proper UX.
+    const dotLabel = isRegenerating
+      ? `Regenerating ${ARTIFACT_LABEL[artifact]}…`
+      : ariaLabel;
     return (
       <span
-        role="img"
-        aria-label={
-          isRegenerating
-            ? `Regenerating ${ARTIFACT_LABEL[artifact]}…`
-            : ariaLabel
-        }
         aria-busy={isRegenerating || undefined}
         title={
           isRegenerating ? 'Regenerating…' : 'Inputs changed since generation'
@@ -107,6 +102,7 @@ export const StalenessIndicator: React.FC<StalenessIndicatorProps> = (
           className
         )}
       >
+        <span className="sr-only">{dotLabel}</span>
         {isRegenerating ? (
           <Loader2
             aria-hidden="true"

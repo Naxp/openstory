@@ -7,6 +7,10 @@
 
 import { getEnv } from '#env';
 import { isLangfusePromptsEnabled } from '@/lib/observability/langfuse';
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'prompts', 'index']);
+
 import {
   LangfuseClient,
   type ChatPromptClient,
@@ -50,7 +54,7 @@ function compileTemplate(
  * the adapter without intermediate conversion.
  * Kept optional so existing string-only prompts stay backwards-compatible.
  */
-export type ChatMessageTextPart = { type: 'text'; content: string };
+type ChatMessageTextPart = { type: 'text'; content: string };
 export type ChatMessageImagePart = {
   type: 'image';
   source:
@@ -87,10 +91,9 @@ export async function getPrompt(
       const compiled = variables ? prompt.compile(variables) : prompt.prompt;
       return { prompt, compiled };
     } catch (error) {
-      console.warn(
-        `[Langfuse] Failed to fetch prompt "${name}", falling back to local:`,
-        error instanceof Error ? error.message : String(error)
-      );
+      logger.warn(`Failed to fetch prompt "${name}", falling back to local:`, {
+        data: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -129,9 +132,9 @@ export async function getChatPrompt(
       const messages = variables ? prompt.compile(variables) : prompt.prompt;
       return { prompt, messages };
     } catch (error) {
-      console.warn(
-        `[Langfuse] Failed to fetch chat prompt "${name}", falling back to local:`,
-        error instanceof Error ? error.message : String(error)
+      logger.warn(
+        `Failed to fetch chat prompt "${name}", falling back to local:`,
+        { data: error instanceof Error ? error.message : String(error) }
       );
     }
   }

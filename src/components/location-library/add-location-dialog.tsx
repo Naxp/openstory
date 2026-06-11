@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuthGate } from '@/components/auth/auth-gate-provider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,21 +15,26 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useCreateLibraryLocation } from '@/hooks/use-location-library';
+import type { LibraryLocation } from '@/lib/db/schema';
 import { Plus } from 'lucide-react';
 import { LocationMediaUpload } from './location-media-upload';
 
 type AddLocationDialogProps = {
   trigger?: React.ReactNode;
+  /** Called with the newly created location so callers can auto-select it. */
+  onCreated?: (location: LibraryLocation) => void;
 };
 
 export const AddLocationDialog: React.FC<AddLocationDialogProps> = ({
   trigger,
+  onCreated,
 }) => {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
 
   const isHydrated = useHydrated();
+  const { requireAuth } = useAuthGate();
   const createLocation = useCreateLibraryLocation();
 
   const closeAndReset = () => {
@@ -52,6 +58,11 @@ export const AddLocationDialog: React.FC<AddLocationDialogProps> = ({
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Anonymous visitors can open the dialog and fill the form; the actual
+    // add prompts a login.
+    if (!requireAuth()) return;
+
     const formData = new FormData(e.currentTarget);
     const nameValue = formData.get('name');
     const descriptionValue = formData.get('description');
@@ -69,7 +80,10 @@ export const AddLocationDialog: React.FC<AddLocationDialogProps> = ({
         referenceImageUrls: uploadedUrls.length > 0 ? uploadedUrls : undefined,
       },
       {
-        onSuccess: () => closeAndReset(),
+        onSuccess: (location) => {
+          onCreated?.(location);
+          closeAndReset();
+        },
       }
     );
   };

@@ -3,9 +3,7 @@
  * Team-scoped talent library CRUD with sheet counts and default sheets.
  */
 
-import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import type { Database } from '@/lib/db/client';
-import { talent, talentMedia, talentSheets } from '@/lib/db/schema';
 import type {
   NewTalent,
   NewTalentMedia,
@@ -15,17 +13,29 @@ import type {
   TalentSheet,
   TalentWithSheets,
 } from '@/lib/db/schema';
+import { talent, talentMedia, talentSheets } from '@/lib/db/schema';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 
-function createTalentReadMethods(db: Database, teamId: string) {
+/**
+ * Shared implementation for team-scoped and public (anonymous) talent reads.
+ * A null teamId means public-only scope: every query filters on isPublic with
+ * no team arm, so the anonymous code path cannot express a team-scoped query.
+ */
+function createTalentReadMethodsScoped(db: Database, teamId: string | null) {
+  const scope =
+    teamId === null
+      ? eq(talent.isPublic, true)
+      : or(eq(talent.teamId, teamId), eq(talent.isPublic, true));
+  const queryScope =
+    teamId === null
+      ? { isPublic: true }
+      : { OR: [{ teamId }, { isPublic: true }] };
+
   return {
     list: async (options?: {
       favoritesOnly?: boolean;
     }): Promise<TalentWithSheets[]> => {
-      const teamOrPublic = or(
-        eq(talent.teamId, teamId),
-        eq(talent.isPublic, true)
-      );
-      const conditions = teamOrPublic ? [teamOrPublic] : [];
+      const conditions = [scope];
       if (options?.favoritesOnly) {
         conditions.push(eq(talent.isFavorite, true));
       }
@@ -115,7 +125,7 @@ function createTalentReadMethods(db: Database, teamId: string) {
         .from(talent)
         .where(
           and(
-            or(eq(talent.teamId, teamId), eq(talent.isPublic, true)),
+            scope,
             sql`${talent.id} IN (${sql.join(
               ids.map((id) => sql`${id}`),
               sql`, `
@@ -180,19 +190,13 @@ function createTalentReadMethods(db: Database, teamId: string) {
 
     getById: async (talentId: string): Promise<Talent | undefined> => {
       return db.query.talent.findFirst({
-        where: {
-          id: talentId,
-          OR: [{ teamId }, { isPublic: true }],
-        },
+        where: { id: talentId, ...queryScope },
       });
     },
 
     getWithRelations: async (talentId: string) => {
       return db.query.talent.findFirst({
-        where: {
-          id: talentId,
-          OR: [{ teamId }, { isPublic: true }],
-        },
+        where: { id: talentId, ...queryScope },
         with: {
           sheets: {
             orderBy: { isDefault: 'desc', createdAt: 'desc' },
@@ -219,10 +223,11 @@ function createTalentReadMethods(db: Database, teamId: string) {
           .select({ hash: talentSheets.inputHash })
           .from(talentSheets)
           .where(eq(talentSheets.id, sheetId));
-        if (result.length === 0) {
+        const first = result[0];
+        if (!first) {
           throw new Error(`TalentSheet ${sheetId} not found`);
         }
-        const stored = result[0].hash;
+        const stored = first.hash;
         if (stored === null) return false;
         return currentHash !== stored;
       },
@@ -240,7 +245,18 @@ function createTalentReadMethods(db: Database, teamId: string) {
   };
 }
 
-export { createTalentReadMethods };
+function createTalentReadMethods(db: Database, teamId: string) {
+  return createTalentReadMethodsScoped(db, teamId);
+}
+
+/**
+ * Public (anonymous) talent reads — list and detail only, public-only scope.
+ * The entire data boundary for the unauthenticated talent endpoints.
+ */
+export function createPublicTalentReadMethods(db: Database) {
+  const { list, getWithRelations } = createTalentReadMethodsScoped(db, null);
+  return { list, getWithRelations };
+}
 
 export function createTalentMethods(
   db: Database,
@@ -259,6 +275,7 @@ export function createTalentMethods(
         .insert(talent)
         .values({ ...data, teamId, createdBy: userId })
         .returning();
+      if (!created) throw new Error('Failed to create talent');
       return created;
     },
 
@@ -324,6 +341,7 @@ export function createTalentMethods(
           .insert(talentSheets)
           .values({ ...data, isDefault: shouldBeDefault })
           .returning();
+        if (!sheet) throw new Error('Failed to create talent sheet');
         return sheet;
       },
 
@@ -371,11 +389,12 @@ export function createTalentMethods(
             .from(talentSheets)
             .where(eq(talentSheets.talentId, sheet.talentId));
 
-          if (remaining.length === 1) {
+          const onlyRemaining = remaining[0];
+          if (remaining.length === 1 && onlyRemaining) {
             await db
               .update(talentSheets)
               .set({ isDefault: true, updatedAt: new Date() })
-              .where(eq(talentSheets.id, remaining[0].id));
+              .where(eq(talentSheets.id, onlyRemaining.id));
           }
         }
 
@@ -388,6 +407,7 @@ export function createTalentMethods(
 
       create: async (data: NewTalentMedia): Promise<TalentMediaRecord> => {
         const [media] = await db.insert(talentMedia).values(data).returning();
+        if (!media) throw new Error('Failed to create talent media');
         return media;
       },
 

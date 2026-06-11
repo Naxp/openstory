@@ -1,9 +1,14 @@
-import { DEFAULT_IMAGE_MODEL, safeTextToImageModel } from '@/lib/ai/models';
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODELS,
+  isValidTextToImageModel,
+  safeTextToImageModel,
+} from '@/lib/ai/models';
 import {
   computeMotionPromptInputHash,
   computeVisualPromptInputHash,
 } from '@/lib/ai/input-hash';
-import { loadFramePromptContext } from '@/lib/ai/prompt-context';
+import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
 import type { FrameVariant, NewFrame } from '@/lib/db/schema';
 import { getGenerationChannel } from '@/lib/realtime';
 import { getVideoDownloadUrl } from '@/lib/motion/video-storage';
@@ -13,12 +18,16 @@ import {
   updateFrameSchema,
 } from '@/lib/schemas/frame.schemas';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
-import { reconcileStaleFrameStatuses } from '@/lib/workflow/reconcile';
+import { rescanContinuityFromPrompt } from '@/lib/scenes/rescan-continuity-from-prompt';
 import { buildRegenerateFrameSnapshot } from '@/lib/workflows/regenerate-frames-snapshot';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { frameAccessMiddleware, sequenceAccessMiddleware } from './middleware';
+
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'serverFn', 'frames']);
 
 const frameIdInputSchema = z.object({
   sequenceId: ulidSchema,
@@ -28,16 +37,7 @@ const frameIdInputSchema = z.object({
 export const getFramesFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .handler(async ({ context }) => {
-    const frames = await context.scopedDb.frames.listBySequence(
-      context.sequence.id
-    );
-
-    // Fire-and-forget: reconcile stale statuses in background
-    reconcileStaleFrameStatuses(frames, context.scopedDb.frames).catch(
-      console.error
-    );
-
-    return frames;
+    return context.scopedDb.frames.listBySequence(context.sequence.id);
   });
 
 export const getFrameFn = createServerFn({ method: 'GET' })
@@ -49,9 +49,26 @@ export const getFrameFn = createServerFn({ method: 'GET' })
 export const getSequenceImageModelsFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .handler(async ({ context }) => {
-    return context.scopedDb.frameVariants.listModelsForSequence(
+    const models = await context.scopedDb.frameVariants.listModelsForSequence(
       context.sequence.id,
       'image'
+    );
+    // Preview thumbnails are generated with a hidden internal model
+    // (PREVIEW_IMAGE_MODEL = flux_2_turbo) and stored as image variants. Hide
+    // such hidden models from the user-facing sequence image-model list — they
+    // aren't a real choice and only confuse the header dropdown.
+    return models.filter(
+      (model) =>
+        !(isValidTextToImageModel(model) && 'hidden' in IMAGE_MODELS[model])
+    );
+  });
+
+export const getSequenceVideoModelsFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.frameVariants.listModelsForSequence(
+      context.sequence.id,
+      'video'
     );
   });
 
@@ -181,18 +198,19 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
           ? {
               frameId: frame.id,
               status: 'completed',
-              audioUrl: url ?? undefined,
+              audioUrl: url,
             }
           : progressEvent === 'video:progress'
             ? {
                 frameId: frame.id,
                 status: 'completed',
-                videoUrl: url ?? undefined,
+                videoUrl: url,
+                model: variant.model,
               }
             : {
                 frameId: frame.id,
                 status: 'completed',
-                thumbnailUrl: url ?? undefined,
+                thumbnailUrl: url,
                 model: variant.model,
               }
       );
@@ -207,7 +225,7 @@ export const promoteVariantFn = createServerFn({ method: 'POST' })
         });
       }
     } catch (error) {
-      console.error('[promoteVariantFn] realtime emit failed', error);
+      logger.error('realtime emit failed', { err: error });
     }
 
     return { frame: updatedFrame, variantId: variant.id };
@@ -268,6 +286,15 @@ export const getSequenceImageVariantsFn = createServerFn({ method: 'GET' })
     );
   });
 
+export const getSequenceVideoVariantsFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .handler(async ({ context }) => {
+    return context.scopedDb.frameVariants.listBySequence(
+      context.sequence.id,
+      'video'
+    );
+  });
+
 export const createFrameFn = createServerFn({ method: 'POST' })
   .middleware([sequenceAccessMiddleware])
   .inputValidator(
@@ -303,7 +330,188 @@ export const updateFrameFn = createServerFn({ method: 'POST' })
     )
   )
   .handler(async ({ data, context }) => {
-    const { sequenceId: _, frameId, ...updateData } = data;
+    const { sequenceId, frameId, ...updateData } = data;
+
+    // Scene-script edits (#684): when `originalScript.extract` changes,
+    // clear the parsed dialogue (now stale wrt the new text) and mirror the
+    // change into the parent `sequences.script` so script view stays in sync.
+    // Prompt-input-hash staleness handles the Image/Motion banners on its
+    // own — `originalScript.extract` is part of the hashed scene context, so
+    // the next `getFrameStalenessFn` call will report `'stale'` without us
+    // touching the stored prompt hashes here.
+    const oldExtract = context.frame.metadata?.originalScript.extract ?? '';
+    const incomingExtract = updateData.metadata?.originalScript.extract;
+    const scriptChanged =
+      typeof incomingExtract === 'string' && incomingExtract !== oldExtract;
+    if (scriptChanged && updateData.metadata) {
+      updateData.metadata = {
+        ...updateData.metadata,
+        originalScript: {
+          extract: incomingExtract,
+          dialogue: [],
+        },
+      };
+
+      // Bootstrap missing prompt-input hashes. Frames that were generated
+      // before hash tracking landed have `imagePrompt` / `motionPrompt` set
+      // but null hashes and no `frame_prompt_variants` rows — so the
+      // `getLatestWithInputHash` fallback in `getFrameStalenessFn` can't
+      // find a reference either, and staleness stays `'untracked'` forever.
+      // Compute the hash from the PRE-edit scene and stamp it on the frame
+      // now: the post-edit live hash will then differ → banner flips
+      // `'stale'`. One-shot per frame; subsequent edits hit the normal hash
+      // chain.
+      let preEditSequenceForSplice: Awaited<
+        ReturnType<typeof context.scopedDb.sequences.getById>
+      > | null = null;
+      if (context.frame.metadata) {
+        if (context.frame.imagePrompt && !context.frame.visualPromptInputHash) {
+          try {
+            preEditSequenceForSplice ??=
+              await context.scopedDb.sequences.getById(sequenceId);
+            if (preEditSequenceForSplice) {
+              const ctx = await loadNarrowFramePromptContext({
+                scopedDb: context.scopedDb,
+                sequence: {
+                  id: preEditSequenceForSplice.id,
+                  styleId: preEditSequenceForSplice.styleId,
+                  aspectRatio: preEditSequenceForSplice.aspectRatio,
+                  analysisModel: preEditSequenceForSplice.analysisModel,
+                },
+                scene: context.frame.metadata,
+              });
+              updateData.visualPromptInputHash =
+                await computeVisualPromptInputHash(ctx);
+            }
+          } catch (err) {
+            logger.warn(
+              `Could not bootstrap visual hash for frame ${frameId}; staleness will remain untracked for this prompt`,
+              { err }
+            );
+          }
+        }
+        if (
+          context.frame.motionPrompt &&
+          !context.frame.motionPromptInputHash
+        ) {
+          try {
+            preEditSequenceForSplice ??=
+              await context.scopedDb.sequences.getById(sequenceId);
+            if (preEditSequenceForSplice) {
+              const ctx = await loadNarrowFramePromptContext({
+                scopedDb: context.scopedDb,
+                sequence: {
+                  id: preEditSequenceForSplice.id,
+                  styleId: preEditSequenceForSplice.styleId,
+                  aspectRatio: preEditSequenceForSplice.aspectRatio,
+                  analysisModel: preEditSequenceForSplice.analysisModel,
+                },
+                scene: context.frame.metadata,
+              });
+              updateData.motionPromptInputHash =
+                await computeMotionPromptInputHash(ctx);
+            }
+          } catch (err) {
+            logger.warn(
+              `Could not bootstrap motion hash for frame ${frameId}; staleness will remain untracked for this prompt`,
+              { err }
+            );
+          }
+        }
+      }
+
+      // Splice the new extract into the parent script. The naive
+      // `script.replace(oldExtract, …)` would corrupt the wrong scene
+      // whenever an extract appears more than once (recurring slug lines,
+      // "CUT TO BLACK.", duplicated cues). Instead, walk every frame in
+      // orderIndex order and locate each one's extract sequentially in
+      // `seq.script`; the target frame's match is the one we splice.
+      // Best-effort: if the walk falls out of sync (e.g. the parent was
+      // edited separately), leave the parent untouched — the frame still
+      // saves, the scene tab still reflects the new extract, and we avoid
+      // injecting into the wrong position. Read-then-write on
+      // `sequences.script` is racy under concurrent scene edits; accept
+      // that as the worst-case loss of one parent-script update.
+      // Reuse the sequence fetched above if the bootstrap path already
+      // loaded it.
+      const seq =
+        preEditSequenceForSplice ??
+        (await context.scopedDb.sequences.getById(sequenceId));
+      if (seq?.script && oldExtract) {
+        const siblings =
+          await context.scopedDb.frames.listBySequence(sequenceId);
+        let cursor = 0;
+        let targetStart = -1;
+        let targetLength = 0;
+        let walkDiverged = false;
+        for (const sibling of siblings) {
+          const siblingExtract = sibling.metadata?.originalScript.extract;
+          if (!siblingExtract) continue;
+          const pos = seq.script.indexOf(siblingExtract, cursor);
+          if (pos === -1) {
+            walkDiverged = true;
+            break;
+          }
+          if (sibling.id === frameId) {
+            targetStart = pos;
+            targetLength = siblingExtract.length;
+          }
+          cursor = pos + siblingExtract.length;
+        }
+        if (!walkDiverged && targetStart !== -1) {
+          await context.scopedDb.sequences.update({
+            id: sequenceId,
+            script:
+              seq.script.slice(0, targetStart) +
+              incomingExtract +
+              seq.script.slice(targetStart + targetLength),
+          });
+        } else {
+          logger.warn(
+            `Parent script walk could not locate frame ${frameId} for sequence ${sequenceId}; skipping parent script sync`
+          );
+        }
+      }
+    }
+
+    // When a user edits a prompt, auto-link any element/cast/location tags
+    // they mentioned by additively merging them into frame.metadata.continuity
+    // so the next generation pulls those references in (#683). Skip when the
+    // prompt value hasn't actually changed, so plain saves stay a single
+    // UPDATE with no extra reads.
+    const imagePromptChanged =
+      updateData.imagePrompt !== undefined &&
+      updateData.imagePrompt !== context.frame.imagePrompt;
+    const motionPromptChanged =
+      updateData.motionPrompt !== undefined &&
+      updateData.motionPrompt !== context.frame.motionPrompt;
+    const frameMetadata = context.frame.metadata;
+    if (
+      (imagePromptChanged || motionPromptChanged) &&
+      frameMetadata?.continuity
+    ) {
+      const promptText = [
+        imagePromptChanged ? updateData.imagePrompt : null,
+        motionPromptChanged ? updateData.motionPrompt : null,
+      ]
+        .filter((s): s is string => typeof s === 'string' && s.length > 0)
+        .join('\n');
+
+      const rescan = await rescanContinuityFromPrompt({
+        scopedDb: context.scopedDb,
+        sequenceId,
+        existing: frameMetadata.continuity,
+        promptText,
+      });
+
+      if (rescan.changed) {
+        updateData.metadata = {
+          ...frameMetadata,
+          continuity: rescan.continuity,
+        };
+      }
+    }
+
     return context.scopedDb.frames.update(frameId, updateData);
   });
 
@@ -364,80 +572,132 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
     const { frame, sequence, scopedDb } = context;
 
     let thumbnail: 'stale' | 'fresh' | 'untracked' = 'untracked';
-    if (frame.imagePrompt) {
-      const [characters, locations] = await Promise.all([
-        scopedDb.characters.listWithSheets(sequence.id),
-        scopedDb.sequenceLocations.listWithReferences(sequence.id),
-      ]);
+    // Effective prompt: same fallback chain as `buildRegenerateFrameSnapshot`
+    // and `generateFrameImageFn`. `frame.imagePrompt` alone misses
+    // AI-generated frames (where `imagePrompt` stays null) and frames whose
+    // visual prompt was regenerated (which only updates metadata). See #713.
+    const effectivePrompt =
+      frame.imagePrompt || frame.metadata?.prompts?.visual?.fullPrompt;
+    if (effectivePrompt) {
+      // Distinguish "stored hash absent" from "stored hash matches". A null
+      // stored hash means the image predates hash tracking (or was generated
+      // by a pre-fix `generateFrameImageFn` that didn't pass a sceneSnapshot)
+      // — we genuinely have no opinion, so 'untracked' rather than lying with
+      // 'fresh'. Once the user regenerates the image once under the new code
+      // path, this column populates and the live-vs-stored comparison takes
+      // over.
+      if (frame.thumbnailInputHash === null) {
+        thumbnail = 'untracked';
+      } else {
+        try {
+          const [characters, locations, elements] = await Promise.all([
+            scopedDb.characters.listWithSheets(sequence.id),
+            scopedDb.sequenceLocations.listWithReferences(sequence.id),
+            scopedDb.sequenceElements.list(sequence.id),
+          ]);
 
-      const snapshot = await buildRegenerateFrameSnapshot({
-        frame,
-        characters,
-        locations,
-        imageModel: safeTextToImageModel(frame.imageModel, DEFAULT_IMAGE_MODEL),
-        aspectRatio: sequence.aspectRatio,
-      });
+          const snapshot = await buildRegenerateFrameSnapshot({
+            frame,
+            characters,
+            locations,
+            elements,
+            imageModel: safeTextToImageModel(
+              frame.imageModel,
+              DEFAULT_IMAGE_MODEL
+            ),
+            aspectRatio: sequence.aspectRatio,
+          });
 
-      // `isStale` returns false for both "fresh" and "no stored hash" — the
-      // imagePrompt-present check above narrows it to "fresh" when isStale
-      // returns false.
-      thumbnail = (await scopedDb.frames.isStale(
-        frame.id,
-        'thumbnail',
-        snapshot.snapshotInputHash
-      ))
-        ? 'stale'
-        : 'fresh';
+          thumbnail =
+            snapshot.snapshotInputHash !== frame.thumbnailInputHash
+              ? 'stale'
+              : 'fresh';
+        } catch (error) {
+          // Mirror the visual/motion branches: a thumbnail-hash failure (e.g.
+          // transient D1 read, malformed element/location row) must not throw
+          // out of the whole handler — that would null the entire staleness
+          // result and silently suppress the visual/motion banners too. Stay
+          // 'untracked' (fail-open as 'fresh' would lie about freshness).
+          logger.warn(
+            `thumbnail staleness uncomputable for frame ${frame.id}:`,
+            {
+              err: error,
+            }
+          );
+        }
+      }
     }
 
     let visualPrompt: 'stale' | 'fresh' | 'untracked' = 'untracked';
     let motionPrompt: 'stale' | 'fresh' | 'untracked' = 'untracked';
 
-    if (frame.metadata && frame.visualPromptInputHash) {
-      try {
-        const latest = await scopedDb.framePromptVariants.getLatest(
-          frame.id,
-          'visual'
-        );
-        const ctx = await loadFramePromptContext({
-          scopedDb,
-          sequence,
-          scene: frame.metadata,
-          analysisModelOverride: latest?.analysisModel ?? null,
-        });
-        const liveHash = await computeVisualPromptInputHash(ctx);
-        visualPrompt =
-          liveHash !== frame.visualPromptInputHash ? 'stale' : 'fresh';
-      } catch (error) {
-        // Context unavailable (e.g., style deleted mid-flight). Stay
-        // 'untracked' — fail-open as 'fresh' would silently lie to the user.
-        console.warn(
-          `[getFrameStalenessFn] visual staleness uncomputable for frame ${frame.id}:`,
-          error
-        );
+    // Reference hash resolution: prefer the cached column on `frames`, but
+    // fall back to the most recent variant with a non-null `inputHash` for
+    // frames whose cached column was nulled by a pre-fix user-edit. Without
+    // the fallback, those frames are stuck at `'untracked'` permanently.
+    if (frame.metadata) {
+      let referenceHash = frame.visualPromptInputHash;
+      if (!referenceHash) {
+        const fallback =
+          await scopedDb.framePromptVariants.getLatestWithInputHash(
+            frame.id,
+            'visual'
+          );
+        referenceHash = fallback?.inputHash ?? null;
+      }
+      if (referenceHash) {
+        try {
+          const latest = await scopedDb.framePromptVariants.getLatest(
+            frame.id,
+            'visual'
+          );
+          const ctx = await loadNarrowFramePromptContext({
+            scopedDb,
+            sequence,
+            scene: frame.metadata,
+            analysisModelOverride: latest?.analysisModel ?? null,
+          });
+          const liveHash = await computeVisualPromptInputHash(ctx);
+          visualPrompt = liveHash !== referenceHash ? 'stale' : 'fresh';
+        } catch (error) {
+          // Context unavailable (e.g., style deleted mid-flight). Stay
+          // 'untracked' — fail-open as 'fresh' would silently lie to the user.
+          logger.warn(`visual staleness uncomputable for frame ${frame.id}:`, {
+            err: error,
+          });
+        }
       }
     }
 
-    if (frame.metadata && frame.motionPromptInputHash) {
-      try {
-        const latest = await scopedDb.framePromptVariants.getLatest(
-          frame.id,
-          'motion'
-        );
-        const ctx = await loadFramePromptContext({
-          scopedDb,
-          sequence,
-          scene: frame.metadata,
-          analysisModelOverride: latest?.analysisModel ?? null,
-        });
-        const liveHash = await computeMotionPromptInputHash(ctx);
-        motionPrompt =
-          liveHash !== frame.motionPromptInputHash ? 'stale' : 'fresh';
-      } catch (error) {
-        console.warn(
-          `[getFrameStalenessFn] motion staleness uncomputable for frame ${frame.id}:`,
-          error
-        );
+    if (frame.metadata) {
+      let referenceHash = frame.motionPromptInputHash;
+      if (!referenceHash) {
+        const fallback =
+          await scopedDb.framePromptVariants.getLatestWithInputHash(
+            frame.id,
+            'motion'
+          );
+        referenceHash = fallback?.inputHash ?? null;
+      }
+      if (referenceHash) {
+        try {
+          const latest = await scopedDb.framePromptVariants.getLatest(
+            frame.id,
+            'motion'
+          );
+          const ctx = await loadNarrowFramePromptContext({
+            scopedDb,
+            sequence,
+            scene: frame.metadata,
+            analysisModelOverride: latest?.analysisModel ?? null,
+          });
+          const liveHash = await computeMotionPromptInputHash(ctx);
+          motionPrompt = liveHash !== referenceHash ? 'stale' : 'fresh';
+        } catch (error) {
+          logger.warn(`motion staleness uncomputable for frame ${frame.id}:`, {
+            err: error,
+          });
+        }
       }
     }
 

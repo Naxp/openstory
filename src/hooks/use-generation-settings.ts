@@ -21,6 +21,10 @@ import {
 } from '@/lib/constants/aspect-ratios';
 import { useCallback, useEffect, useState } from 'react';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ui', 'use-generation-settings']);
+
 const STORAGE_KEY = 'openstory:generation-settings:v2';
 
 type GenerationSettings = {
@@ -29,8 +33,10 @@ type GenerationSettings = {
   imageModel: TextToImageModel;
   imageModels: TextToImageModel[];
   motionModel: ImageToVideoModel;
+  videoModels: ImageToVideoModel[];
   autoGenerateMotion: boolean;
   musicModel: AudioModel;
+  audioModels: AudioModel[];
   autoGenerateMusic: boolean;
 };
 
@@ -40,8 +46,10 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   imageModel: DEFAULT_IMAGE_MODEL,
   imageModels: [DEFAULT_IMAGE_MODEL],
   motionModel: DEFAULT_VIDEO_MODEL,
+  videoModels: [DEFAULT_VIDEO_MODEL],
   autoGenerateMotion: false,
   musicModel: DEFAULT_MUSIC_MODEL,
+  audioModels: [DEFAULT_MUSIC_MODEL],
   autoGenerateMusic: false,
 };
 
@@ -93,9 +101,7 @@ function loadSettings(): GenerationSettings {
       !('imageModel' in parsed) ||
       !('motionModel' in parsed)
     ) {
-      console.warn(
-        '[useGenerationSettings] Invalid settings structure, using defaults'
-      );
+      logger.warn('Invalid settings structure, using defaults');
       return DEFAULT_SETTINGS;
     }
 
@@ -128,6 +134,21 @@ function loadSettings(): GenerationSettings {
     // Ensure motion model is compatible with aspect ratio
     const motionModel = getCompatibleModel(rawMotionModel, aspectRatio);
 
+    // Load videoModels array, falling back to [motionModel] for backward
+    // compat. Coerce each element to an aspect-ratio-compatible model and
+    // dedupe so a stored selection from another ratio can't surface an
+    // incompatible model in the picker.
+    const rawVideoModels =
+      'videoModels' in parsed &&
+      Array.isArray(parsed.videoModels) &&
+      parsed.videoModels.length > 0 &&
+      parsed.videoModels.every(isValidImageToVideoModel)
+        ? parsed.videoModels
+        : [motionModel];
+    const videoModels = [
+      ...new Set(rawVideoModels.map((m) => getCompatibleModel(m, aspectRatio))),
+    ];
+
     const autoGenerateMotion =
       'autoGenerateMotion' in parsed &&
       typeof parsed.autoGenerateMotion === 'boolean'
@@ -138,6 +159,15 @@ function loadSettings(): GenerationSettings {
       'musicModel' in parsed && isValidAudioModel(parsed.musicModel)
         ? parsed.musicModel
         : DEFAULT_MUSIC_MODEL;
+
+    // Load audioModels array, falling back to [musicModel] for backward compat.
+    const audioModels =
+      'audioModels' in parsed &&
+      Array.isArray(parsed.audioModels) &&
+      parsed.audioModels.length > 0 &&
+      parsed.audioModels.every(isValidAudioModel)
+        ? parsed.audioModels
+        : [musicModel];
 
     const autoGenerateMusic =
       'autoGenerateMusic' in parsed &&
@@ -151,15 +181,14 @@ function loadSettings(): GenerationSettings {
       imageModel,
       imageModels,
       motionModel,
+      videoModels,
       autoGenerateMotion,
       musicModel,
+      audioModels,
       autoGenerateMusic,
     };
   } catch (error) {
-    console.warn(
-      '[useGenerationSettings] Failed to load settings from localStorage:',
-      error
-    );
+    logger.warn('Failed to load settings from localStorage:', { err: error });
     return DEFAULT_SETTINGS;
   }
 }
@@ -175,10 +204,7 @@ function saveSettings(settings: GenerationSettings): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   } catch (error) {
-    console.warn(
-      '[useGenerationSettings] Failed to save settings to localStorage:',
-      error
-    );
+    logger.warn('Failed to save settings to localStorage:', { err: error });
   }
 }
 
@@ -209,18 +235,25 @@ export function useGenerationSettings() {
     setSettings((prev) => {
       let updated = { ...prev, ...newSettings };
 
-      // If aspect ratio is changing, ensure motion model is compatible
-      if (
-        newSettings.aspectRatio &&
-        newSettings.aspectRatio !== prev.aspectRatio
-      ) {
+      // If aspect ratio is changing, ensure motion model(s) are compatible
+      const nextAspectRatio = newSettings.aspectRatio;
+      if (nextAspectRatio && nextAspectRatio !== prev.aspectRatio) {
         const compatibleModel = getCompatibleModel(
           updated.motionModel,
-          newSettings.aspectRatio
+          nextAspectRatio
         );
-        if (compatibleModel !== updated.motionModel) {
-          updated = { ...updated, motionModel: compatibleModel };
-        }
+        const compatibleVideoModels = [
+          ...new Set(
+            updated.videoModels.map((m) =>
+              getCompatibleModel(m, nextAspectRatio)
+            )
+          ),
+        ];
+        updated = {
+          ...updated,
+          motionModel: compatibleModel,
+          videoModels: compatibleVideoModels,
+        };
       }
 
       saveSettings(updated);

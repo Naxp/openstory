@@ -3,13 +3,13 @@
  * Core content creation entities for video sequences
  */
 
-import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL } from '@/lib/ai/models';
+import { DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import {
   type AspectRatio,
   DEFAULT_ASPECT_RATIO,
 } from '@/lib/constants/aspect-ratios';
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, snakeCase, text } from 'drizzle-orm/sqlite-core';
 import { generateId } from '../id';
 import { user } from './auth';
 // NOTE: frames imported in index.ts to avoid circular dependency
@@ -27,14 +27,6 @@ const SEQUENCE_STATUSES = [
 ] as const;
 export type SequenceStatus = (typeof SEQUENCE_STATUSES)[number];
 
-const MERGED_VIDEO_STATUSES = [
-  'pending',
-  'merging',
-  'completed',
-  'failed',
-] as const;
-export type MergedVideoStatus = (typeof MERGED_VIDEO_STATUSES)[number];
-
 const MUSIC_STATUSES = [
   'pending',
   'generating',
@@ -47,94 +39,95 @@ export type MusicStatus = (typeof MUSIC_STATUSES)[number];
  * Sequences table
  * Main video sequence/project entity
  */
-export const sequences = sqliteTable(
+export const sequences = snakeCase.table(
   'sequences',
   {
     id: text()
       .$defaultFn(() => generateId())
       .primaryKey()
       .notNull(),
-    teamId: text('team_id')
+    teamId: text()
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     title: text({ length: 500 }).notNull(),
     script: text(),
     status: text().$type<SequenceStatus>().default('draft').notNull(),
-    statusError: text('status_error'),
-    createdAt: integer('created_at', { mode: 'timestamp' })
+    statusError: text(),
+    // CF Workflows instance id of the most recent /storyboard run. Lets the
+    // cron reconciler (reconcile-all.ts) verify a stuck 'processing' row
+    // against the instance's real status instead of leaving it spinning
+    // forever when the workflow dies without persisting an outcome (#839).
+    workflowRunId: text({ length: 100 }),
+    createdAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' })
+    updatedAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
-    createdBy: text('created_by').references(() => user.id, {
+    createdBy: text().references(() => user.id, {
       onDelete: 'set null',
     }),
-    updatedBy: text('updated_by').references(() => user.id, {
+    updatedBy: text().references(() => user.id, {
       onDelete: 'set null',
     }),
-    styleId: text('style_id')
+    styleId: text()
       .notNull()
       .references(() => styles.id, { onDelete: 'set null' }),
-    aspectRatio: text('aspect_ratio', { length: 10 })
+    aspectRatio: text({ length: 10 })
       .$type<AspectRatio>()
       .default(DEFAULT_ASPECT_RATIO)
       .notNull(),
-    analysisModel: text('analysis_model', { length: 100 })
+    analysisModel: text({ length: 100 })
       .default('anthropic/claude-haiku-4.5')
       .notNull(),
-    analysisDurationMs: integer('analysis_duration_ms').default(0).notNull(),
-    imageModel: text('image_model', { length: 100 })
-      .default(DEFAULT_IMAGE_MODEL)
-      .notNull(),
-    videoModel: text('video_model', { length: 100 })
-      .default(DEFAULT_VIDEO_MODEL)
-      .notNull(),
-    workflow: text('workflow', { length: 100 }),
-
-    // Merged video fields (final stitched video from all frames)
-    mergedVideoUrl: text('merged_video_url'),
-    mergedVideoPath: text('merged_video_path'),
-    mergedVideoStatus: text('merged_video_status')
-      .$type<MergedVideoStatus>()
-      .default('pending'),
-    mergedVideoGeneratedAt: integer('merged_video_generated_at', {
-      mode: 'timestamp',
-    }),
-    mergedVideoError: text('merged_video_error'),
+    analysisDurationMs: integer().default(0).notNull(),
+    imageModel: text({ length: 100 }).default(DEFAULT_IMAGE_MODEL).notNull(),
+    // SQL default is pinned to 'kling_v3_pro' to match every deployed DB's
+    // column default (#801 changed DEFAULT_VIDEO_MODEL to grok WITHOUT a
+    // migration; SQLite can't ALTER a column default without a full table
+    // rebuild, which CASCADE-deletes child rows on D1 — see CLAUDE.md). So
+    // db:generate stays clean. The app must NOT rely on this default: the
+    // scoped create (db/scoped/sequences.ts) substitutes DEFAULT_VIDEO_MODEL
+    // for an omitted videoModel, and create-sequences always passes the
+    // user's resolved selection. drizzle inlines `.default()` and ignores
+    // `$defaultFn` when both are set, so an app-level grok default can't live
+    // here.
+    videoModel: text({ length: 100 }).default('kling_v3_pro').notNull(),
+    workflow: text({ length: 100 }),
 
     // Music track fields (sequence-level background music)
-    musicUrl: text('music_url'),
-    musicPath: text('music_path'),
-    musicStatus: text('music_status').$type<MusicStatus>().default('pending'),
-    musicGeneratedAt: integer('music_generated_at', {
+    musicUrl: text(),
+    musicPath: text(),
+    musicStatus: text().$type<MusicStatus>().default('pending'),
+    musicGeneratedAt: integer({
       mode: 'timestamp',
     }),
-    musicError: text('music_error'),
-    musicModel: text('music_model', { length: 100 }),
-    musicPrompt: text('music_prompt'),
-    musicTags: text('music_tags'),
+    musicError: text(),
+    musicModel: text({ length: 100 }),
+    musicPrompt: text(),
+    musicTags: text(),
     // SHA-256 of the upstream context that produced the cached AI music
     // prompt (musicDesign + analysis model). Null when no AI prompt has been
     // generated yet, or when the most recent variant was a user-edit.
-    musicPromptInputHash: text('music_prompt_input_hash'),
+    musicPromptInputHash: text(),
+    // Whether the sequence's background music is included in theatre playback
+    // and MP4 export. Default on (mirrors the old #687 "Include music in merged
+    // video" checkbox). Toggling it off mutes only the music track — scene and
+    // dialogue audio are unaffected (#834).
+    includeMusic: integer({ mode: 'boolean' }).default(true).notNull(),
 
     // Poster image (sequence-level preview from script, ephemeral CDN URL)
-    posterUrl: text('poster_url'),
+    posterUrl: text(),
 
     // Auto-generation flags (set at sequence creation, read by UI for phase display)
-    autoGenerateMotion: integer('auto_generate_motion', { mode: 'boolean' })
-      .default(false)
-      .notNull(),
-    autoGenerateMusic: integer('auto_generate_music', { mode: 'boolean' })
-      .default(false)
-      .notNull(),
+    autoGenerateMotion: integer({ mode: 'boolean' }).default(false).notNull(),
+    autoGenerateMusic: integer({ mode: 'boolean' }).default(false).notNull(),
 
     // Suggested talent/location IDs used during generation (for pre-populating the UI)
-    suggestedTalentIds: text('suggested_talent_ids', {
+    suggestedTalentIds: text({
       mode: 'json',
     }).$type<string[]>(),
-    suggestedLocationIds: text('suggested_location_ids', {
+    suggestedLocationIds: text({
       mode: 'json',
     }).$type<string[]>(),
   },

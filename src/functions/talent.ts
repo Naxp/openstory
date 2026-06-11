@@ -1,7 +1,10 @@
-import { deleteFile, moveFile, getSignedUploadUrl } from '#storage';
-import { getEnv } from '#env';
+import { deleteFile, getSignedUploadUrl } from '#storage';
 import { requireTeamAdminAccess } from '@/lib/auth/action-utils';
 import { generateId } from '@/lib/db/id';
+import {
+  getPublicTalentWithRelations,
+  listPublicTalent,
+} from '@/lib/db/scoped';
 import type { Talent, TalentWithSheets } from '@/lib/db/schema';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import {
@@ -10,11 +13,7 @@ import {
   listTalentFilterSchema,
   updateTalentSchema,
 } from '@/lib/schemas/talent.schemas';
-import {
-  STORAGE_BUCKETS,
-  getPathFromUrl,
-  getPublicUrl,
-} from '@/lib/storage/buckets';
+import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
 import {
   getExtensionFromUrl,
   getMimeTypeFromExtension,
@@ -23,6 +22,7 @@ import { triggerWorkflow } from '@/lib/workflow/client';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
 import type { LibraryTalentSheetWorkflowInput } from '@/lib/workflow/types';
 import { computeLibraryTalentSheetHashFromDto } from '@/lib/workflows/sheet-snapshots';
+import { createLibraryTalent } from '@/lib/talent/create-library-talent';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
@@ -61,6 +61,14 @@ export const getTalentFn = createServerFn({ method: 'GET' })
     });
   });
 
+// List Public ("system") Talent — no auth, for anonymous visitors
+
+export const getPublicTalentFn = createServerFn({ method: 'GET' })
+  .inputValidator(zodValidator(listTalentFilterSchema.optional()))
+  .handler(async ({ data }): Promise<TalentWithSheets[]> => {
+    return listPublicTalent({ favoritesOnly: data?.favoritesOnly });
+  });
+
 // Get Single Talent
 
 export const getTalentByIdFn = createServerFn({ method: 'GET' })
@@ -78,82 +86,31 @@ export const getTalentByIdFn = createServerFn({ method: 'GET' })
     return talentRecord;
   });
 
+// Get Single Public ("system") Talent — no auth, for anonymous visitors
+
+export const getPublicTalentByIdFn = createServerFn({ method: 'GET' })
+  .inputValidator(zodValidator(talentIdSchema))
+  .handler(async ({ data }) => {
+    const talentRecord = await getPublicTalentWithRelations(data.talentId);
+
+    if (!talentRecord) {
+      throw new Error('Talent not found');
+    }
+
+    return talentRecord;
+  });
+
 // Create Talent
 
 export const createTalentFn = createServerFn({ method: 'POST' })
   .middleware([authWithTeamMiddleware])
   .inputValidator(zodValidator(createTalentSchema))
   .handler(async ({ context, data }) => {
-    const newTalent = await context.scopedDb.talent.create({
-      name: data.name,
-      description: data.description,
-      isFavorite: data.isFavorite ?? false,
-      isHuman: data.isHuman ?? false,
-    });
-
-    // Move temp files to permanent location and create media records
-    const tempUrls = data.referenceImageUrls ?? [];
-    const permanentUrls: string[] = [];
-
-    if (getEnv().E2E_TEST === 'true') {
-      for (const tempUrl of tempUrls) {
-        const mediaId = generateId();
-        permanentUrls.push(tempUrl);
-        await context.scopedDb.talent.media.create({
-          talentId: newTalent.id,
-          type: 'image',
-          url: tempUrl,
-          path: `e2e-mock/${mediaId}`,
-        });
-      }
-    } else {
-      for (const tempUrl of tempUrls) {
-        const tempPath = getPathFromUrl(tempUrl, STORAGE_BUCKETS.TALENT);
-        const ext = getExtensionFromUrl(tempUrl);
-        const mediaId = generateId();
-        const permanentPath = `${context.teamId}/${newTalent.id}/${mediaId}.${ext}`;
-
-        await moveFile(STORAGE_BUCKETS.TALENT, tempPath, permanentPath);
-
-        const permanentUrl = getPublicUrl(
-          STORAGE_BUCKETS.TALENT,
-          permanentPath
-        );
-        permanentUrls.push(permanentUrl);
-
-        await context.scopedDb.talent.media.create({
-          talentId: newTalent.id,
-          type: 'image',
-          url: permanentUrl,
-          path: permanentPath,
-        });
-      }
-    }
-
-    // Trigger talent sheet generation workflow asynchronously
-    const workflowInput: LibraryTalentSheetWorkflowInput = {
-      userId: context.user.id,
+    return createLibraryTalent(data, {
+      scopedDb: context.scopedDb,
+      user: context.user,
       teamId: context.teamId,
-      talentId: newTalent.id,
-      talentName: newTalent.name,
-      talentDescription: newTalent.description ?? undefined,
-      referenceImageUrls: [...permanentUrls].sort(),
-      sheetName: 'Default Sheet',
-    };
-    workflowInput.snapshotInputHash =
-      await computeLibraryTalentSheetHashFromDto(workflowInput);
-
-    void triggerWorkflow('/library-talent-sheet', workflowInput, {
-      label: buildWorkflowLabel(newTalent.id),
-    }).catch((error) => {
-      console.error(
-        '[createTalentFn]',
-        'Failed to trigger talent sheet workflow:',
-        error
-      );
     });
-
-    return newTalent;
   });
 
 // Update Talent

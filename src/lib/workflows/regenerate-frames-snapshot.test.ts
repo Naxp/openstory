@@ -9,9 +9,13 @@
  * helpers correctly detect divergence so the downstream branching is sound.
  */
 
-import { describe, expect, it } from 'bun:test';
-import type { Character, Frame, SequenceLocation } from '@/lib/db/schema';
-import { validateSnapshotPayload } from '@/lib/workflow/scoped-workflow';
+import { describe, expect, it } from 'vitest';
+import type {
+  Character,
+  Frame,
+  SequenceElement,
+  SequenceLocation,
+} from '@/lib/db/schema';
 import {
   buildConvergentWrites,
   buildDivergentWrites,
@@ -22,7 +26,7 @@ import {
 const NOW = new Date('2026-04-29T00:00:00Z');
 
 function makeCharacter(overrides: Partial<Character> = {}): Character {
-  return {
+  const character: Character = {
     id: 'c1',
     sequenceId: 'seq1',
     characterId: 'jack',
@@ -46,12 +50,12 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
     firstMentionSceneId: null,
     createdAt: NOW,
     updatedAt: NOW,
-    ...overrides,
-  } as Character;
+  };
+  return { ...character, ...overrides };
 }
 
 function makeFrame(overrides: Partial<Frame> = {}): Frame {
-  return {
+  const frame: Frame = {
     id: 'f1',
     sequenceId: 'seq1',
     orderIndex: 0,
@@ -95,15 +99,47 @@ function makeFrame(overrides: Partial<Frame> = {}): Frame {
     metadata: {
       sceneId: 's1',
       sceneNumber: 1,
-      continuity: { characterTags: ['jack-the-pi'], environmentTag: '' },
-    } as Frame['metadata'],
+      originalScript: { extract: '', dialogue: [] },
+      continuity: {
+        characterTags: ['jack-the-pi'],
+        environmentTag: '',
+        colorPalette: '',
+        lightingSetup: '',
+        styleTag: '',
+      },
+    },
     createdAt: NOW,
     updatedAt: NOW,
-    ...overrides,
-  } as Frame;
+  };
+  return { ...frame, ...overrides };
 }
 
 const NO_LOCATIONS: SequenceLocation[] = [];
+const NO_ELEMENTS: SequenceElement[] = [];
+
+function makeElement(
+  overrides: Partial<SequenceElement> = {}
+): SequenceElement {
+  const element: SequenceElement = {
+    id: 'e1',
+    sequenceId: 'seq1',
+    uploadedFilename: 'bottle.png',
+    token: 'BOTTLE',
+    description: 'A silver bottle',
+    consistencyTag: 'silver-bottle',
+    imageUrl: 'https://example.com/bottle.png',
+    imagePath: 'elements/seq1/bottle.png',
+    visionStatus: 'completed',
+    visionError: null,
+    visionGeneratedAt: NOW,
+    firstMentionSceneId: null,
+    firstMentionText: null,
+    firstMentionLine: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  return { ...element, ...overrides };
+}
 
 describe('buildRegenerateFrameSnapshot', () => {
   it('produces a deterministic snapshotInputHash for identical inputs', async () => {
@@ -114,6 +150,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame,
       characters,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -121,6 +158,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame,
       characters,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -135,6 +173,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame,
       characters: [makeCharacter({ sheetInputHash: 'jack-hash-v1' })],
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -142,6 +181,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame,
       characters: [makeCharacter({ sheetInputHash: 'jack-hash-v2' })],
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -155,6 +195,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame: makeFrame({ imagePrompt: 'Original prompt' }),
       characters,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -162,6 +203,7 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame: makeFrame({ imagePrompt: 'Edited prompt' }),
       characters,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -174,34 +216,177 @@ describe('buildRegenerateFrameSnapshot', () => {
       frame,
       characters: [makeCharacter({ sheetInputHash: null })],
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
     expect(snapshot.characterSheetHashes).toEqual([]);
   });
 
-  it('throws when imagePrompt is null (locks in non-empty contract)', () => {
+  it('falls back to metadata.prompts.visual.fullPrompt when imagePrompt is null', async () => {
+    const baseMetadata = makeFrame().metadata;
+    if (!baseMetadata) throw new Error('test setup: base metadata missing');
+    const frame = makeFrame({
+      imagePrompt: null,
+      metadata: {
+        ...baseMetadata,
+        prompts: {
+          visual: {
+            fullPrompt: 'AI-generated prompt from metadata',
+            negativePrompt: '',
+            components: {
+              sceneDescription: '',
+              subject: '',
+              environment: '',
+              lighting: '',
+              camera: '',
+              composition: '',
+              style: '',
+              technical: '',
+              atmosphere: '',
+            },
+          },
+        },
+      },
+    });
+    const snapshot = await buildRegenerateFrameSnapshot({
+      frame,
+      characters: [makeCharacter()],
+      locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
+      imageModel: 'nano_banana_2',
+      aspectRatio: '16:9',
+    });
+    expect(snapshot.imagePrompt).toBe('AI-generated prompt from metadata');
+  });
+
+  it('detects a metadata-prompt change as a hash change (regen-prompt staleness)', async () => {
+    const baseMetadata = makeFrame().metadata;
+    if (!baseMetadata) throw new Error('test setup: base metadata missing');
+    const buildWithMetaPrompt = (fullPrompt: string) =>
+      buildRegenerateFrameSnapshot({
+        frame: makeFrame({
+          imagePrompt: null,
+          metadata: {
+            ...baseMetadata,
+            prompts: {
+              visual: {
+                fullPrompt,
+                negativePrompt: '',
+                components: {
+                  sceneDescription: '',
+                  subject: '',
+                  environment: '',
+                  lighting: '',
+                  camera: '',
+                  composition: '',
+                  style: '',
+                  technical: '',
+                  atmosphere: '',
+                },
+              },
+            },
+          },
+        }),
+        characters: [makeCharacter()],
+        locations: NO_LOCATIONS,
+        elements: NO_ELEMENTS,
+        imageModel: 'nano_banana_2',
+        aspectRatio: '16:9',
+      });
+
+    const before = await buildWithMetaPrompt('Original AI prompt');
+    const after = await buildWithMetaPrompt('Regenerated AI prompt');
+    expect(after.snapshotInputHash).not.toBe(before.snapshotInputHash);
+  });
+
+  it('throws when both imagePrompt and metadata.prompts are absent', () => {
     expect(
       buildRegenerateFrameSnapshot({
         frame: makeFrame({ imagePrompt: null }),
         characters: [makeCharacter()],
         locations: NO_LOCATIONS,
+        elements: NO_ELEMENTS,
         imageModel: 'nano_banana_2',
         aspectRatio: '16:9',
       })
-    ).rejects.toThrow(/has no imagePrompt/);
+    ).rejects.toThrow(/has no visual prompt/);
   });
 
-  it('throws when imagePrompt is empty string', () => {
+  it('throws when imagePrompt is empty string and no metadata prompt', () => {
     expect(
       buildRegenerateFrameSnapshot({
         frame: makeFrame({ imagePrompt: '' }),
         characters: [makeCharacter()],
         locations: NO_LOCATIONS,
+        elements: NO_ELEMENTS,
         imageModel: 'nano_banana_2',
         aspectRatio: '16:9',
       })
-    ).rejects.toThrow(/has no imagePrompt/);
+    ).rejects.toThrow(/has no visual prompt/);
+  });
+
+  // #867 (image): a frame that references a product element must hash that
+  // element's reference — verify previously hard-coded `[]`, so every
+  // element-bearing frame reported permanently stale.
+  const frameMentioning = (token: string): Frame => {
+    const base = makeFrame().metadata;
+    if (!base) throw new Error('test setup: metadata missing');
+    return makeFrame({
+      metadata: {
+        ...base,
+        originalScript: { extract: `The ${token} sits here.`, dialogue: [] },
+      },
+    });
+  };
+
+  it('includes a referenced element’s reference hash in the snapshot', async () => {
+    const snapshot = await buildRegenerateFrameSnapshot({
+      frame: frameMentioning('BOTTLE'),
+      characters: [makeCharacter()],
+      locations: NO_LOCATIONS,
+      elements: [makeElement()],
+      imageModel: 'nano_banana_2',
+      aspectRatio: '16:9',
+    });
+    expect(snapshot.elementReferenceHashes).toEqual([
+      'https://example.com/bottle.png',
+    ]);
+  });
+
+  it('changes the snapshotInputHash when a referenced element image changes', async () => {
+    const opts = {
+      frame: frameMentioning('BOTTLE'),
+      characters: [makeCharacter()],
+      locations: NO_LOCATIONS,
+      imageModel: 'nano_banana_2' as const,
+      aspectRatio: '16:9' as const,
+    };
+    const before = await buildRegenerateFrameSnapshot({
+      ...opts,
+      elements: [
+        makeElement({ imageUrl: 'https://example.com/bottle-v1.png' }),
+      ],
+    });
+    const after = await buildRegenerateFrameSnapshot({
+      ...opts,
+      elements: [
+        makeElement({ imageUrl: 'https://example.com/bottle-v2.png' }),
+      ],
+    });
+    expect(after.snapshotInputHash).not.toBe(before.snapshotInputHash);
+  });
+
+  it('ignores elements the frame does not reference', async () => {
+    const snapshot = await buildRegenerateFrameSnapshot({
+      frame: makeFrame(), // empty script + no elementTags → no element matches
+      characters: [makeCharacter()],
+      locations: NO_LOCATIONS,
+      elements: [makeElement()],
+      imageModel: 'nano_banana_2',
+      aspectRatio: '16:9',
+    });
+    expect(snapshot.elementReferenceHashes).toEqual([]);
   });
 });
 
@@ -213,6 +398,7 @@ describe('computeRegenerateFramesBatchHash', () => {
     const opts = {
       characters,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2' as const,
       aspectRatio: '16:9' as const,
     };
@@ -240,6 +426,7 @@ describe('computeRegenerateFramesBatchHash', () => {
     const opts = {
       frame,
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2' as const,
       aspectRatio: '16:9' as const,
     };
@@ -287,6 +474,7 @@ describe('computeRegenerateFramesBatchHash', () => {
       frame,
       characters: [makeCharacter()],
       locations: NO_LOCATIONS,
+      elements: NO_ELEMENTS,
       imageModel: 'nano_banana_2',
       aspectRatio: '16:9',
     });
@@ -370,46 +558,7 @@ describe('buildDivergentWrites', () => {
   });
 });
 
-describe('validateSnapshotPayload', () => {
-  it('passes when the payload hash matches the recompute', async () => {
-    await validateSnapshotPayload(
-      { snapshotInputHash: 'matching-hash' },
-      () => 'matching-hash'
-    );
-  });
-
-  it('throws when the payload hash differs from the recompute (tamper)', () => {
-    expect(
-      validateSnapshotPayload(
-        { snapshotInputHash: 'stale-hash' },
-        () => 'fresh-hash'
-      )
-    ).rejects.toThrow(/snapshotInputHash does not match the inlined DTO/);
-  });
-
-  it('throws when snapshotInputHash is missing entirely', () => {
-    expect(
-      validateSnapshotPayload(
-        // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- intentionally constructing an invalid payload to verify the runtime guard
-        { snapshotInputHash: undefined } as unknown as {
-          snapshotInputHash: string;
-        },
-        () => 'fresh-hash'
-      )
-    ).rejects.toThrow(/snapshotInputHash is required/);
-  });
-
-  it('awaits an async computeFromDto', async () => {
-    const asyncMatching = async () => 'async-hash';
-    await validateSnapshotPayload(
-      { snapshotInputHash: 'async-hash' },
-      asyncMatching
-    );
-    expect(
-      validateSnapshotPayload(
-        { snapshotInputHash: 'wrong-hash' },
-        asyncMatching
-      )
-    ).rejects.toThrow();
-  });
-});
+// `validateSnapshotPayload` lived in the QStash `scoped-workflow` middleware
+// (removed in the Cloudflare Workflows cutover). Cloudflare workflows validate
+// the snapshot hash inline at `runImpl` start — see
+// `regenerate-frames-workflow.ts`.

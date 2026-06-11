@@ -4,16 +4,22 @@
  * All functions return Microdollars for exact arithmetic.
  */
 
-import { calculateImageCost, calculateVideoCost } from '@/lib/ai/fal-cost';
 import {
+  calculateAudioCost,
+  calculateImageCost,
+  calculateVideoCost,
+} from '@/lib/ai/fal-cost';
+import {
+  AUDIO_MODELS,
   IMAGE_MODELS,
   IMAGE_TO_VIDEO_MODELS,
-  type TextToImageModel,
+  type AudioModel,
   type ImageToVideoModel,
+  type TextToImageModel,
   videoModelSupportsAudio,
 } from '@/lib/ai/models';
-import { aspectRatioToDimensions } from '@/lib/constants/aspect-ratios';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
+import { aspectRatioToDimensions } from '@/lib/constants/aspect-ratios';
 import { type Microdollars, addMicros, micros, multiplyMicros } from './money';
 
 /**
@@ -65,6 +71,19 @@ export function estimateVideoCost(
 }
 
 /**
+ * Estimate the raw cost (before markup) of generating one music track.
+ */
+export function estimateAudioCost(
+  model: AudioModel,
+  durationSeconds: number
+): Microdollars {
+  return calculateAudioCost({
+    endpointId: AUDIO_MODELS[model].id,
+    durationSeconds,
+  });
+}
+
+/**
  * Rough estimate of LLM cost per call for pre-flight credit checks.
  * Based on average token usage for script analysis calls.
  * Only used for client-side gate affordability checks, not actual deduction.
@@ -90,8 +109,25 @@ export function estimateStoryboardCost(opts: {
   aspectRatio: AspectRatio;
   estimatedSceneCount?: number;
   autoGenerateMotion?: boolean;
-  videoModel?: ImageToVideoModel;
+  /**
+   * Video models selected for per-frame motion (#545). Each model is priced
+   * individually from its own parameters — fal returns no cost, so a uniform
+   * per-model multiplier would mis-estimate a mixed (e.g. cheap + audio-capable)
+   * selection. First is primary; all are billed once per frame.
+   */
+  videoModels?: ImageToVideoModel[];
   videoDurationSeconds?: number;
+  autoGenerateMusic?: boolean;
+  /**
+   * Audio models selected for the per-sequence music track (#546). Each model
+   * is priced individually from its own parameters — audio models have
+   * genuinely different rates (e.g. ElevenLabs per-minute vs ACE-Step
+   * per-second), so a uniform multiplier would mis-estimate a mixed selection.
+   * First is primary; one track per model spans the sequence.
+   */
+  audioModels?: AudioModel[];
+  /** Total sequence duration in seconds (one music track spans the sequence) */
+  audioDurationSeconds?: number;
 }): Microdollars {
   const sceneCount = opts.estimatedSceneCount ?? DEFAULT_ESTIMATED_SCENE_COUNT;
   const imageModelCount = opts.imageModelCount ?? 1;
@@ -116,14 +152,30 @@ export function estimateStoryboardCost(opts: {
     frameCost
   );
 
-  // Optional motion generation for all frames
-  if (opts.autoGenerateMotion && opts.videoModel) {
+  // Optional motion generation for all frames. Each selected video model
+  // produces its own video per frame, so sum each model's own per-frame cost
+  // (priced from its parameters) rather than scaling one model's rate by a
+  // count — a mixed selection has genuinely different per-model costs.
+  if (opts.autoGenerateMotion && opts.videoModels?.length) {
     const duration = opts.videoDurationSeconds ?? 5;
-    const perFrameMotion = estimateVideoCost(opts.videoModel, duration);
-    totalCost = addMicros(
-      totalCost,
-      multiplyMicros(perFrameMotion, sceneCount)
-    );
+    for (const model of opts.videoModels) {
+      const perFrameMotion = estimateVideoCost(model, duration);
+      totalCost = addMicros(
+        totalCost,
+        multiplyMicros(perFrameMotion, sceneCount)
+      );
+    }
+  }
+
+  // Optional music generation — one track per sequence per audio model. Sum
+  // each selected model's own cost (priced from its parameters) rather than
+  // scaling the primary's rate by a count — a mixed selection has genuinely
+  // different per-model costs (mirrors the per-model video costing above).
+  if (opts.autoGenerateMusic && opts.audioModels?.length) {
+    const audioDuration = opts.audioDurationSeconds ?? sceneCount * 5;
+    for (const model of opts.audioModels) {
+      totalCost = addMicros(totalCost, estimateAudioCost(model, audioDuration));
+    }
   }
 
   return totalCost;

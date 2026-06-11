@@ -7,7 +7,7 @@
  *   - Cloudflare D1's plain Error with the canonical SQLite message text
  */
 
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import {
   insertDivergentRaceTolerant,
   isUniqueConstraintError,
@@ -127,7 +127,8 @@ describe('insertDivergentRaceTolerant', () => {
         errorMessage: 'fail',
       });
     } catch (err) {
-      expect((err as Error).message).toMatch(/UNIQUE constraint failed/);
+      if (!(err instanceof Error)) throw err;
+      expect(err.message).toMatch(/UNIQUE constraint failed/);
     }
   });
 
@@ -146,7 +147,8 @@ describe('insertDivergentRaceTolerant', () => {
         errorMessage: 'fail',
       });
     } catch (err) {
-      expect((err as Error).message).toBe('connection reset');
+      if (!(err instanceof Error)) throw err;
+      expect(err.message).toBe('connection reset');
     }
     expect(findCalls).toBe(1); // pre-check only; no retry-fetch
   });
@@ -160,7 +162,8 @@ describe('insertDivergentRaceTolerant', () => {
         errorMessage: 'driver returned no row',
       });
     } catch (err) {
-      expect((err as Error).message).toBe('driver returned no row');
+      if (!(err instanceof Error)) throw err;
+      expect(err.message).toBe('driver returned no row');
     }
   });
 });

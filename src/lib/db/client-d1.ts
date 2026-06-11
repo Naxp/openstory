@@ -10,7 +10,11 @@ import { drizzle } from 'drizzle-orm/d1';
 import { getEnv } from '../env/cloudflare';
 import { relations } from './schema/relations';
 
-console.log('[db-d1] Loading client');
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'db', 'client-d1']);
+
+logger.info('Loading client');
 
 type Database = ReturnType<typeof buildDb>;
 
@@ -20,6 +24,7 @@ export const getDb = (): Database => {
   if (_db) return _db;
 
   const d1 = getEnv().DB;
+  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- generated Env types DB as always-present; guard against wrangler.jsonc drift
   if (!d1) {
     throw new Error(
       'D1 database binding "DB" not found. Ensure d1_databases is configured in wrangler.jsonc'
@@ -34,6 +39,5 @@ export const getDb = (): Database => {
 function buildDb(d1: D1Database) {
   return drizzle(d1, {
     relations,
-    casing: 'snake_case',
   });
 }

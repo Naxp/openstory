@@ -26,7 +26,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { PromptDiffView } from './prompt-diff-view';
 
-export type PromptHistoryMode = 'visual' | 'motion' | 'music';
+type PromptHistoryMode = 'visual' | 'motion' | 'music';
 
 type SharedProps = {
   open: boolean;
@@ -273,9 +273,8 @@ export const PromptHistorySheet: React.FC<PromptHistorySheetProps> = (
                       )}
                     </button>
                     {expanded && (
-                      <div
+                      <section
                         id={panelId}
-                        role="region"
                         aria-labelledby={triggerId}
                         className="flex flex-col gap-2"
                       >
@@ -295,7 +294,7 @@ export const PromptHistorySheet: React.FC<PromptHistorySheetProps> = (
                             </Button>
                           </div>
                         )}
-                      </div>
+                      </section>
                     )}
                   </li>
                 );

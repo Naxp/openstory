@@ -1,0 +1,1 @@
+ALTER TABLE `sequences` ADD `include_music` integer DEFAULT true NOT NULL;

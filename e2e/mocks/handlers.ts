@@ -1,12 +1,11 @@
 /**
  * Playwright Route Handlers for E2E Tests
- * Intercepts external API calls (fal.ai, QStash, R2) to return mock responses
+ * Intercepts external API calls (fal.ai, QStash) to return mock responses.
+ * R2 is NOT mocked: uploads do real puts into the local Miniflare R2 binding
+ * and reads are served by the worker's /r2/$ route (see src/routes/r2.$.ts).
  */
 
 import type { Page, Route } from 'playwright/test';
-
-/** Counter for generating unique mock file IDs */
-let mockFileCounter = 0;
 
 /**
  * Mock image generation response
@@ -37,13 +36,6 @@ const mockMotionResponse = {
     file_size: 1024000,
   },
   seed: 12345,
-};
-
-/**
- * Mock QStash publish response
- */
-const mockQStashResponse = {
-  messageId: 'mock-message-id-12345',
 };
 
 /**
@@ -106,27 +98,9 @@ export async function setupMockRoutes(page: Page): Promise<void> {
     }
   });
 
-  // Mock QStash publish
-  await page.route('**/qstash.upstash.io/**', async (route: Route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(mockQStashResponse),
-    });
-  });
-
-  // Mock upload proxy (used in e2e when getSignedUploadUrl returns proxy URL)
-  await page.route('**/api/storage/upload*', async (route: Route) => {
-    if (route.request().method() === 'PUT') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true }),
-      });
-    } else {
-      await route.continue();
-    }
-  });
+  // Note: /api/storage/upload is NOT mocked — browser uploads go through the
+  // real route into the local Miniflare R2 binding, so downstream copy/move
+  // operations (talent creation, element promotion) find real source objects.
 
   // Safety net: redirect any stray picsum.photos requests to local test image endpoint
   await page.route('**/picsum.photos/**', async (route: Route) => {
@@ -138,37 +112,10 @@ export async function setupMockRoutes(page: Page): Promise<void> {
     });
   });
 
-  // Mock R2 storage uploads (PutObject operations)
-  await page.route('**/*.r2.cloudflarestorage.com/**', async (route: Route) => {
-    const method = route.request().method();
-
-    if (method === 'PUT') {
-      // Successfully mock file upload
-      await route.fulfill({
-        status: 200,
-        headers: {
-          ETag: `"mock-etag-${++mockFileCounter}"`,
-        },
-      });
-    } else if (method === 'GET' || method === 'HEAD') {
-      // Mock file exists/download
-      await route.fulfill({
-        status: 200,
-        headers: {
-          'Content-Type': 'image/jpeg',
-          'Content-Length': '1024',
-        },
-        body: Buffer.from([]),
-      });
-    } else if (method === 'DELETE') {
-      // Mock file deletion
-      await route.fulfill({
-        status: 204,
-      });
-    } else {
-      await route.continue();
-    }
-  });
+  // R2 traffic note: under the cf-plugin runtime, the browser never PUTs
+  // directly to `*.r2.cloudflarestorage.com` — uploads go through the worker
+  // (storage-cloudflare.ts) into the local Miniflare R2 binding. Image/video
+  // reads hit the worker's /r2/$ route, which streams from the same binding.
 }
 
 /**

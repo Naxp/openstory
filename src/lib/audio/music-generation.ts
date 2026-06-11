@@ -2,7 +2,6 @@ import { getEnv } from '#env';
 import { calculateAudioCost } from '@/lib/ai/fal-cost';
 import { extractFalErrorMessage } from '@/lib/ai/fal-error';
 import {
-  AUDIO_MODEL_KEYS,
   AUDIO_MODELS,
   DEFAULT_MUSIC_MODEL,
   type AudioModel,
@@ -17,17 +16,10 @@ import {
 } from '@/lib/observability/tracer';
 import { generateAudio } from '@tanstack/ai';
 import { falAudio } from '@tanstack/ai-fal';
-import { z } from 'zod';
 
-export const generateMusicOptionsSchema = z.object({
-  prompt: z.string().min(1),
-  tags: z.string().optional(),
-  lyrics: z.string().optional(),
-  duration: z.number().min(1).max(240).optional(),
-  instrumental: z.boolean().optional().default(true),
-  model: z.enum(AUDIO_MODEL_KEYS).optional().default(DEFAULT_MUSIC_MODEL),
-  steps: z.number().optional(),
-});
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'audio', 'music-generation']);
 
 export type GenerateMusicOptions = {
   scopedDb?: ScopedDb;
@@ -186,14 +178,11 @@ async function callFalAudio(
   const billedDuration =
     shape.duration ?? clampDuration(options.duration, modelConfig);
 
-  console.log(
-    `[Music Service] Generating music with model: ${modelConfig.id}`,
-    {
-      provider: modelConfig.provider,
-      promptLength: shape.prompt.length,
-      duration: shape.duration ?? '(fixed by model)',
-    }
-  );
+  logger.info(`Generating music with model: ${modelConfig.id}`, {
+    provider: modelConfig.provider,
+    promptLength: shape.prompt.length,
+    duration: shape.duration ?? '(fixed by model)',
+  });
 
   const falApiKeyInfo = options.scopedDb
     ? await options.scopedDb.apiKeys.resolveKey('fal')
@@ -209,7 +198,7 @@ async function callFalAudio(
   });
 
   if (!result.audio.url) {
-    console.error('[Music Service] No audio URL in result:', result);
+    logger.error('No audio URL in result:', { result });
     throw new Error('No audio URL returned from music generation');
   }
 

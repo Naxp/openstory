@@ -2,16 +2,12 @@ import { getEnv } from '#env';
 import { calculateVideoCost } from '@/lib/ai/fal-cost';
 import {
   DEFAULT_VIDEO_MODEL,
-  IMAGE_TO_VIDEO_MODEL_KEYS,
   IMAGE_TO_VIDEO_MODELS,
   type ImageToVideoModel,
   videoModelSupportsAudio,
 } from '@/lib/ai/models';
 import type { Microdollars } from '@/lib/billing/money';
-import {
-  type AspectRatio,
-  aspectRatioSchema,
-} from '@/lib/constants/aspect-ratios';
+import { type AspectRatio } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { MOTION_JSON_SCHEMAS } from '@/lib/motion/endpoint-map';
 import {
@@ -21,20 +17,6 @@ import {
 } from '@/lib/motion/motion-transform';
 import { generateVideo, getVideoJobStatus } from '@tanstack/ai';
 import { falVideo } from '@tanstack/ai-fal';
-import { z } from 'zod';
-
-export const generationMotionOptionsSchema = z.object({
-  imageUrl: z.url(),
-  prompt: z.string(),
-  model: z
-    .enum(IMAGE_TO_VIDEO_MODEL_KEYS)
-    .optional()
-    .default(DEFAULT_VIDEO_MODEL),
-  duration: z.number().optional(),
-  fps: z.number().optional(),
-  motionBucket: z.number().optional(),
-  aspectRatio: aspectRatioSchema.optional(),
-});
 
 export type GenerateMotionOptions = {
   scopedDb?: ScopedDb; // scopedDb is used to resolve the API key for the motion generation with BYOK
@@ -45,9 +27,18 @@ export type GenerateMotionOptions = {
   fps?: number;
   motionBucket?: number;
   aspectRatio?: AspectRatio;
+  /** For audio-capable models (kling v3, veo3), pass `false` to suppress
+   *  the model's native audio output (sfx/ambient/lip-sync). Omitting the
+   *  flag lets the API schema default apply (true for audio-capable models). */
+  generateAudio?: boolean;
 };
 
+import { ensureExternallyFetchableUrl } from '@/lib/storage/external-url';
 import { buildModelInput } from './build-model-input';
+
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'motion', 'motion-generation']);
 
 /** Snap a requested duration to the nearest valid value for a model.
  *  Reads supported durations from the model's JSON Schema and snaps directly. */
@@ -59,9 +50,10 @@ export function snapDuration(
   const jsonSchema = MOTION_JSON_SCHEMAS[endpointId];
   const validValues = getDurationValues(jsonSchema);
 
-  if (validValues.length === 0) return requested ?? 5;
+  const firstValue = validValues[0];
+  if (firstValue === undefined) return requested ?? 5;
 
-  const target = requested ?? numericOf(validValues[0]);
+  const target = requested ?? numericOf(firstValue);
   return numericOf(snapTo(target, validValues));
 }
 
@@ -82,8 +74,16 @@ export async function submitMotionJob(
   const modelKey = options.model || DEFAULT_VIDEO_MODEL;
   const modelConfig = IMAGE_TO_VIDEO_MODELS[modelKey];
 
+  // Locally-served /r2/ image URLs aren't reachable by real fal — swap them
+  // for a fal-storage upload first (no-op in prod and e2e replay).
+  const imageUrl = await ensureExternallyFetchableUrl(options.imageUrl);
+
   // Prepare the model input
-  const modelInput = buildModelInput(options, modelConfig, modelKey);
+  const modelInput = buildModelInput(
+    { ...options, imageUrl },
+    modelConfig,
+    modelKey
+  );
 
   // Separate the prompt from the model options
   const { prompt: optimisedPrompt, ...modelOptions } = modelInput;
@@ -91,7 +91,7 @@ export async function submitMotionJob(
     throw new Error('Truncated prompt is not a string');
   }
   // Log the submission details
-  console.log(`[Motion Service] Submitting job with model: ${modelConfig.id}`, {
+  logger.info(`Submitting job with model: ${modelConfig.id}`, {
     provider: modelConfig.provider,
     promptLength: optimisedPrompt.length,
     modelOptions,
@@ -115,7 +115,7 @@ export async function submitMotionJob(
   });
 
   // Log the job submission details
-  console.log(`[Motion Service] Job submitted: ${job.jobId}`);
+  logger.info(`Job submitted: ${job.jobId}`);
 
   return {
     jobId: job.jobId,
@@ -124,13 +124,6 @@ export async function submitMotionJob(
     submittedAt: Date.now(),
   };
 }
-
-export type MotionPollResult = {
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  videoUrl?: string;
-  progress?: number;
-  error?: string;
-};
 
 /**
  * Check the status of a submitted motion job.
@@ -173,10 +166,12 @@ export function calculateMotionMetadata(options: GenerateMotionOptions): {
   const validatedDuration = snapDuration(options.duration, modelKey);
 
   const providerInput = buildModelInput(options, modelConfig, modelKey);
+  const audioEnabled =
+    videoModelSupportsAudio(modelKey) && options.generateAudio !== false;
   const cost = calculateVideoCost({
     endpointId: modelConfig.id,
     durationSeconds: validatedDuration,
-    audioEnabled: videoModelSupportsAudio(modelKey),
+    audioEnabled,
     resolution:
       'resolution' in providerInput &&
       typeof providerInput.resolution === 'string'

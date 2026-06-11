@@ -11,36 +11,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 
 /**
- * Platform detection
- */
-type DeploymentPlatform =
-  | 'cloudflare'
-  | 'vercel'
-  | 'railway'
-  | 'local'
-  | 'unknown';
-
-/**
- * Detect which platform the app is running on
- */
-export function getDeploymentPlatform(): DeploymentPlatform {
-  const env = getEnv();
-  if (env.CF_PAGES) {
-    return 'cloudflare';
-  }
-  if (env.VERCEL) {
-    return 'vercel';
-  }
-  if (env.RAILWAY_ENVIRONMENT) {
-    return 'railway';
-  }
-  if (env.NODE_ENV === 'development') {
-    return 'local';
-  }
-  return 'unknown';
-}
-
-/**
  * Server-side application URL
  * Used by Better Auth, QStash webhooks, and internal API calls
  * Lazily evaluated to support Cloudflare Workers
@@ -65,7 +35,7 @@ export function getProductionDeploymentAppUrl(request: Request): string {
   return getServerAppUrl(request);
 }
 
-export function isProductionDeployment(request: Request): boolean {
+function isProductionDeployment(request: Request): boolean {
   return (
     !isLocalDevelopment() &&
     getProductionDeploymentAppUrl(request) === getServerAppUrl(request)
@@ -93,34 +63,34 @@ export function isPreviewDeployment(request: Request): boolean {
 }
 
 /**
- * Check if a hostname is a preview deployment
- * Pure function that can be used on server or client.
- * If VITE_APP_URL env var is set, a preview host is any host that doesn't match it.
- * If no VITE_APP_URL, consider it non-preview.
+ * Check if we're running in local development environment
  */
-export function isPreviewHost(host: string): boolean {
-  if (host.startsWith('localhost')) {
-    return false;
-  }
-
-  const envAppUrl = getEnv().VITE_APP_URL;
-  if (!envAppUrl) {
-    return false;
-  }
-
-  try {
-    const productionHost = new URL(envAppUrl).host;
-    return host !== productionHost;
-  } catch {
-    return false;
-  }
+function isLocalDevelopment(): boolean {
+  return getEnv().NODE_ENV === 'development';
 }
 
 /**
- * Check if we're running in local development environment
+ * Is this request being served on a local/network-dev host (localhost or a
+ * bare IP)? Mirrors the local-access check in src/routes/__root.tsx: real
+ * deployments — wherever they are hosted — are always reached by hostname,
+ * never a bare IP or localhost.
+ *
+ * This is a host-based, env-independent signal. Unlike isProductionDeployment(),
+ * it does not rely on VITE_APP_URL / NODE_ENV being present in the worker env
+ * (they are only declared under wrangler.jsonc [env.test].vars, so they are
+ * undefined in production and in the e2e-built worker alike).
  */
-export function isLocalDevelopment(): boolean {
-  return getEnv().NODE_ENV === 'development';
+export function isLocalRequestHost(request: Request): boolean {
+  const host =
+    request.headers.get('x-forwarded-host') ?? request.headers.get('host');
+  if (!host) return false;
+  const hostname = (host.split(':')[0] ?? host).toLowerCase();
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    /^\d+\.\d+\.\d+\.\d+$/.test(hostname)
+  );
 }
 
 /**

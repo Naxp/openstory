@@ -1,10 +1,5 @@
 import { Info } from 'lucide-react';
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type {
@@ -17,7 +12,8 @@ type DivergentAlternateBannerProps = {
   variantId: string;
   artifact: StalenessArtifact;
   entityType: StalenessEntityType;
-  onCompare: () => void;
+  /** Render a Compare button (inline) / make the dot clickable (corner-dot). */
+  onCompare?: () => void;
   /** Inline-only: promote button is rendered only when this is provided. */
   onPromote?: () => void;
   /** Inline-only: discard button is rendered only when this is provided. */
@@ -34,7 +30,6 @@ const ARTIFACT_LABEL: Record<StalenessArtifact, string> = {
   'visual-prompt': 'visual prompt',
   'motion-prompt': 'motion prompt',
   'music-prompt': 'music prompt',
-  'merged-video': 'merged video',
   music: 'music',
 };
 
@@ -79,7 +74,6 @@ export const DivergentAlternateBanner: React.FC<
 
   return (
     <Alert
-      role="status"
       aria-live="polite"
       data-slot="divergent-alternate-banner"
       data-density="inline"
@@ -94,10 +88,12 @@ export const DivergentAlternateBanner: React.FC<
         An alternate {ARTIFACT_LABEL[artifact]} was generated with the inputs
         you had at the time.
       </AlertDescription>
-      <AlertAction className="flex items-center gap-1">
-        <Button type="button" size="sm" variant="outline" onClick={onCompare}>
-          Compare
-        </Button>
+      <div className="col-start-2 mt-2 flex flex-wrap items-center gap-2">
+        {onCompare && (
+          <Button type="button" size="sm" variant="outline" onClick={onCompare}>
+            Compare
+          </Button>
+        )}
         {onPromote && (
           <Button type="button" size="sm" onClick={onPromote}>
             Promote
@@ -108,7 +104,7 @@ export const DivergentAlternateBanner: React.FC<
             Discard
           </Button>
         )}
-      </AlertAction>
+      </div>
     </Alert>
   );
 };

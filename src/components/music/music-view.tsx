@@ -1,22 +1,18 @@
+import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
 import { MusicModelSelector } from '@/components/model/music-model-selector';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  DEFAULT_MUSIC_MODEL,
-  getAudioModelDurationLimits,
-  safeAudioModel,
-  type AudioModel,
-} from '@/lib/ai/models';
+import { getAudioModelDurationLimits, type AudioModel } from '@/lib/ai/models';
 import type { Sequence } from '@/types/database';
 import {
   AlertCircle,
   AlertTriangle,
-  Film,
   History,
   Loader2,
   Music,
@@ -36,13 +32,35 @@ type MusicViewProps = {
   videoDuration?: number;
   onGenerateMusic: (args?: GenerateMusicArgs) => void;
   isGeneratingMusic: boolean;
-  onMergeVideoAndMusic: () => void;
-  isMergingVideoAndMusic: boolean;
+  /**
+   * Per-model generation status for this sequence (#546), mirroring the
+   * video/image scene-detail selector: ⊙ `set` (the live primary track) /
+   * ✓ `completed` (a generated alternate) / ⟳ `generating` / ! `failed`.
+   * Drives the model markers and the Set/Regenerate/Generate action button.
+   */
+  audioModelStatuses?: Map<string, ModelGenerationStatus>;
+  /**
+   * The viewer's active audio model, owned by `useActiveAudioModel` in the
+   * route (#546). Controlled here (not local state) so the music-tab selector
+   * and the sequence-header dropdown stay in sync — switching either one moves
+   * both, and the player remaps to the picked model's track.
+   */
+  selectedModel: AudioModel;
+  onModelChange: (model: AudioModel) => void;
+  /** Promote the selected model's track to the sequence primary ("Set Music"). */
+  onSetModel: (model: AudioModel) => void;
+  isSettingModel?: boolean;
   /** Banner rendered above the audio player while `musicStatus === 'completed'`. */
   divergentBanner?: React.ReactNode;
   isMusicPromptStale?: boolean;
   onRegenerateMusicPrompt?: () => void;
   isRegeneratingMusicPrompt?: boolean;
+  /**
+   * Toggle whether this sequence's music plays in the theatre and is bundled
+   * into MP4 exports (#834). Bound to `sequence.includeMusic`; persisted by the
+   * route via `useSetSequenceMusic`.
+   */
+  onIncludeMusicChange?: (includeMusic: boolean) => void;
 };
 
 type LoadingButtonProps = React.ComponentProps<typeof Button> & {
@@ -136,26 +154,21 @@ export const MusicView: React.FC<MusicViewProps> = ({
   videoDuration,
   onGenerateMusic,
   isGeneratingMusic,
-  onMergeVideoAndMusic,
-  isMergingVideoAndMusic,
+  audioModelStatuses,
+  selectedModel,
+  onModelChange,
+  onSetModel,
+  isSettingModel = false,
   divergentBanner,
   isMusicPromptStale,
   onRegenerateMusicPrompt,
   isRegeneratingMusicPrompt,
+  onIncludeMusicChange,
 }) => {
-  const {
-    musicStatus,
-    musicUrl,
-    musicError,
-    musicModel,
-    musicPrompt,
-    musicTags,
-  } = sequence;
+  const { musicStatus, musicUrl, musicError, musicPrompt, musicTags } =
+    sequence;
 
   const [editPrompt, setEditPrompt] = useState(musicPrompt ?? '');
-  const [editModel, setEditModel] = useState<AudioModel>(() =>
-    safeAudioModel(musicModel, DEFAULT_MUSIC_MODEL)
-  );
   const [editDuration, setEditDuration] = useState<number | undefined>(
     () => videoDuration
   );
@@ -211,7 +224,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
     setEditDuration(videoDuration);
   }
 
-  const durationLimits = getAudioModelDurationLimits(editModel);
+  const durationLimits = getAudioModelDurationLimits(selectedModel);
   const effectiveDuration =
     editDuration ?? videoDuration ?? durationLimits.default;
   const durationExceedsMax = effectiveDuration > durationLimits.max;
@@ -220,15 +233,39 @@ export const MusicView: React.FC<MusicViewProps> = ({
     onGenerateMusic({
       prompt: editPrompt || undefined,
       tags: musicTags || undefined,
-      model: editModel,
+      model: selectedModel,
       duration: editDuration,
     });
   }
 
-  if (musicStatus === 'completed' && musicUrl) {
-    const isMerging =
-      isMergingVideoAndMusic || sequence.mergedVideoStatus === 'merging';
+  // Action for the selected model, mirroring the video/image scene-detail
+  // button: a completed alternate promotes ("Set Music"); the live primary
+  // regenerates; anything without a track generates for the first time.
+  const selectedStatus = audioModelStatuses?.get(selectedModel);
+  const selectedIsSet = selectedStatus === 'set';
+  const selectedIsCompletedAlternate = selectedStatus === 'completed';
 
+  const actionButton = selectedIsCompletedAlternate ? (
+    <LoadingButton
+      onClick={() => onSetModel(selectedModel)}
+      isLoading={isSettingModel}
+      loadingText="Setting…"
+    >
+      Set Music
+    </LoadingButton>
+  ) : (
+    <LoadingButton
+      variant={selectedIsSet ? 'outline' : 'default'}
+      onClick={handleGenerate}
+      disabled={!editPrompt}
+      isLoading={isGeneratingMusic}
+      loadingText={selectedIsSet ? 'Regenerating…' : 'Generating…'}
+    >
+      {selectedIsSet ? 'Regenerate Music' : 'Generate Music'}
+    </LoadingButton>
+  );
+
+  if (musicStatus === 'completed' && musicUrl) {
     return (
       <StatusPanel
         icon={<Volume2 className="h-10 w-10 text-muted-foreground" />}
@@ -246,32 +283,34 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
         <FormField label="Model" muted>
           <MusicModelSelector
-            selectedModel={editModel}
-            onModelChange={setEditModel}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            generatedStatuses={audioModelStatuses}
           />
         </FormField>
 
         <ReadOnlyField label="Prompt" value={musicPrompt ?? 'Missing prompt'} />
         <ReadOnlyField label="Tags" value={musicTags ?? 'Missing tags'} />
 
+        {onIncludeMusicChange && (
+          <label
+            htmlFor="include-music"
+            className="flex items-center gap-2 self-center text-sm text-muted-foreground"
+          >
+            <Checkbox
+              id="include-music"
+              checked={sequence.includeMusic}
+              onCheckedChange={(checked) =>
+                onIncludeMusicChange(checked === true)
+              }
+            />
+            <span>Include music in playback &amp; export</span>
+          </label>
+        )}
+
         <div className="flex justify-center gap-3">
           {historyButton}
-          <LoadingButton
-            variant="outline"
-            onClick={handleGenerate}
-            isLoading={isGeneratingMusic}
-            loadingText="Regenerating…"
-          >
-            Regenerate Music
-          </LoadingButton>
-          <LoadingButton
-            onClick={onMergeVideoAndMusic}
-            isLoading={isMerging}
-            loadingText="Merging…"
-          >
-            <Film className="mr-2 h-4 w-4" />
-            Merge with Video
-          </LoadingButton>
+          {actionButton}
         </div>
         {historySheet}
       </StatusPanel>
@@ -304,19 +343,13 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
         <FormField label="Model" muted>
           <MusicModelSelector
-            selectedModel={editModel}
-            onModelChange={setEditModel}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            generatedStatuses={audioModelStatuses}
           />
         </FormField>
 
-        <LoadingButton
-          className="self-center"
-          onClick={handleGenerate}
-          isLoading={isGeneratingMusic}
-          loadingText="Retrying…"
-        >
-          Retry
-        </LoadingButton>
+        <div className="flex justify-center">{actionButton}</div>
       </StatusPanel>
     );
   }
@@ -354,8 +387,9 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
       <FormField label="Model">
         <MusicModelSelector
-          selectedModel={editModel}
-          onModelChange={setEditModel}
+          selectedModel={selectedModel}
+          onModelChange={onModelChange}
+          generatedStatuses={audioModelStatuses}
         />
       </FormField>
 
@@ -371,7 +405,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
         {durationExceedsMax && (
           <p className="flex items-center gap-1.5 text-xs text-warning">
             <AlertTriangle className="h-3.5 w-3.5" />
-            Video is {Math.round(effectiveDuration)}s but {editModel} max is{' '}
+            Video is {Math.round(effectiveDuration)}s but {selectedModel} max is{' '}
             {durationLimits.max}s — music will be clamped.
           </p>
         )}
@@ -379,14 +413,7 @@ export const MusicView: React.FC<MusicViewProps> = ({
 
       <div className="flex justify-center gap-3">
         {historyButton}
-        <LoadingButton
-          onClick={handleGenerate}
-          disabled={!editPrompt}
-          isLoading={isGeneratingMusic}
-          loadingText="Generating…"
-        >
-          Generate Music
-        </LoadingButton>
+        {actionButton}
       </div>
       {historySheet}
     </StatusPanel>

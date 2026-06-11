@@ -11,7 +11,15 @@ pre-commit:
       exclude:
         - src/routeTree.gen.ts
         - public/mockServiceWorker.js
-      run: bun run --bun oxlint --type-aware --quiet {staged_files}
+      # Filter staged files against .oxlintrc.json's ignorePatterns
+      # before invoking oxlint — when every staged file is ignored by
+      # oxlint config, oxlint itself exits "no files to lint" + 1. The
+      # awk pipeline drops src/components/ui/* (matching .oxlintrc), and
+      # the surrounding `[ -n ... ] && ... || true` skips the run when
+      # nothing remains.
+      run: |
+        filtered=$(printf '%s\n' {staged_files} | awk '!/^src\/components\/ui\//')
+        [ -n "$filtered" ] && bun run --bun oxlint --type-aware --quiet $filtered || true
       stage_fixed: true
     format:
       glob: '*.{js,ts,cjs,mjs,d.cts,d.mts,jsx,tsx,sql,json,md}'
@@ -24,6 +32,43 @@ pre-commit:
       glob: '*.{ts,tsx,mts,cts}'
       run: bun run --bun tsgo --noEmit
       stage_fixed: true
+    dead-code:
+      # Whole-repo analysis (knip can't scope to staged files), ~1.5s. Gated
+      # on globs that can change the import graph so docs/SQL-only commits
+      # skip it. If a commit legitimately introduces a not-yet-consumed
+      # export, wire up a consumer in the same commit or tag it `@public`.
+      glob: '{*.{js,ts,cjs,mjs,jsx,tsx},package.json,knip.config.ts}'
+      run: bun dead-code
     migration-safety:
       glob: 'drizzle/migrations/**/*.sql'
       run: bun scripts/check-migrations.ts {staged_files}
+    typegen-regen:
+      # worker-configuration.d.ts is committed (Cloudflare's CI recommendation),
+      # so a wrangler.jsonc change must ship the regenerated types with it —
+      # stale committed types are how the old cloudflare-env.d.ts rotted.
+      # Regenerate in place and stage, like the format hook. (`wrangler types
+      # --check` would be the natural guard but is broken: it returns 0
+      # against a provably stale file.)
+      glob: 'wrangler.jsonc'
+      run: bun run --bun wrangler types >/dev/null && git add worker-configuration.d.ts
+    workflow-trigger-safety:
+      glob: '.github/workflows/*.{yml,yaml}'
+      run: |
+        violations=0
+        for wf in {staged_files}; do
+          block=$(awk '/^["'"'"']?on["'"'"']?[[:space:]]*:/{flag=1; print; next} flag && /^[a-zA-Z"'"'"']/{flag=0} flag' "$wf")
+          if [ -z "$block" ]; then
+            echo "ERROR $wf: could not locate top-level 'on:' block — unsupported YAML format"
+            violations=$((violations + 1))
+            continue
+          fi
+          if printf '%s\n' "$block" | sed 's/[[:space:]]*#.*$//' | grep -q 'pull_request_target'; then
+            echo "ERROR $wf: pull_request_target trigger is not allowed in this repo."
+            violations=$((violations + 1))
+          fi
+        done
+        if [ "$violations" -gt 0 ]; then
+          echo 'It runs base-branch workflow code with secrets in the context of fork PRs.'
+          echo 'See https://securitylab.github.com/research/github-actions-preventing-pwn-requests/'
+          exit 1
+        fi

@@ -49,12 +49,6 @@ export const createSequenceSchema = createInsertSchema(sequences, {
     imageModel: true, // Omit - will use imageModel field in extend
     videoModel: true, // Omit - will use videoModel field in extend
     workflow: true, // Omit - set by workflow, not user
-    // Merged video fields - managed by workflow, not user input
-    mergedVideoUrl: true,
-    mergedVideoPath: true,
-    mergedVideoStatus: true,
-    mergedVideoGeneratedAt: true,
-    mergedVideoError: true,
     // Music fields - managed by workflow, not user input
     musicUrl: true,
     musicPath: true,
@@ -92,35 +86,60 @@ export const createSequenceSchema = createInsertSchema(sequences, {
       )
       .min(1, 'At least one image model must be selected')
       .default([DEFAULT_IMAGE_MODEL]),
-    // Video model selection (model key, not full ID)
+    // Video model selection (model key, not full ID) — primary / first of videoModels
     videoModel: z
       .string()
       .refine((val) => validVideoModelKeys.includes(val), {
         message: 'Invalid video model',
       })
       .default(DEFAULT_VIDEO_MODEL),
+    // Multiple video models for variant generation (first is primary)
+    videoModels: z
+      .array(
+        z.string().refine((val) => validVideoModelKeys.includes(val), {
+          message: 'Invalid video model',
+        })
+      )
+      .min(1, 'At least one video model must be selected')
+      .default([DEFAULT_VIDEO_MODEL]),
     // Auto-generate motion flag (UI-only, not stored in DB)
     autoGenerateMotion: z.boolean().default(false).optional(),
     // Auto-generate music flag (UI-only, not stored in DB)
     autoGenerateMusic: z.boolean().default(false).optional(),
-    // Music model selection (model key, not full ID)
+    // Music model selection (model key, not full ID) — primary / first of audioModels
     musicModel: z
       .string()
       .refine((val) => validAudioModelKeys.includes(val), {
         message: 'Invalid music model',
       })
       .optional(),
+    // Multiple audio models for variant generation (first is primary). Optional
+    // (music is opt-in via autoGenerateMusic); when present must be non-empty.
+    audioModels: z
+      .array(
+        z.string().refine((val) => validAudioModelKeys.includes(val), {
+          message: 'Invalid audio model',
+        })
+      )
+      .min(1, 'At least one audio model must be selected')
+      .optional(),
     // Suggested talent IDs for AI-assisted casting during generation
     suggestedTalentIds: z.array(z.string()).optional(),
     // Suggested location IDs for visual consistency during generation
     suggestedLocationIds: z.array(z.string()).optional(),
-    // Draft element uploads (presigned to temp path before sequence exists)
+    // Draft element uploads (presigned to temp path before sequence exists).
+    // description/consistencyTag are populated by the inline analyzeDraftElementFn
+    // call so promoteTempElements can write them straight onto the new row
+    // instead of re-triggering the async vision workflow.
     elementUploads: z
       .array(
         z.object({
           tempPath: z.string().min(1),
           tempPublicUrl: z.string().url(),
           filename: z.string().min(1),
+          token: z.string().min(1).max(100),
+          description: z.string().nullable().optional(),
+          consistencyTag: z.string().nullable().optional(),
         })
       )
       .optional(),
@@ -154,12 +173,7 @@ export const updateSequenceSchema = createUpdateSchema(sequences, {
   createdBy: true,
   updatedBy: true,
   workflow: true, // Set by workflow, not user
-  // Merged video fields - managed by workflow, not user input
-  mergedVideoUrl: true,
-  mergedVideoPath: true,
-  mergedVideoStatus: true,
-  mergedVideoGeneratedAt: true,
-  mergedVideoError: true,
+  workflowRunId: true, // Set at workflow trigger time, not user
   // Music fields - managed by workflow, not user input
   musicUrl: true,
   musicPath: true,
@@ -172,4 +186,3 @@ export const updateSequenceSchema = createUpdateSchema(sequences, {
 });
 
 export type CreateSequenceInput = z.infer<typeof createSequenceSchema>;
-export type UpdateSequenceInput = z.infer<typeof updateSequenceSchema>;

@@ -1,6 +1,7 @@
-import { getEnv } from '#env';
 import { getSignedUploadUrl } from '#storage';
+import { describeElementImage } from '@/lib/ai/element-vision';
 import { generateId } from '@/lib/db/id';
+import { getGenerationChannel } from '@/lib/realtime';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { deriveTokenFromFilename } from '@/lib/sequence-elements/derive-token';
 import { STORAGE_BUCKETS } from '@/lib/storage/buckets';
@@ -10,11 +11,36 @@ import {
 } from '@/lib/utils/file';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
-import type { ElementVisionWorkflowInput } from '@/lib/workflow/types';
+import type {
+  ElementVisionWorkflowInput,
+  ReplaceElementWorkflowInput,
+} from '@/lib/workflow/types';
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { authWithTeamMiddleware, sequenceAccessMiddleware } from './middleware';
+
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'serverFn', 'sequence-elements']);
+
+/**
+ * Sequence-element storage paths must live exactly under
+ * `elements/<teamId>/`. `startsWith` alone accepts traversal artifacts like
+ * `elements/<myTeamId>/../<otherTeamId>/x` — R2 stores keys literally so the
+ * practical blast radius is small, but rejecting `..` and `//` segments closes
+ * the namespace boundary explicitly.
+ */
+export function isValidElementStoragePath(
+  path: string,
+  teamId: string
+): boolean {
+  const prefix = `elements/${teamId}/`;
+  if (!path.startsWith(prefix)) return false;
+  const rest = path.slice(prefix.length);
+  if (rest.length === 0) return false;
+  return !rest.split('/').some((seg) => seg === '' || seg === '..');
+}
 
 async function triggerElementVision(
   elementId: string,
@@ -38,16 +64,36 @@ async function triggerElementVision(
 }
 
 // ============================================================================
-// Presign upload
+// Presign upload — drafts go under the user's default team's `temp/` folder
+// and are later relocated via `promoteTempElements`. Persisted uploads
+// (existing sequence) must use the *sequence's* teamId in the path so the
+// finalize check passes for users whose default team differs from the
+// sequence's team (multi-team members and system admins).
 // ============================================================================
 
-export const presignElementUploadFn = createServerFn({ method: 'POST' })
+export const presignDraftElementUploadFn = createServerFn({ method: 'POST' })
   .middleware([authWithTeamMiddleware])
+  .inputValidator(zodValidator(z.object({ filename: z.string().min(1) })))
+  .handler(async ({ context, data }) => {
+    const ext = getExtensionFromUrl(data.filename);
+    const uploadId = generateId();
+    const contentType = getMimeTypeFromExtension(ext);
+    const storagePath = `${context.teamId}/temp/${uploadId}.${ext}`;
+
+    return getSignedUploadUrl(
+      STORAGE_BUCKETS.ELEMENTS,
+      storagePath,
+      contentType
+    );
+  });
+
+export const presignElementUploadFn = createServerFn({ method: 'POST' })
+  .middleware([sequenceAccessMiddleware])
   .inputValidator(
     zodValidator(
       z.object({
+        sequenceId: ulidSchema,
         filename: z.string().min(1),
-        sequenceId: ulidSchema.optional(),
       })
     )
   )
@@ -55,16 +101,48 @@ export const presignElementUploadFn = createServerFn({ method: 'POST' })
     const ext = getExtensionFromUrl(data.filename);
     const uploadId = generateId();
     const contentType = getMimeTypeFromExtension(ext);
-
-    const storagePath = data.sequenceId
-      ? `${context.teamId}/${data.sequenceId}/${uploadId}.${ext}`
-      : `${context.teamId}/temp/${uploadId}.${ext}`;
+    const storagePath = `${context.teamId}/${data.sequenceId}/${uploadId}.${ext}`;
 
     return getSignedUploadUrl(
       STORAGE_BUCKETS.ELEMENTS,
       storagePath,
       contentType
     );
+  });
+
+// ============================================================================
+// Synchronously analyze a draft (pre-sequence) element via vision LLM.
+//
+// Draft uploads can't trigger the persisted element-vision workflow because the
+// element row doesn't exist yet. Running vision inline here lets the Generate
+// button gate on the result so we never hand the LLM a token with no visual
+// context (the placeholder `(vision description pending)` path in
+// scene-split-workflow). On promotion, the description is written straight onto
+// the new row so we don't re-run vision twice.
+// ============================================================================
+
+export const analyzeDraftElementFn = createServerFn({ method: 'POST' })
+  .middleware([authWithTeamMiddleware])
+  .inputValidator(
+    zodValidator(
+      z.object({
+        publicUrl: z.string().url(),
+        filename: z.string().min(1),
+      })
+    )
+  )
+  .handler(async ({ context, data }) => {
+    const llmKeyInfo = await context.scopedDb.apiKeys.resolveLlmKey();
+    const result = await describeElementImage({
+      imageUrl: data.publicUrl,
+      filename: data.filename,
+      llmKey: llmKeyInfo,
+    });
+    return {
+      description: result.description,
+      consistencyTag: result.consistencyTag,
+      suggestedToken: result.suggestedToken,
+    };
   });
 
 // ============================================================================
@@ -84,7 +162,7 @@ export const finalizeElementUploadFn = createServerFn({ method: 'POST' })
     )
   )
   .handler(async ({ context, data }) => {
-    if (!data.path.startsWith(`elements/${context.teamId}/`)) {
+    if (!isValidElementStoragePath(data.path, context.teamId)) {
       throw new Error('Invalid storage path');
     }
 
@@ -104,8 +182,9 @@ export const finalizeElementUploadFn = createServerFn({ method: 'POST' })
       visionStatus: 'pending',
     });
 
-    // Kick off vision workflow — do not block the upload response
-    if (getEnv().E2E_TEST !== 'true') {
+    // If the QStash trigger fails, mark the row failed before re-throwing —
+    // otherwise the element would poll forever in `pending`.
+    try {
       await triggerElementVision(
         element.id,
         element.sequenceId,
@@ -114,6 +193,14 @@ export const finalizeElementUploadFn = createServerFn({ method: 'POST' })
         context.teamId,
         context.user.id
       );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      await context.scopedDb.sequenceElements.updateVisionStatus(
+        element.id,
+        'failed',
+        message
+      );
+      throw err;
     }
 
     return element;
@@ -166,12 +253,168 @@ export const renameSequenceElementTokenFn = createServerFn({ method: 'POST' })
     }
 
     const cleaned = deriveTokenFromFilename(data.token);
-    const unique = await context.scopedDb.sequenceElements.ensureUniqueToken(
+    if (cleaned === element.token) {
+      return {
+        element,
+        framesUpdated: 0,
+        scriptUpdated: false,
+      };
+    }
+
+    // User-driven rename: hard-reject on collision rather than silently
+    // suffixing — the user explicitly typed this name and expects it.
+    const taken = await context.scopedDb.sequenceElements.isTokenTaken(
       context.sequence.id,
-      cleaned
+      cleaned,
+      element.id
+    );
+    if (taken) {
+      throw new Error(
+        `Another element is already named "${cleaned}". Pick a different name.`
+      );
+    }
+
+    return await context.scopedDb.sequenceElements.cascadeRename({
+      sequenceId: context.sequence.id,
+      elementId: element.id,
+      oldToken: element.token,
+      newToken: cleaned,
+    });
+  });
+
+// ============================================================================
+// Frame IDs / Replace
+// ============================================================================
+
+/** Get frame IDs for all frames that reference an element by token */
+export const getFrameIdsForElementFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(
+    zodValidator(z.object({ sequenceId: ulidSchema, elementId: ulidSchema }))
+  )
+  .handler(async ({ context, data }) => {
+    const frameIds =
+      await context.scopedDb.sequenceElements.getFrameIdsForElement(
+        context.sequence.id,
+        data.elementId
+      );
+    return { frameIds, count: frameIds.length };
+  });
+
+/**
+ * Batched frame counts for every element in the sequence. Use this from the
+ * elements grid to avoid the N+1 where each card fetched its own frame IDs.
+ */
+export const getFrameCountsByElementFn = createServerFn({ method: 'GET' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(zodValidator(z.object({ sequenceId: ulidSchema })))
+  .handler(async ({ context }) => {
+    return await context.scopedDb.sequenceElements.getFrameCountsByElement(
+      context.sequence.id
+    );
+  });
+
+/**
+ * Replace an element's image. Persists the new image on the element row,
+ * then triggers the `replace-element` workflow which re-runs vision on the
+ * new image and edits each affected frame to swap the element while keeping
+ * the rest of the frame intact.
+ */
+export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(
+    zodValidator(
+      z.object({
+        sequenceId: ulidSchema,
+        elementId: ulidSchema,
+        publicUrl: z.string().url(),
+        path: z.string().min(1),
+        filename: z.string().min(1),
+      })
+    )
+  )
+  .handler(async ({ context, data }) => {
+    if (!isValidElementStoragePath(data.path, context.teamId)) {
+      throw new Error('Invalid storage path');
+    }
+
+    const element = await context.scopedDb.sequenceElements.getById(
+      data.elementId
+    );
+    if (!element || element.sequenceId !== context.sequence.id) {
+      throw new Error('Element not found');
+    }
+
+    const previousDescription = element.description;
+
+    // Update the element row with the new image. Reset vision so the UI
+    // surfaces "analyzing" while the workflow re-describes the new image.
+    const updated = await context.scopedDb.sequenceElements.update(
+      data.elementId,
+      {
+        imageUrl: data.publicUrl,
+        imagePath: data.path,
+        uploadedFilename: data.filename,
+        description: null,
+        consistencyTag: null,
+        visionStatus: 'analyzing',
+        visionError: null,
+        visionGeneratedAt: null,
+      }
     );
 
-    return await context.scopedDb.sequenceElements.update(data.elementId, {
-      token: unique,
-    });
+    const affectedFrameIds =
+      await context.scopedDb.sequenceElements.getFrameIdsForElement(
+        context.sequence.id,
+        data.elementId
+      );
+
+    const workflowInput: ReplaceElementWorkflowInput = {
+      userId: context.user.id,
+      teamId: context.teamId,
+      sequenceId: context.sequence.id,
+      elementId: data.elementId,
+      token: updated.token,
+      previousDescription,
+      newImageUrl: data.publicUrl,
+      newFilename: data.filename,
+      affectedFrameIds,
+    };
+
+    // If the trigger throws, the row is stranded in `analyzing` — restore
+    // status and emit :failed so subscribers see a terminal lifecycle event.
+    // Each side effect is isolated so a Turso/Redis blip can't replace the
+    // original `err` with a downstream error the user can't act on.
+    let workflowRunId: string;
+    try {
+      workflowRunId = await triggerWorkflow('/replace-element', workflowInput, {
+        label: buildWorkflowLabel(context.sequence.id),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      try {
+        await context.scopedDb.sequenceElements.updateVisionStatus(
+          data.elementId,
+          'failed',
+          message
+        );
+      } catch (e) {
+        logger.error('persist failed status threw:', { err: e });
+      }
+      try {
+        await getGenerationChannel(context.sequence.id).emit(
+          'generation.replace-element:failed',
+          { elementId: data.elementId, error: message }
+        );
+      } catch (e) {
+        logger.error('emit :failed threw:', { err: e });
+      }
+      throw err;
+    }
+
+    return {
+      element: updated,
+      affectedFrameIds,
+      workflowRunId,
+    };
   });

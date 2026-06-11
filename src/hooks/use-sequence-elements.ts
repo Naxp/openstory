@@ -1,18 +1,48 @@
 import {
+  analyzeDraftElementFn,
   deleteSequenceElementFn,
   finalizeElementUploadFn,
+  getFrameCountsByElementFn,
   listSequenceElementsFn,
+  presignDraftElementUploadFn,
   presignElementUploadFn,
   renameSequenceElementTokenFn,
+  replaceSequenceElementFn,
 } from '@/functions/sequence-elements';
 import type { SequenceElement } from '@/lib/db/schema';
+import type {
+  ReplaceElementCompletePayload,
+  ReplaceElementFailedPayload,
+  ReplaceElementStartPayload,
+} from '@/lib/realtime';
+import { useRealtime } from '@/lib/realtime/client';
 import { putToR2 } from '@/lib/utils/upload';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 
-export const sequenceElementKeys = {
+type ReplaceElementEvent =
+  | {
+      event: 'generation.replace-element:start';
+      data: ReplaceElementStartPayload;
+    }
+  | {
+      event: 'generation.replace-element:complete';
+      data: ReplaceElementCompletePayload;
+    }
+  | {
+      event: 'generation.replace-element:failed';
+      data: ReplaceElementFailedPayload;
+    };
+
+const sequenceElementKeys = {
   all: ['sequence-elements'] as const,
   bySequence: (sequenceId: string) =>
     ['sequence-elements', sequenceId] as const,
+  framesForElement: (sequenceId: string, elementId: string) =>
+    ['sequence-elements', sequenceId, 'frames', elementId] as const,
+  frameCountsBySequence: (sequenceId: string) =>
+    ['sequence-elements', sequenceId, 'frame-counts'] as const,
 };
 
 export function useSequenceElements(sequenceId: string | undefined) {
@@ -23,7 +53,6 @@ export function useSequenceElements(sequenceId: string | undefined) {
     queryFn: () =>
       listSequenceElementsFn({ data: { sequenceId: sequenceId ?? '' } }),
     enabled: Boolean(sequenceId),
-    // Poll while vision is still analyzing
     refetchInterval: (query) => {
       const data = query.state.data as SequenceElement[] | undefined;
       if (!data) return false;
@@ -78,20 +107,36 @@ export type DraftElementUpload = {
   tempPublicUrl: string;
   filename: string;
   token: string;
+  /**
+   * Vision-LLM description, populated during draft upload. `useUploadDraftElement`
+   * rejects if vision fails, so successful uploads always carry both fields —
+   * but `promoteTempElements` still accepts nullable values for backwards-compat
+   * with E2E fixture paths and falls back to the async vision workflow there.
+   */
+  description: string | null;
+  consistencyTag: string | null;
 };
 
 /**
  * Upload an element file as a *draft* (before a sequence exists). Returns the
  * temp storage path + public URL so the caller can persist it in local state
  * and pass it to the createSequence mutation for promotion.
+ *
+ * Runs vision analysis inline after the upload resolves so promoteTempElements
+ * can write the row in `completed` state with description + consistencyTag
+ * already populated. The mutation rejects on vision failure — the element
+ * selector surfaces this as an error entry and the user must retry or remove
+ * the upload before Generate can proceed. (This is what stops a `pending`
+ * element from reaching the analyze workflow and poisoning prompt hashes.)
  */
 export function useUploadDraftElement() {
   return useMutation({
     mutationFn: async (data: {
       file: File;
       onProgress?: (percent: number) => void;
+      onAnalyzingChange?: (analyzing: boolean) => void;
     }): Promise<DraftElementUpload> => {
-      const presign = await presignElementUploadFn({
+      const presign = await presignDraftElementUploadFn({
         data: { filename: data.file.name },
       });
       await putToR2(
@@ -100,16 +145,30 @@ export function useUploadDraftElement() {
         presign.contentType,
         data.onProgress
       );
-      const token = data.file.name
-        .replace(/\.[^.]+$/, '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
+      data.onAnalyzingChange?.(true);
+      let result: {
+        description: string;
+        consistencyTag: string;
+        suggestedToken: string;
+      };
+      try {
+        result = await analyzeDraftElementFn({
+          data: {
+            publicUrl: presign.publicUrl,
+            filename: data.file.name,
+          },
+        });
+      } finally {
+        data.onAnalyzingChange?.(false);
+      }
+
       return {
         tempPath: presign.path,
         tempPublicUrl: presign.publicUrl,
         filename: data.file.name,
-        token: token.length > 0 ? token : 'ELEMENT',
+        token: result.suggestedToken,
+        description: result.description,
+        consistencyTag: result.consistencyTag,
       };
     },
   });
@@ -136,10 +195,185 @@ export function useRenameSequenceElementToken() {
       sequenceId: string;
       token: string;
     }) => renameSequenceElementTokenFn({ data }),
-    onSuccess: (_res, variables) => {
+    onSuccess: (result, variables) => {
       void queryClient.invalidateQueries({
         queryKey: sequenceElementKeys.bySequence(variables.sequenceId),
       });
+      // Frames now contain the new token in metadata / prompts. Refresh
+      // anything that renders frame text or counts.
+      if (result.framesUpdated > 0) {
+        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        void queryClient.invalidateQueries({
+          queryKey: sequenceElementKeys.frameCountsBySequence(
+            variables.sequenceId
+          ),
+        });
+      }
+    },
+  });
+}
+
+/**
+ * Frame counts for *all* elements in a sequence, fetched in one query.
+ * Use this from the elements grid to avoid the per-card N+1.
+ */
+export function useFrameCountsForAllElements(sequenceId: string | undefined) {
+  return useQuery({
+    queryKey: sequenceId
+      ? sequenceElementKeys.frameCountsBySequence(sequenceId)
+      : ['sequence-elements', 'frame-counts', 'none'],
+    queryFn: () =>
+      getFrameCountsByElementFn({ data: { sequenceId: sequenceId ?? '' } }),
+    enabled: Boolean(sequenceId),
+    staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * Subscribes to `replace-element:start|complete|failed` for one element so
+ * the card can show a spinner across the whole flow (server-fn → :start →
+ * vision → per-frame edits → :complete) and surface a final-state toast.
+ *
+ * Without this hook the card's `isReplacing` clears the moment vision flips
+ * to `completed`, hiding the per-frame edit phase from the user — and any
+ * post-vision failure becomes user-invisible.
+ */
+export function useReplaceElementProgress(
+  sequenceId: string | undefined,
+  elementId: string,
+  token: string
+): { editing: boolean } {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+
+  const onData = useCallback(
+    (evt: ReplaceElementEvent) => {
+      if (evt.data.elementId !== elementId) return;
+
+      if (evt.event === 'generation.replace-element:start') {
+        setEditing(true);
+        return;
+      }
+
+      if (evt.event === 'generation.replace-element:complete') {
+        setEditing(false);
+        const {
+          successCount,
+          failedCount,
+          videoSuccessCount,
+          videoFailedCount,
+          renamedTo,
+        } = evt.data;
+        const displayName = renamedTo ?? token;
+        if (renamedTo && renamedTo !== token) {
+          toast.message(`Renamed ${token} → ${renamedTo}`);
+        }
+        if (failedCount > 0) {
+          toast.warning(
+            `${displayName}: ${successCount} edited, ${failedCount} failed`
+          );
+        } else if (successCount > 0) {
+          toast.success(
+            `${displayName}: edited ${successCount} frame${successCount === 1 ? '' : 's'}`
+          );
+        }
+        const vidSuccess = videoSuccessCount ?? 0;
+        const vidFailed = videoFailedCount ?? 0;
+        if (vidSuccess > 0 || vidFailed > 0) {
+          if (vidFailed > 0) {
+            toast.warning(
+              `${displayName} videos: ${vidSuccess} regenerated, ${vidFailed} failed`
+            );
+          } else {
+            toast.success(
+              `${displayName}: regenerated ${vidSuccess} video${vidSuccess === 1 ? '' : 's'}`
+            );
+          }
+        }
+        if (sequenceId) {
+          void queryClient.invalidateQueries({
+            queryKey: sequenceElementKeys.bySequence(sequenceId),
+          });
+        }
+        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        return;
+      }
+
+      setEditing(false);
+      toast.error(`Replace failed for ${token}`, {
+        description: evt.data.error,
+      });
+      if (sequenceId) {
+        void queryClient.invalidateQueries({
+          queryKey: sequenceElementKeys.bySequence(sequenceId),
+        });
+      }
+    },
+    [elementId, token, sequenceId, queryClient]
+  );
+
+  useRealtime({
+    channels: sequenceId ? [sequenceId] : [],
+    events: [
+      'generation.replace-element:start',
+      'generation.replace-element:complete',
+      'generation.replace-element:failed',
+    ] as const,
+    onData,
+    enabled: Boolean(sequenceId),
+  });
+
+  return { editing };
+}
+
+/**
+ * Replace an element image: presign → R2 → finalize.
+ * Triggers per-frame image edits via the replace-element workflow.
+ */
+export function useReplaceSequenceElement() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      file: File;
+      sequenceId: string;
+      elementId: string;
+      onProgress?: (percent: number) => void;
+    }) => {
+      const presign = await presignElementUploadFn({
+        data: { filename: data.file.name, sequenceId: data.sequenceId },
+      });
+      await putToR2(
+        presign.uploadUrl,
+        data.file,
+        presign.contentType,
+        data.onProgress
+      );
+      return await replaceSequenceElementFn({
+        data: {
+          sequenceId: data.sequenceId,
+          elementId: data.elementId,
+          publicUrl: presign.publicUrl,
+          path: presign.path,
+          filename: data.file.name,
+        },
+      });
+    },
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: sequenceElementKeys.bySequence(variables.sequenceId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: sequenceElementKeys.framesForElement(
+          variables.sequenceId,
+          variables.elementId
+        ),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: sequenceElementKeys.frameCountsBySequence(
+          variables.sequenceId
+        ),
+      });
+      void queryClient.invalidateQueries({ queryKey: ['frames'] });
     },
   });
 }

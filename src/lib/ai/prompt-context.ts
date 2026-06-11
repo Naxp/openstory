@@ -16,6 +16,11 @@ import type {
 import type { ScopedDb } from '@/lib/db/scoped';
 import type { StyleConfig } from '@/lib/db/schema';
 import { StyleConfigSchema } from '@/lib/db/schema';
+import {
+  matchCharactersToScene,
+  matchElementsToScene,
+  matchLocationsToScene,
+} from '@/lib/workflows/scene-matching';
 
 export type FramePromptContext = {
   scene: Scene;
@@ -77,4 +82,59 @@ export async function loadFramePromptContext(args: {
     aspectRatio: sequence.aspectRatio,
     analysisModel,
   };
+}
+
+/**
+ * Same as `loadFramePromptContext` but narrows the character / location /
+ * element bibles down to the entries this scene actually references — i.e. the
+ * inputs that would actually change the regenerated prompt. Used when stamping
+ * or comparing `visualPromptInputHash` / `motionPromptInputHash` so unrelated
+ * sequence entities don't poison the hash.
+ *
+ * Matching mirrors the same logic that decides reference-image attachment at
+ * generation time (`scene-matching.ts`), so if the hash flips, regeneration
+ * really would see different inputs.
+ */
+export async function loadNarrowFramePromptContext(args: {
+  scopedDb: Pick<
+    ScopedDb,
+    'characters' | 'sequenceLocations' | 'sequenceElements' | 'styles'
+  >;
+  sequence: FramePromptContextSequence;
+  scene: Scene;
+  analysisModelOverride?: string | null;
+}): Promise<FramePromptContext> {
+  const full = await loadFramePromptContext(args);
+  return narrowFramePromptContext(full);
+}
+
+/**
+ * Filter an already-built `FramePromptContext` down to the entities this
+ * scene's `continuity` references. Pure function — exposed so workflows that
+ * already received full bibles as inputs (visual/motion prompt scene workflows)
+ * can narrow without re-fetching from the DB.
+ */
+export function narrowFramePromptContext(
+  ctx: FramePromptContext
+): FramePromptContext {
+  const { scene } = ctx;
+  const continuity = scene.continuity;
+  if (!continuity) return ctx;
+
+  const characterBible = matchCharactersToScene(
+    ctx.characterBible,
+    continuity.characterTags
+  );
+  const locationBible = matchLocationsToScene(
+    ctx.locationBible,
+    continuity.environmentTag,
+    scene.metadata?.location ?? ''
+  );
+  const elementBible = matchElementsToScene(
+    ctx.elementBible,
+    continuity.elementTags ?? [],
+    scene.originalScript.extract
+  );
+
+  return { ...ctx, characterBible, locationBible, elementBible };
 }

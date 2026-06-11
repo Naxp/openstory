@@ -24,8 +24,7 @@ export const getAspectRatioData = (ratio: AspectRatio) => {
 };
 
 /**
- * Image size presets for LetzAI and other image generation providers.
- * These correspond to the LETZAI_PRESET_DIMENSIONS in image-workflow.ts
+ * Image size presets for image generation providers (fal.ai preset names).
  */
 export type ImageSize = 'square_hd' | 'portrait_16_9' | 'landscape_16_9';
 

@@ -4,26 +4,30 @@
  */
 
 import type { TextModel } from '@/lib/ai/models';
-import { getChatPrompt, type ChatMessage } from '@/lib/prompts';
-import { chat } from '@tanstack/ai';
+import type { ChatMessage } from '@/lib/prompts';
+import { chat, type DebugOption } from '@tanstack/ai';
+import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
-import { ZERO_MICROS } from '../billing/money';
-import { deductWorkflowCredits } from '../billing/workflow-deduction';
-import type { ScopedDb } from '../db/scoped';
-import { createAdapter } from './create-adapter';
-import { getContextWindow } from './models.config';
+import { aiDebugLogger } from './ai-debug-logger';
+import { createAdapter, type LlmKeyInfo } from './create-adapter';
 
-type StreamChunk = {
-  delta: string;
-  accumulated: string;
-  done: boolean;
-};
+import { getLogger } from '@/lib/observability/logger';
 
-export type ProgressCallback = (progress: {
-  type: 'chunk' | 'complete';
-  text: string;
-  parsed?: unknown;
-}) => void;
+const logger = getLogger(['openstory', 'ai', 'llm-client']);
+
+export type StreamChunk<T = never> =
+  | { done: false; delta: string; accumulated: string }
+  | {
+      done: true;
+      delta: '';
+      accumulated: string;
+      /**
+       * Validated structured output. Default `T = never` makes this `undefined`
+       * when no `responseSchema` was provided; with a schema, narrows to `T | undefined`
+       * (undefined when the stream ended without a `structured-output.complete` event).
+       */
+      parsed: T | undefined;
+    };
 
 type ProviderPreference = {
   order?: string[];
@@ -32,7 +36,7 @@ type ProviderPreference = {
   allow_fallbacks?: boolean;
 };
 
-export type LLMRequestParams = {
+export type LLMRequestParams<T = unknown> = {
   model: TextModel;
   messages: ChatMessage[];
   temperature?: number;
@@ -54,10 +58,41 @@ export type LLMRequestParams = {
   userId?: string;
   /** Session id for Langfuse trace grouping (typically sequenceId) */
   sessionId?: string;
-  responseSchema?: z.ZodTypeAny;
-  apiKey?: string;
-  /** OpenRouter plugins (e.g. web search) to enable for this request */
-  plugins?: Array<{ id: 'web'; max_results?: number }>;
+  responseSchema?: z.ZodType<T>;
+  /** Resolved LLM key info — `via` decides endpoint routing + auth scheme. */
+  apiKey?: LlmKeyInfo;
+  /**
+   * Enable OpenRouter's web-search server tool for this request. The model
+   * decides when to search; OpenRouter runs the search server-side inside the
+   * agent loop and feeds results back. `true` uses defaults; pass an object to
+   * tune the engine / result count / search prompt.
+   */
+  webSearch?:
+    | boolean
+    | { engine?: 'native' | 'exa'; maxResults?: number; searchPrompt?: string };
+
+  /**
+   * Enable the model's reasoning/thinking pass (OpenRouter unified reasoning).
+   * `effort` is the simplest knob — higher = more internal deliberation before
+   * the answer. Reasoning tokens stream as separate events from the answer
+   * content, so the accumulated text the caller receives stays clean (no
+   * scratch work to strip). Use for tasks where a forward pass converges on the
+   * obvious/modal answer and genuine divergence needs a planning step.
+   */
+  reasoning?: {
+    effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    enabled?: boolean;
+    maxTokens?: number;
+  };
+
+  /**
+   * Debug mode forwarded to `chat()`. `true`/`false`, or a
+   * `{ logger, …categories }` config. Pass `{ logger: aiDebugLogger }`
+   * (from `@/lib/ai/ai-debug-logger`) to see full payloads in local Workerd
+   * dev — `debug: true` uses TanStack's `console.dir`, which Workerd's console
+   * doesn't render.
+   */
+  debug?: DebugOption;
 };
 
 /**
@@ -65,9 +100,9 @@ export type LLMRequestParams = {
  * https://openrouter.ai/docs/guides/features/structured-outputs
  */
 const STRUCTURED_OUTPUT_MODELS = new Set([
-  'x-ai/grok-4.1-fast',
+  'x-ai/grok-4.3',
   'anthropic/claude-sonnet-4.6',
-  'x-ai/grok-4.20-beta',
+  'x-ai/grok-4.20',
   'anthropic/claude-opus-4.6',
   'deepseek/deepseek-v3.2',
   'z-ai/glm-5',
@@ -80,47 +115,32 @@ const STRUCTURED_OUTPUT_MODELS = new Set([
   'openai/gpt-5.4-nano',
 ]);
 
-export function modelSupportsStructuredOutputs(model: string): boolean {
+function modelSupportsStructuredOutputs(model: string): boolean {
   return STRUCTURED_OUTPUT_MODELS.has(model);
 }
-
-/**
- * Recursively strip `~standard` metadata that Zod v4's toJSONSchema() injects.
- * OpenRouter rejects it: "property '~standard' is not supported".
- */
-function stripZodMetadata(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(stripZodMetadata);
-  if (obj && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj)
-        .filter(([key]) => key !== '~standard')
-        .map(([key, value]) => [key, stripZodMetadata(value)])
-    );
-  }
-  return obj;
-}
-
-function buildResponseFormat(schema: z.ZodTypeAny, name: string) {
-  return {
-    type: 'json_schema' as const,
-    jsonSchema: {
-      name,
-      strict: true,
-      schema: stripZodMetadata(z.toJSONSchema(schema)),
-    },
-  };
-}
-
-const DEFAULT_PROVIDER: ProviderPreference = {
-  order: ['Cerebras'],
-};
 
 export const RECOMMENDED_MODELS = {
   creative: 'anthropic/claude-sonnet-4.6',
   structured: 'anthropic/claude-sonnet-4.6',
-  fast: 'google/gemini-3-flash-preview',
+  fast: 'anthropic/claude-sonnet-4.6',
   premium: 'anthropic/claude-sonnet-4.6',
 } as const;
+
+/**
+ * Shared reasoning config for the creative generation paths (script enhance +
+ * prompt generation). `medium` effort balances the creativity lift against the
+ * added latency — a forward pass converges on the modal/obvious answer, and the
+ * planning step is what escapes it (see #875 and the eval notes in #870).
+ *
+ * NOT applied to utility calls (prompt shortening, duration estimation) where a
+ * forward pass is already correct and reasoning would only add latency. Enabled
+ * in E2E too — unlike live web search it's deterministic once recorded, so
+ * aimock records + replays the reasoning request/response like any other call.
+ */
+export const PROMPT_REASONING = {
+  enabled: true,
+  effort: 'medium',
+} as const satisfies NonNullable<LLMRequestParams['reasoning']>;
 
 /**
  * System messages must be strings (they become systemPrompts on the adapter).
@@ -160,17 +180,28 @@ function convertMessages(messages: ChatMessage[]): {
 
 function buildModelOptions(params: LLMRequestParams) {
   return {
-    provider: params.provider ?? DEFAULT_PROVIDER,
+    ...(params.provider && { provider: params.provider }),
+    ...(params.reasoning && { reasoning: params.reasoning }),
     frequency_penalty: params.frequency_penalty,
     presence_penalty: params.presence_penalty,
-    ...(params.responseSchema && {
-      responseFormat: buildResponseFormat(
-        params.responseSchema,
-        params.observationName ?? 'response'
-      ),
-    }),
-    ...(params.plugins && { plugins: params.plugins }),
   };
+}
+
+/**
+ * Assemble the `tools` array for `chat()`. Currently only the OpenRouter
+ * web-search server tool, gated on `params.webSearch`. Returns `undefined`
+ * (not an empty array) when no tool is requested so the option is omitted.
+ */
+function buildTools(params: LLMRequestParams) {
+  if (!params.webSearch) return undefined;
+  const opts = params.webSearch === true ? {} : params.webSearch;
+  return [
+    webSearchTool({
+      ...(opts.engine && { engine: opts.engine }),
+      ...(opts.maxResults !== undefined && { maxResults: opts.maxResults }),
+      ...(opts.searchPrompt && { searchPrompt: opts.searchPrompt }),
+    }),
+  ];
 }
 
 function validateStructuredOutputSupport(model: string): void {
@@ -195,6 +226,7 @@ function buildChatMetadata(params: LLMRequestParams) {
 
 function baseChatOptions(params: LLMRequestParams) {
   const { systemPrompts, messages } = convertMessages(params.messages);
+  const tools = buildTools(params);
   return {
     adapter: createAdapter(params.model, params.apiKey),
     messages,
@@ -203,145 +235,306 @@ function baseChatOptions(params: LLMRequestParams) {
     temperature: params.temperature,
     topP: params.top_p,
     modelOptions: buildModelOptions(params),
-    debug: false as const,
+    ...(tools && { tools }),
+    debug: params.debug ?? false,
   };
 }
 
-export async function callLLM(params: LLMRequestParams): Promise<string> {
-  if (params.responseSchema) validateStructuredOutputSupport(params.model);
-
-  return chat({
-    ...baseChatOptions(params),
-    stream: false,
-    metadata: buildChatMetadata(params),
+/**
+ * Log-safe copy of a message's content: image data parts (base64) are
+ * truncated to a short prefix so the prompt log doesn't dump megabytes.
+ */
+function previewContent(
+  content: ChatMessage['content']
+): ChatMessage['content'] {
+  if (typeof content === 'string') return content;
+  return content.map((part) => {
+    if (part.type !== 'image') return part;
+    const value = part.source.value;
+    const preview =
+      value.length > 64
+        ? `${value.slice(0, 64)}…(${value.length} chars)`
+        : value;
+    return { ...part, source: { ...part.source, value: preview } };
   });
 }
 
-export async function* callLLMStream(
-  params: LLMRequestParams
-): AsyncGenerator<StreamChunk> {
-  let accumulated = '';
+/**
+ * Log the system prompts + messages we're about to send. TanStack AI's
+ * `request` debug category logs only counts (`messageCount`), never the
+ * content, so when `debug` is on we log the actual prompt ourselves through the
+ * Workerd-friendly logger.
+ */
+function logOutgoingPrompt(
+  systemPrompts: string[],
+  messages: AdapterMessage[]
+): void {
+  aiDebugLogger.debug('📝 [llm-client] outgoing prompt', {
+    systemPrompts,
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: previewContent(m.content),
+    })),
+  });
+}
 
-  // NOTE: outputSchema cannot be used here — @tanstack/ai forces stream:false when
-  // outputSchema is set. And modelOptions.response_format is not forwarded by the
-  // OpenRouter adapter. So streaming relies on the system prompt for JSON structure,
-  // with stripCodeFences + schema validation as the safety net.
-  const stream = chat({
+/**
+ * Every structured-output model — Anthropic included — now goes through the
+ * native `outputSchema` path. The response schemas are kept under Anthropic's
+ * strict-grammar limits (≤16 union-typed params; see the note in
+ * `scene-analysis.schema.ts`), so the old `json_object` + schema-in-prompt
+ * fallback for Anthropic is gone: native structured output GUARANTEES
+ * conformance, where the lenient fallback could silently drop required fields.
+ *
+ * @tanstack/ai's chat orchestrator validates `outputSchema` upstream and surfaces
+ * the parsed object through the terminal `structured-output.complete` event (stream)
+ * or as the resolved value (non-stream) — but the return is typed `unknown` because
+ * Zod's `~standard` doesn't include the JSON-Schema converter `InferSchemaType` keys
+ * off. We run `responseSchema.parse` here to recover the `T` binding without a cast
+ * (the orchestrator already validated, so this is a near-free no-op).
+ */
+export async function callLLM<T>(
+  params: LLMRequestParams<T> & { responseSchema: z.ZodType<T> }
+): Promise<T>;
+export async function callLLM(
+  params: LLMRequestParams & { responseSchema?: undefined }
+): Promise<string>;
+export async function callLLM<T>(
+  params: LLMRequestParams<T>
+): Promise<T | string> {
+  // Drain the streaming path instead of calling `chat({ stream: false })`
+  // directly, so non-streaming callers inherit its error handling. Upstream,
+  // `chat({ stream: false })` collects text via `streamToText`, which only
+  // accumulates TEXT_MESSAGE_CONTENT and *ignores RUN_ERROR entirely* — so a
+  // 402 (out of credits), 429, or provider overload silently resolves to '' and
+  // resurfaces downstream as a bogus "empty completion" / JSON-parse failure
+  // (the #718 scene-split mystery). callLLMStream guards every non-content
+  // event with throwIfRunError, so the real provider error propagates. Non-
+  // streaming `chat()` already issues a streaming request under the hood
+  // (runNonStreamingText wraps runStreamingText), so this keeps the wire shape
+  // — and E2E aimock fixtures — identical.
+  if (params.responseSchema) {
+    const responseSchema = params.responseSchema;
+    let parsed: T | undefined;
+    for await (const chunk of callLLMStream({ ...params, responseSchema })) {
+      if (chunk.done) parsed = chunk.parsed;
+    }
+    if (parsed === undefined) {
+      throw new Error(
+        'Structured LLM call returned no validated object (empty completion)'
+      );
+    }
+    return parsed;
+  }
+
+  let accumulated = '';
+  for await (const chunk of callLLMStream({
+    ...params,
+    responseSchema: undefined,
+  })) {
+    accumulated = chunk.accumulated;
+  }
+  return accumulated;
+}
+
+/**
+ * Diagnostic detail pulled from a streaming `RUN_ERROR` event.
+ *
+ * `message` is frequently the provider's opaque headline like "Provider
+ * returned error". Since `@tanstack/ai@0.24` the RUN_ERROR event also carries
+ * `rawEvent` — the provider's *structured* error body (provider name, the
+ * upstream model's error JSON, rate-limit/overload codes) that the
+ * `{ message, code }` collapse deliberately drops. We surface `code`, `model`,
+ * and `rawEvent` alongside `message`, and the caller logs them, so that context
+ * isn't lost when the error propagates (e.g. up to a parent workflow's
+ * "Child workflow … failed: …").
+ */
+export type RunErrorDetail = {
+  message: string;
+  code: string | undefined;
+  model: string | undefined;
+  /**
+   * Provider's structured error body (AG-UI `rawEvent`), when the adapter
+   * attached one. `undefined` for errors carrying no upstream body.
+   */
+  rawEvent: unknown;
+  /** The full RUN_ERROR event, for structured logging. */
+  event: unknown;
+};
+
+/**
+ * Narrow a stream event to a `RUN_ERROR` and extract its diagnostic fields,
+ * or return `null` for any other event. Takes `unknown` because `chat()`'s
+ * yielded event union is wide and not cleanly nameable — this is a type guard
+ * over an arbitrary (possibly malformed) provider frame. Fields are read
+ * defensively: a bad frame can carry a non-string `message`.
+ */
+export function extractRunError(event: unknown): RunErrorDetail | null {
+  if (
+    !event ||
+    typeof event !== 'object' ||
+    !('type' in event) ||
+    event.type !== 'RUN_ERROR'
+  ) {
+    return null;
+  }
+  const message =
+    'message' in event && typeof event.message === 'string'
+      ? event.message
+      : JSON.stringify(
+          'message' in event ? event.message : 'Unknown LLM error'
+        );
+  const code =
+    'code' in event && typeof event.code === 'string' ? event.code : undefined;
+  const model =
+    'model' in event && typeof event.model === 'string'
+      ? event.model
+      : undefined;
+  const rawEvent = 'rawEvent' in event ? event.rawEvent : undefined;
+  return { message, code, model, rawEvent, event };
+}
+
+/**
+ * Dig the upstream provider's *actual* error out of a RUN_ERROR `rawEvent`.
+ * OpenRouter collapses provider failures to a generic "Provider returned
+ * error", stashing the real message in `rawEvent` — at the top level or under
+ * `metadata`, with the upstream body in `raw` (often a JSON string shaped like
+ * `{ error: { message } }`, e.g. an Anthropic schema-validation message).
+ * Returns a compact `provider=… <message>` string, or `undefined` when there's
+ * no usable detail. Read defensively: `rawEvent` is an arbitrary provider frame.
+ */
+function extractProviderErrorDetail(rawEvent: unknown): string | undefined {
+  if (!rawEvent || typeof rawEvent !== 'object') return undefined;
+  const meta =
+    'metadata' in rawEvent &&
+    rawEvent.metadata &&
+    typeof rawEvent.metadata === 'object'
+      ? rawEvent.metadata
+      : rawEvent;
+
+  const provider =
+    'provider_name' in meta && typeof meta.provider_name === 'string'
+      ? meta.provider_name
+      : undefined;
+
+  let deepMessage: string | undefined;
+  const raw = 'raw' in meta ? meta.raw : undefined;
+  if (typeof raw === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      deepMessage =
+        parsed &&
+        typeof parsed === 'object' &&
+        'error' in parsed &&
+        parsed.error &&
+        typeof parsed.error === 'object' &&
+        'message' in parsed.error &&
+        typeof parsed.error.message === 'string'
+          ? parsed.error.message
+          : raw;
+    } catch {
+      deepMessage = raw;
+    }
+  }
+
+  const parts = [
+    provider ? `provider=${provider}` : undefined,
+    deepMessage,
+  ].filter((part): part is string => part !== undefined);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+/**
+ * Build the surfaced `Error.message` from a {@link RunErrorDetail}. `code` and
+ * `model` (when present) ride along in a bracketed prefix so they survive in
+ * the error string all the way up the call chain. The provider's real error
+ * (dug out of `rawEvent`) is appended so the string is actionable even though
+ * OpenRouter's top-level `message` is usually just "Provider returned error".
+ */
+export function formatRunErrorMessage(detail: RunErrorDetail): string {
+  const tags = [
+    detail.code,
+    detail.model ? `model=${detail.model}` : undefined,
+  ].filter((tag): tag is string => tag !== undefined);
+  const suffix = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
+  const providerDetail = extractProviderErrorDetail(detail.rawEvent);
+  const detailSuffix = providerDetail ? ` — ${providerDetail}` : '';
+  return `LLM stream error${suffix}: ${detail.message}${detailSuffix}`;
+}
+
+function throwIfRunError(event: unknown): void {
+  const detail = extractRunError(event);
+  if (!detail) return;
+  // Log the formatted string as the message (not as a `{ properties }` field)
+  // so the actual error is visible in the dev pretty sink, which omits the
+  // structured-field block. The full event still rides along for prod JSON.
+  const message = formatRunErrorMessage(detail);
+  logger.error(message, { runError: detail.event, rawEvent: detail.rawEvent });
+  throw new Error(message);
+}
+
+export function callLLMStream<T>(
+  params: LLMRequestParams<T> & { responseSchema: z.ZodType<T> }
+): AsyncGenerator<StreamChunk<T>>;
+export function callLLMStream(
+  params: LLMRequestParams & { responseSchema?: undefined }
+): AsyncGenerator<StreamChunk>;
+export async function* callLLMStream<T>(
+  params: LLMRequestParams<T>
+): AsyncGenerator<StreamChunk<T>> {
+  let accumulated = '';
+  let parsed: T | undefined;
+
+  const baseOptions = {
     ...baseChatOptions(params),
     metadata: buildChatMetadata(params),
     modelOptions: {
       ...buildModelOptions(params),
       streamOptions: { includeUsage: true },
     },
-    stream: true,
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'TEXT_MESSAGE_CONTENT') {
-      accumulated += event.delta;
-      yield { delta: event.delta, accumulated, done: false };
-    }
-    if (event.type === 'RUN_ERROR') {
-      throw new Error(`LLM stream error: ${event.message}`);
-    }
-  }
-
-  yield { delta: '', accumulated, done: true };
-}
-
-export type DurableLLMCallConfig<TSchema extends z.ZodType> = {
-  name: string;
-  promptName: string;
-  promptVariables?: Record<string, string>;
-  modelId: TextModel;
-  responseSchema: TSchema;
-  additionalMetadata?: Record<string, unknown>;
-};
-
-/**
- * Execute a durable LLM call with the standard 3-step pattern:
- * 1. Prepare: Fetch prompt from Langfuse, emit phase start
- * 2. Call: LLM call via context.run() + @tanstack/ai-openrouter
- * 3. Log & Process: Log to Langfuse, parse response, emit phase complete
- *
- * Uses context.run() instead of context.api.openai.call() to avoid
- * passing API keys in headers that get stored in Upstash logs.
- */
-export async function callChat<TSchema extends z.ZodType>(
-  config: DurableLLMCallConfig<TSchema>,
-  scopedDb: ScopedDb
-) {
-  const { name, modelId, promptName, promptVariables, responseSchema } = config;
-  const logTags = [name, promptName, 'analysis'];
-  const logMetadata = {
-    name,
-    modelId,
-    promptName,
-    promptVariables,
-    ...config.additionalMetadata,
+    stream: true as const,
   };
 
-  // Step 1: Prepare -- fetch prompt and emit phase start
-  // Prompt is the Langfuse prompt reference, messages is the compiled messages
-  const { prompt, messages } = await getChatPrompt(promptName, promptVariables);
+  if (params.debug) {
+    logOutgoingPrompt(baseOptions.systemPrompts, baseOptions.messages);
+  }
 
-  // Step 2: Durable LLM call (QStash retries step delivery on failure)
-  // Determine the API key to use
-  const openRouterApiKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');
-  // Create the adapter using the API key
-  const adapter = createAdapter(modelId, openRouterApiKeyInfo.key);
-
-  console.log(`[LLM:${name}] Starting call`, {
-    model: modelId,
-    keySource: openRouterApiKeyInfo.source,
-    messageCount: messages.length,
-  });
-
-  const systemPrompts: string[] = [];
-  const chatMessages: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-  }> = [];
-
-  for (const msg of messages) {
-    const flat = systemContentToString(msg.content);
-    if (msg.role === 'system') {
-      systemPrompts.push(flat);
-    } else {
-      chatMessages.push({ role: msg.role, content: flat });
+  const responseSchema = params.responseSchema;
+  if (responseSchema) {
+    validateStructuredOutputSupport(params.model);
+    for await (const event of chat({
+      ...baseOptions,
+      outputSchema: responseSchema,
+    })) {
+      if (
+        event.type === 'TEXT_MESSAGE_CONTENT' &&
+        typeof event.delta === 'string'
+      ) {
+        accumulated += event.delta;
+        yield { delta: event.delta, accumulated, done: false };
+        continue;
+      }
+      if (
+        event.type === 'CUSTOM' &&
+        event.name === 'structured-output.complete'
+      ) {
+        // Orchestrator already validated against outputSchema before emitting,
+        // but the event payload is typed `unknown`. Re-parse to recover `T`.
+        parsed = responseSchema.parse(event.value.object);
+        continue;
+      }
+      throwIfRunError(event);
+    }
+  } else {
+    for await (const event of chat(baseOptions)) {
+      if (event.type === 'TEXT_MESSAGE_CONTENT') {
+        accumulated += event.delta;
+        yield { delta: event.delta, accumulated, done: false };
+        continue;
+      }
+      throwIfRunError(event);
     }
   }
 
-  const jsonResponse = await chat({
-    adapter,
-    messages: chatMessages,
-    systemPrompts,
-    stream: false,
-    maxTokens: Math.floor(getContextWindow(config.modelId) * 0.5),
-    metadata: {
-      observationName: promptName,
-      prompt,
-      tags: logTags,
-      metadata: logMetadata,
-    },
-    outputSchema: responseSchema,
-    debug: false,
-  });
-
-  console.log(`[LLM:${name}] Call succeeded`);
-
-  // Deduct LLM credits (cost tracked via Langfuse; adapter doesn't expose per-call usage)
-  // TODO: Add cost calculation
-  await deductWorkflowCredits({
-    scopedDb: scopedDb,
-    costMicros: ZERO_MICROS,
-    usedOwnKey: openRouterApiKeyInfo.source === 'team',
-    description: `LLM analysis (${modelId})`,
-    metadata: {
-      model: modelId,
-      stepName: name,
-    },
-  });
-
-  return responseSchema.parse(jsonResponse);
+  yield { delta: '', accumulated, done: true, parsed };
 }

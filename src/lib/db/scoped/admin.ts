@@ -31,7 +31,7 @@ function generateGiftCode(): string {
 
 export type GiftTokenStatus = 'available' | 'fully_redeemed' | 'expired';
 
-export function getGiftTokenStatus(
+function getGiftTokenStatus(
   token: GiftToken,
   redemptionCount: number
 ): GiftTokenStatus {
@@ -95,6 +95,9 @@ export function createAdminMethods(db: Database) {
         expiresAt: opts.expiresAt ?? null,
       })
       .returning();
+    if (!token) {
+      throw new Error('createGiftToken: insert returned nothing');
+    }
 
     return token;
   }

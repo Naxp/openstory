@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import {
   IMAGE_TO_VIDEO_MODELS,
   safeImageToVideoModel,
@@ -44,12 +44,23 @@ describe('buildModelInput', () => {
       const result = build('kling_v3_pro');
       expect(result.generate_audio).toBe(true);
     });
+
+    it('forwards generate_audio=false when caller suppresses audio', () => {
+      const result = build('kling_v3_pro', { generateAudio: false });
+      expect(result.generate_audio).toBe(false);
+    });
   });
 
-  describe('Grok Imagine Video', () => {
-    it('uses image_url', () => {
-      const result = build('grok_imagine_video');
+  describe('Grok Imagine Video 1.5 (default)', () => {
+    it('uses image_url and strips aspect_ratio (schema has none)', () => {
+      // v1.5's fal schema dropped aspect_ratio; the output ratio is driven by
+      // the input image instead. The transform must strip the aspect_ratio we
+      // pass so no unsupported param reaches the API.
+      const result = build('grok_imagine_video_1_5');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
+      expect(result).not.toHaveProperty('start_image_url');
+      expect(result).not.toHaveProperty('aspect_ratio');
+      expect(result.resolution).toBe('720p'); // schema default
     });
   });
 
@@ -62,6 +73,11 @@ describe('buildModelInput', () => {
     it('sets generate_audio to true from schema default', () => {
       const result = build('veo3_1');
       expect(result.generate_audio).toBe(true);
+    });
+
+    it('forwards generate_audio=false when caller suppresses audio', () => {
+      const result = build('veo3_1', { generateAudio: false });
+      expect(result.generate_audio).toBe(false);
     });
 
     it('uses image_url', () => {
@@ -125,7 +141,9 @@ describe('buildModelInput', () => {
         '14',
         '15',
       ],
-      grok_imagine_video: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      grok_imagine_video_1_5: [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      ],
       veo3_1: ['4s', '6s', '8s'],
       ltx_2_3_pro: [6, 8, 10],
       seedance_v2: [
@@ -169,7 +187,7 @@ describe('buildModelInput', () => {
               : undefined;
 
           if (typeof duration === 'undefined') {
-            expect(allowed).toBeEmpty();
+            expect(allowed).toHaveLength(0);
           } else {
             expect(allowed).toContain(duration);
           }

@@ -1,28 +1,30 @@
 /**
  * Motion Server Functions
- * Motion/video generation operations including frame motion and merged video
+ * Frame motion (image-to-video) generation operations.
  */
 
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
-import { DEFAULT_VIDEO_MODEL, safeImageToVideoModel } from '@/lib/ai/models';
+import {
+  AUDIO_MODELS,
+  DEFAULT_VIDEO_MODEL,
+  safeImageToVideoModel,
+} from '@/lib/ai/models';
 import { estimateVideoCost } from '@/lib/billing/cost-estimation';
-import { multiplyMicros, usdToMicros } from '@/lib/billing/money';
+import { multiplyMicros } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
+import { resolveFrameDuration } from '@/lib/motion/resolve-frame-duration';
 import { snapDuration } from '@/lib/motion/motion-generation';
 import { generateMotionSchema } from '@/lib/schemas/frame.schemas';
 import { ulidSchema } from '@/lib/schemas/id.schemas';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
-import type {
-  BatchMotionMusicWorkflowInput,
-  MergeVideoWorkflowInput,
-} from '@/lib/workflow/types';
+import type { BatchMotionMusicWorkflowInput } from '@/lib/workflow/types';
 
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
-import { buildMergeVideoSourcesFromFrames } from '@/lib/workflows/sequence-snapshots';
+import { rescanContinuityFromPrompt } from '@/lib/scenes/rescan-continuity-from-prompt';
 
 import { frameAccessMiddleware, sequenceAccessMiddleware } from './middleware';
 
@@ -51,7 +53,36 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
     const userEditedPrompt = Boolean(data.prompt);
     const prompt = data.prompt || resolveMotionPrompt(frame, model);
 
-    const duration = data.duration ?? snapDuration(undefined, model);
+    // Auto-link any element/cast/location tags the user mentioned in their
+    // edited motion prompt into frame.metadata.continuity, so downstream
+    // consumers (next image regenerate, frame-image reference attachment)
+    // see the new references. Motion itself uses image-to-video and doesn't
+    // re-attach references here, but persisting keeps the data consistent.
+    if (userEditedPrompt && frame.metadata?.continuity) {
+      const rescan = await rescanContinuityFromPrompt({
+        scopedDb: context.scopedDb,
+        sequenceId: sequence.id,
+        existing: frame.metadata.continuity,
+        promptText: prompt,
+      });
+      if (rescan.changed) {
+        await context.scopedDb.frames.update(frame.id, {
+          metadata: { ...frame.metadata, continuity: rescan.continuity },
+        });
+      }
+    }
+
+    // Snap the resolved duration onto the selected model's valid set before
+    // both the credit pre-flight and the workflow input — otherwise an
+    // unsnapped value (e.g. legacy `durationMs` from a different model) gets
+    // priced at the raw seconds while the workflow bills against the snapped
+    // value, leaving the two paths inconsistent.
+    const duration = resolveFrameDuration({
+      explicit: data.duration,
+      durationMs: frame.durationMs,
+      metadataSeconds: frame.metadata?.metadata?.durationSeconds,
+      model,
+    });
 
     await requireCredits(context.scopedDb, estimateVideoCost(model, duration), {
       errorMessage: 'Insufficient credits for motion generation',
@@ -72,6 +103,7 @@ export const generateFrameMotionFn = createServerFn({ method: 'POST' })
           fps: data.fps,
           motionBucket: data.motionBucket,
           aspectRatio: sequence.aspectRatio,
+          generateAudio: data.generateAudio,
           userEditedPrompt,
         },
       ],
@@ -95,9 +127,16 @@ const batchGenerateMotionInputSchema = z.object({
   sequenceId: ulidSchema,
   includeMusic: z.boolean().optional(),
   model: generateMotionSchema.shape.model,
+  musicModel: z
+    .enum(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Required for z.enum with dynamic keys
+      Object.keys(AUDIO_MODELS) as [keyof typeof AUDIO_MODELS]
+    )
+    .optional(),
   duration: generateMotionSchema.shape.duration,
   fps: generateMotionSchema.shape.fps,
   motionBucket: generateMotionSchema.shape.motionBucket,
+  generateAudio: generateMotionSchema.shape.generateAudio,
 });
 
 export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
@@ -136,6 +175,21 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
     const includeMusic =
       (data.includeMusic ?? false) && sequence.musicStatus !== 'generating';
 
+    // Persist the batch model picks so the sequence header chip, future batch
+    // sessions, and storyboard regen reflect what the user just chose.
+    const videoModelChanged = data.model && data.model !== sequence.videoModel;
+    const musicModelChanged =
+      includeMusic &&
+      data.musicModel &&
+      data.musicModel !== sequence.musicModel;
+    if (videoModelChanged || musicModelChanged) {
+      await context.scopedDb.sequences.update({
+        id: sequence.id,
+        ...(videoModelChanged ? { videoModel: data.model } : {}),
+        ...(musicModelChanged ? { musicModel: data.musicModel } : {}),
+      });
+    }
+
     // Build music config if requested
     let musicConfig: BatchMotionMusicWorkflowInput['music'];
     if (includeMusic) {
@@ -154,6 +208,7 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
         prompt: sequence.musicPrompt,
         tags: sequence.musicTags,
         duration: totalDuration || 30,
+        model: data.musicModel,
       };
     }
 
@@ -181,6 +236,7 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
           fps: data.fps,
           motionBucket: data.motionBucket,
           aspectRatio: sequence.aspectRatio,
+          generateAudio: data.generateAudio,
         };
       }),
       music: musicConfig,
@@ -202,56 +258,4 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
       workflowRunId,
       includeMusic,
     };
-  });
-
-// -- Trigger Merge Video -------------------------------------------------
-
-const mergeVideoInputSchema = z.object({
-  sequenceId: ulidSchema,
-});
-
-export const triggerMergeVideoFn = createServerFn({ method: 'POST' })
-  .middleware([sequenceAccessMiddleware])
-  .inputValidator(zodValidator(mergeVideoInputSchema))
-  .handler(async ({ context }) => {
-    const { sequence, teamId, user } = context;
-
-    const frames = await context.scopedDb.frames.listBySequence(sequence.id);
-
-    if (frames.length === 0) {
-      throw new Error('No frames found in sequence');
-    }
-
-    const incompleteCount = frames.filter(
-      (f) => f.videoStatus !== 'completed' || !f.videoUrl
-    ).length;
-
-    if (incompleteCount > 0) {
-      throw new Error(
-        `${incompleteCount} frame(s) do not have completed videos`
-      );
-    }
-
-    await requireCredits(context.scopedDb, usdToMicros(0.01), {
-      errorMessage: 'Insufficient credits for video merge',
-    });
-
-    const sorted = [...frames].sort((a, b) => a.orderIndex - b.orderIndex);
-    const { videoUrls, sourceFrameVideoHashes } =
-      buildMergeVideoSourcesFromFrames(sorted);
-
-    const workflowInput: MergeVideoWorkflowInput = {
-      userId: user.id,
-      teamId,
-      sequenceId: sequence.id,
-      videoUrls,
-      sourceFrameVideoHashes,
-    };
-
-    const workflowRunId = await triggerWorkflow('/merge-video', workflowInput, {
-      deduplicationId: `merge-${sequence.id}-${Date.now()}`,
-      label: buildWorkflowLabel(sequence.id),
-    });
-
-    return { workflowRunId, sequenceId: sequence.id };
   });

@@ -10,6 +10,10 @@ import {
 } from './generation-stream.reducer';
 import { updateQueryCacheFromEvent } from './query-cache-updater';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'realtime', 'use-generation-stream']);
+
 type GenerationEvent = {
   event: string;
   data: Record<string, unknown>;
@@ -44,6 +48,27 @@ function asFrameStatus(value: unknown): FrameStatus | undefined {
     return value;
   }
   return undefined;
+}
+
+/**
+ * Extract retry state (#882) from an image/video progress event. Present only
+ * when the emitter is starting a retry attempt (`phase: 'retrying'` with both
+ * counters); any other update returns `undefined`, which clears the prior
+ * retry state in the reducer.
+ *
+ * Variant-only retries (#547 alternate-model adds) are ignored: they don't
+ * regenerate the live primary, so their retry state must not surface on the
+ * primary player overlay.
+ */
+function asRetryInfo(
+  data: Record<string, unknown>
+): { attempt: number; maxAttempts?: number } | undefined {
+  if (data.phase !== 'retrying' || data.variantOnly === true) return undefined;
+  const attempt = asOptionalNumber(data.attempt);
+  if (attempt === undefined) return undefined;
+  // maxAttempts is optional: absent when the emitter leans on CF's default
+  // per-step retry budget (no fixed denominator).
+  return { attempt, maxAttempts: asOptionalNumber(data.maxAttempts) };
 }
 
 /**
@@ -112,6 +137,7 @@ function mapEventToAction(
           status: asFrameStatus(data.status),
           thumbnailUrl: asOptionalString(data.thumbnailUrl),
           previewThumbnailUrl: asOptionalString(data.previewThumbnailUrl),
+          retry: asRetryInfo(data),
         },
       };
 
@@ -122,6 +148,7 @@ function mapEventToAction(
           frameId: asString(data.frameId),
           status: asFrameStatus(data.status),
           videoUrl: asOptionalString(data.videoUrl),
+          retry: asRetryInfo(data),
         },
       };
 
@@ -269,18 +296,16 @@ export function useGenerationStream(
             const action = mapEventToAction(evt.event, parsed);
             if (action) dispatch(action);
           } catch (e) {
-            console.error(
-              `[useGenerationStream] Failed to parse history event "${evt.event}":`,
-              e
-            );
+            logger.error(`Failed to parse history event "${evt.event}":`, {
+              err: e,
+            });
           }
         }
       })
       .catch((error: Error) => {
-        console.error(
-          `[useGenerationStream] Failed to fetch history for "${sequenceId}":`,
-          error
-        );
+        logger.error(`Failed to fetch history for "${sequenceId}":`, {
+          err: error,
+        });
       });
   }, [sequenceId, replayHistory]);
 
@@ -301,6 +326,7 @@ export function useGenerationStream(
       'generation.talent:matched',
       'generation.talent:unmatched',
       'generation.location:matched',
+      'generation.character-sheet:progress',
       'generation.poster:ready',
       'generation.preview:replaced',
       'generation.stale:detected',

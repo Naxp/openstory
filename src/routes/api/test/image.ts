@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { json } from '@tanstack/react-start';
 import { deflateSync } from 'node:zlib';
+import { testOnlyGuard } from './route';
 
 /** Generate a minimal valid PNG with a solid color gradient (purple tones). */
 function generatePng(w: number, h: number): Buffer {
@@ -64,7 +64,9 @@ function pngChunk(type: string, data: Buffer): Buffer {
 function crc32(buf: Buffer): number {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) {
-    c ^= buf[i];
+    const byte = buf[i];
+    if (byte === undefined) continue;
+    c ^= byte;
     for (let j = 0; j < 8; j++) {
       c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
     }
@@ -74,12 +76,9 @@ function crc32(buf: Buffer): number {
 
 export const Route = createFileRoute('/api/test/image')({
   server: {
+    middleware: [testOnlyGuard],
     handlers: {
       GET: async ({ request }) => {
-        if (process.env.E2E_TEST !== 'true') {
-          return json({ error: 'Not found' }, { status: 404 });
-        }
-
         const url = new URL(request.url);
         // Cap at 100px to keep generation fast — dimensions don't matter for e2e
         const w = Math.min(Number(url.searchParams.get('w')) || 9, 100);

@@ -12,6 +12,7 @@
  * files.
  */
 
+import { useAuthGate } from '@/components/auth/auth-gate-provider';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -44,6 +45,10 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ui', 'element', 'element-selector']);
+
 export type ElementSelectorHandle = {
   addFiles: (files: File[]) => void;
   open: () => void;
@@ -52,6 +57,16 @@ export type ElementSelectorHandle = {
 type BaseProps = {
   ref?: React.Ref<ElementSelectorHandle>;
   disabled?: boolean;
+  /**
+   * Fires `true` while at least one element is uploading *or* still being
+   * vision-analyzed (draft mode: the inline analyzeDraftElementFn call;
+   * persisted mode: the async element-vision workflow's pending/analyzing
+   * states). Parent forms gate their submit button on this so we never hand
+   * the script-analyze workflow a token whose visual description hasn't
+   * landed yet — that path produces the `(vision description pending)`
+   * placeholder downstream.
+   */
+  onElementBusyChange?: (busy: boolean) => void;
 };
 
 type DraftModeProps = BaseProps & {
@@ -73,7 +88,7 @@ const MAX_ELEMENTS = 10;
 type LocalEntry = {
   file: File;
   previewUrl: string;
-  status: 'uploading' | 'done' | 'error';
+  status: 'uploading' | 'analyzing' | 'done' | 'error';
   uploaded?: DraftElementUpload;
   errorMessage?: string;
 };
@@ -87,7 +102,13 @@ type DisplayItem = {
 };
 
 export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
-  const { ref, disabled = false, sequenceId, onDraftElementsChange } = props;
+  const {
+    ref,
+    disabled = false,
+    sequenceId,
+    onDraftElementsChange,
+    onElementBusyChange,
+  } = props;
   const isPersisted = !!sequenceId;
 
   const [open, setOpen] = useState(false);
@@ -95,6 +116,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { requireAuth } = useAuthGate();
   const draftUpload = useUploadDraftElement();
   const sequenceUpload = useUploadElementToSequence();
   const deleteElement = useDeleteSequenceElement();
@@ -109,6 +131,29 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
         .filter((u): u is DraftElementUpload => !!u),
     [entries]
   );
+
+  const hasInflightLocalEntry = useMemo(
+    () =>
+      Array.from(entries.values()).some(
+        (e) => e.status === 'uploading' || e.status === 'analyzing'
+      ),
+    [entries]
+  );
+
+  const hasPendingPersistedVision = useMemo(
+    () =>
+      isPersisted &&
+      persistedElements.some(
+        (el) => el.visionStatus === 'pending' || el.visionStatus === 'analyzing'
+      ),
+    [isPersisted, persistedElements]
+  );
+
+  const isBusy = hasInflightLocalEntry || hasPendingPersistedVision;
+
+  useEffect(() => {
+    onElementBusyChange?.(isBusy);
+  }, [isBusy, onElementBusyChange]);
 
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
@@ -157,6 +202,10 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
       const images = newFiles.filter((f) => f.type.startsWith('image/'));
       if (images.length === 0) return;
 
+      // Uploads hit the server immediately — anonymous visitors get the login
+      // prompt instead (covers browse, drop, paste, and external drops).
+      if (!requireAuth()) return;
+
       const accepted: { key: string; file: File }[] = [];
       setEntries((prev) => {
         const next = new Map(prev);
@@ -193,7 +242,29 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
                 return next;
               });
             } else {
-              const result = await draftUpload.mutateAsync({ file });
+              const result = await draftUpload.mutateAsync({
+                file,
+                onAnalyzingChange: (analyzing) => {
+                  setEntries((prev) => {
+                    const current = prev.get(key);
+                    if (!current) return prev;
+                    // Don't downgrade out of error/done if a slow analyze
+                    // callback fires after the mutation already settled.
+                    if (
+                      current.status !== 'uploading' &&
+                      current.status !== 'analyzing'
+                    ) {
+                      return prev;
+                    }
+                    const next = new Map(prev);
+                    next.set(key, {
+                      ...current,
+                      status: analyzing ? 'analyzing' : current.status,
+                    });
+                    return next;
+                  });
+                },
+              });
               setEntries((prev) => {
                 const current = prev.get(key);
                 if (!current) return prev;
@@ -209,7 +280,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
           } catch (err) {
             const message =
               err instanceof Error ? err.message : 'Upload failed';
-            console.error('[ElementSelector] Upload failed', {
+            logger.error('Upload failed', {
               filename: file.name,
               error: err,
             });
@@ -233,6 +304,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
     },
     [
       disabled,
+      requireAuth,
       isPersisted,
       persistedElements.length,
       sequenceId,
@@ -296,8 +368,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
 
   const handlePaste = useCallback(
     (event: React.ClipboardEvent<HTMLDivElement>) => {
-      const items = event.clipboardData?.items;
-      if (!items) return;
+      const items = event.clipboardData.items;
       const files: File[] = [];
       for (const item of items) {
         if (item.kind === 'file') {
@@ -482,7 +553,7 @@ export const ElementSelector: React.FC<ElementSelectorProps> = (props) => {
                           {item.errorMessage ?? 'Failed'}
                         </div>
                       )}
-                      {item.token && (
+                      {item.status === 'done' && item.token && (
                         <div className="absolute bottom-0 left-0 right-0 bg-background/90 px-1.5 py-0.5 text-[10px] font-mono truncate">
                           {item.token}
                         </div>

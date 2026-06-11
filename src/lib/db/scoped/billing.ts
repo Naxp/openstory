@@ -34,9 +34,13 @@ import type {
   TransactionType,
 } from '@/lib/db/schema/credits';
 import { ValidationError } from '@/lib/errors';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, notExists, sql } from 'drizzle-orm';
 import { generateId } from '../id';
 import { giftTokenRedemptions, giftTokens } from '../schema';
+
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'db', 'billing']);
 
 function mapBatchSource(
   type: TransactionType,
@@ -51,7 +55,7 @@ function mapBatchSource(
 /**
  * Read-only billing methods — balance checks, transaction history, settings.
  */
-export function createBillingReadMethods(db: Database, teamId: string) {
+function createBillingReadMethods(db: Database, teamId: string) {
   async function getBalance(): Promise<Microdollars> {
     const [row] = await db
       .select({ balance: credits.balance })
@@ -59,7 +63,6 @@ export function createBillingReadMethods(db: Database, teamId: string) {
       .where(eq(credits.teamId, teamId))
       .limit(1);
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
     if (!row) {
       await db
         .insert(credits)
@@ -124,7 +127,8 @@ export function createBillingReadMethods(db: Database, teamId: string) {
         .where(whereClause),
     ]);
 
-    return { transactions: rows, total: countResult[0].count };
+    const total = countResult[0]?.count ?? 0;
+    return { transactions: rows, total };
   }
 
   async function getBillingSettings(): Promise<TeamBillingSetting> {
@@ -134,7 +138,6 @@ export function createBillingReadMethods(db: Database, teamId: string) {
       .where(eq(teamBillingSettings.teamId, teamId))
       .limit(1);
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
     if (row) return row;
 
     const [inserted] = await db
@@ -159,22 +162,11 @@ export function createBillingReadMethods(db: Database, teamId: string) {
     return existing;
   }
 
-  async function hasRedeemedGiftCode(): Promise<boolean> {
-    const [row] = await db
-      .select({ id: giftTokenRedemptions.id })
-      .from(giftTokenRedemptions)
-      .where(eq(giftTokenRedemptions.teamId, teamId))
-      .limit(1);
-
-    return !!row;
-  }
-
   return {
     getBalance,
     hasEnoughCredits,
     getTransactionHistory,
     getBillingSettings,
-    hasRedeemedGiftCode,
   };
 }
 
@@ -215,6 +207,10 @@ export function createBillingMethods(
       .where(eq(credits.teamId, teamId))
       .returning({ balance: credits.balance });
 
+    if (!updated) {
+      throw new Error(`addCredits: update returned no row for team ${teamId}`);
+    }
+
     const txType = opts.type ?? ('credit_purchase' as TransactionType);
 
     const rows = await db
@@ -245,7 +241,13 @@ export function createBillingMethods(
       return null;
     }
 
-    const transactionId = rows[0].id;
+    const insertedRow = rows[0];
+    if (!insertedRow) {
+      throw new Error(
+        `addCredits: transaction insert returned no row for team ${teamId}`
+      );
+    }
+    const transactionId = insertedRow.id;
 
     await db.insert(creditBatches).values({
       teamId,
@@ -272,12 +274,27 @@ export function createBillingMethods(
       });
   }
 
-  /** Applies markup automatically. Triggers auto-top-up if balance drops below threshold. */
+  /**
+   * Applies markup automatically. Triggers auto-top-up if balance drops below
+   * threshold.
+   *
+   * Pass `opts.idempotencyKey` (convention: `${workflowInstanceId}:<charge-name>`)
+   * from any retryable context — a workflow `step.do` that throws partway
+   * re-runs its closure, and without the key every replay double-debits the
+   * team and writes a duplicate ledger row. The balance UPDATE and the
+   * transaction INSERT run in one atomic `db.batch`; the UPDATE is guarded on
+   * "no transaction with this key exists yet" and the INSERT dedupes via the
+   * partial unique index on `(team_id, idempotency_key)`. A replay is a no-op
+   * that returns the original transaction id — note that on a replay the
+   * returned `chargedAmount` is what the ORIGINAL attempt charged; nothing
+   * was debited by this call (don't emit "charged $X" side effects from it).
+   */
   async function deductCredits(
     rawCostMicros: Microdollars,
     opts: {
       description?: string;
       metadata?: Record<string, unknown>;
+      idempotencyKey?: string;
     } = {}
   ): Promise<{
     newBalance: Microdollars;
@@ -292,33 +309,53 @@ export function createBillingMethods(
       };
 
     const chargedAmount = applyMarkup(rawCostMicros);
+    const { idempotencyKey } = opts;
 
-    // TODO: TB Mar 26 2026: I really don't like this. SQLite is a pain for doing credits... this should be a transaction.
     await db
       .insert(credits)
       .values({ teamId, balance: 0 })
       .onConflictDoNothing();
 
-    const [updated] = await db
+    const rawUsd = microsToUsd(rawCostMicros);
+    const chargedUsd = microsToUsd(chargedAmount);
+
+    const updateBalance = db
       .update(credits)
       .set({
         balance: sql`${credits.balance} - ${chargedAmount}`,
         updatedAt: new Date(),
       })
-      .where(eq(credits.teamId, teamId))
-      .returning({ balance: credits.balance });
+      .where(
+        idempotencyKey
+          ? and(
+              eq(credits.teamId, teamId),
+              notExists(
+                db
+                  .select({ id: transactions.id })
+                  .from(transactions)
+                  .where(
+                    and(
+                      eq(transactions.teamId, teamId),
+                      eq(transactions.idempotencyKey, idempotencyKey)
+                    )
+                  )
+              )
+            )
+          : eq(credits.teamId, teamId)
+      );
 
-    const rawUsd = microsToUsd(rawCostMicros);
-    const chargedUsd = microsToUsd(chargedAmount);
-
-    const [tx] = await db
+    // balanceAfter reads the post-UPDATE balance via subquery — the batch
+    // statements run sequentially inside one transaction, so this sees the
+    // decremented value. On a replay the INSERT no-ops, so the (stale) value
+    // is never written.
+    const insertTransaction = db
       .insert(transactions)
       .values({
         teamId,
         userId,
         type: 'credit_usage' as TransactionType,
         amount: negateMicros(chargedAmount),
-        balanceAfter: updated.balance,
+        balanceAfter: sql`(select ${credits.balance} from ${credits} where ${credits.teamId} = ${teamId})`,
         description:
           opts.description ??
           `Usage: $${chargedUsd.toFixed(4)} (raw: $${rawUsd.toFixed(4)})`,
@@ -327,17 +364,71 @@ export function createBillingMethods(
           chargedAmountMicros: chargedAmount,
           ...opts.metadata,
         },
+        idempotencyKey: idempotencyKey ?? null,
       })
+      .onConflictDoNothing()
       .returning({ id: transactions.id });
 
-    void maybeAutoTopUp(micros(updated.balance)).catch((err) => {
-      console.error('[AutoTopUp] Failed:', err);
+    // Third statement: re-read the balance to return to the caller. Distinct
+    // from the `balanceAfter` ledger column above (that one is persisted into
+    // the transaction row; this one is the authoritative read-back, correct
+    // even on a replay where the UPDATE no-ops) — both rely on running after
+    // `updateBalance` inside the same batch transaction, so don't "optimize"
+    // either away in favor of the other.
+    const readBackBalance = db
+      .select({ balance: credits.balance })
+      .from(credits)
+      .where(eq(credits.teamId, teamId));
+
+    const [, insertedRows, balanceRows] = await db.batch([
+      updateBalance,
+      insertTransaction,
+      readBackBalance,
+    ]);
+
+    const balanceRow = balanceRows[0];
+    if (!balanceRow) {
+      throw new Error(
+        `deductCredits: credits row missing for team ${teamId} after batch`
+      );
+    }
+    const newBalance = micros(balanceRow.balance);
+
+    let transactionId = insertedRows[0]?.id;
+    if (!transactionId) {
+      if (!idempotencyKey) {
+        throw new Error(
+          `deductCredits: transaction insert returned no row for team ${teamId}`
+        );
+      }
+      // Replay of an already-applied deduction — recover the original
+      // transaction id. Must not throw: the charge landed on a prior attempt.
+      const [existing] = await db
+        .select({ id: transactions.id })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.teamId, teamId),
+            eq(transactions.idempotencyKey, idempotencyKey)
+          )
+        )
+        .limit(1);
+      if (!existing) {
+        throw new Error(
+          `deductCredits: no transaction row for team ${teamId} key ${idempotencyKey} after conflict no-op`
+        );
+      }
+      transactionId = existing.id;
+    }
+
+    void maybeAutoTopUp(newBalance).catch((err) => {
+      logger.error('Failed:', { err });
     });
 
     return {
-      newBalance: micros(updated.balance),
+      newBalance,
       chargedAmount,
-      transactionId: tx.id,
+      transactionId,
     };
   }
 
@@ -419,12 +510,11 @@ export function createBillingMethods(
       .orderBy(desc(transactions.createdAt))
       .limit(1);
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
     if (recentAutoTopUp) {
       const elapsed = Date.now() - recentAutoTopUp.createdAt.getTime();
       if (elapsed < AUTO_TOPUP_COOLDOWN_MS) {
-        console.log(
-          `[AutoTopUp] Cooldown active for team ${teamId}, skipping (${Math.round(elapsed / 1000)}s ago)`
+        logger.info(
+          `Cooldown active for team ${teamId}, skipping (${Math.round(elapsed / 1000)}s ago)`
         );
         return;
       }
@@ -496,7 +586,6 @@ export function createBillingMethods(
       .where(eq(credits.teamId, teamId))
       .limit(1);
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
     const runningBalance = micros(balanceRow?.balance ?? 0);
 
     const [batchRow] = await db
@@ -506,7 +595,6 @@ export function createBillingMethods(
       .from(creditBatches)
       .where(eq(creditBatches.teamId, teamId));
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
     const batchTotal = micros(batchRow?.total ?? 0);
 
     return {
@@ -543,7 +631,6 @@ export function createBillingMethods(
       .where(eq(giftTokens.code, normalizedCode))
       .limit(1);
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
     if (!token) {
       throw new ValidationError('Invalid gift code');
     }
@@ -553,10 +640,12 @@ export function createBillingMethods(
     }
 
     // Count existing redemptions
-    const [{ value: redemptionCount }] = await db
+    const [redemptionRow] = await db
       .select({ value: count() })
       .from(giftTokenRedemptions)
       .where(eq(giftTokenRedemptions.giftTokenId, token.id));
+
+    const redemptionCount = redemptionRow?.value ?? 0;
 
     if (redemptionCount >= token.maxRedemptions) {
       throw new ValidationError('This gift code has been fully redeemed');
@@ -574,7 +663,6 @@ export function createBillingMethods(
       .onConflictDoNothing()
       .returning();
 
-    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
     if (!inserted) {
       throw new ValidationError(
         'Your team has already redeemed this gift code'

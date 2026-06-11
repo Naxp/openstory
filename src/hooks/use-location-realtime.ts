@@ -6,6 +6,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { locationLibraryKeys } from './use-location-library';
 import { libraryLocationKeys } from './use-sequence-locations';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ui', 'use-location-realtime']);
+
 type SheetProgressData = {
   locationId: string;
   status: 'generating' | 'completed' | 'failed';
@@ -64,10 +68,9 @@ export function useLocationSheetRealtime(locationId?: string) {
         }
       })
       .catch((err: Error) => {
-        console.error(
-          `[useLocationSheetRealtime] Failed to fetch history for location:${locationId}:`,
-          err
-        );
+        logger.error(`Failed to fetch history for location:${locationId}:`, {
+          err,
+        });
       });
   }, [locationId]);
 
@@ -89,6 +92,8 @@ export function useLocationSheetRealtime(locationId?: string) {
         return;
       }
 
+      // Defensive narrow — discriminated union currently has 2 arms, this guards adding a 3rd.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (event.event !== 'location.sheet:progress') return;
       const sheetData = event.data;
       if (sheetData.locationId !== locationId) return;

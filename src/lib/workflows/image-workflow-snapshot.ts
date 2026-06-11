@@ -26,12 +26,10 @@ import type {
   ImageWorkflowInput,
 } from '@/lib/workflow/types';
 import { buildDivergentRevertWrites } from './divergence-writes';
-import { computeFrameImageSceneHash } from './sheet-snapshots';
 import {
-  matchCharactersToScene,
-  matchElementsToScene,
-  matchLocationsToScene,
-} from './scene-matching';
+  computeFrameImageSceneHash,
+  resolveSceneFrameImageReferences,
+} from './sheet-snapshots';
 
 export type ImageStorageResult = { url: string; path: string };
 
@@ -44,7 +42,9 @@ export type SceneForHash = {
   continuity?: {
     characterTags?: string[];
     environmentTag?: string;
-    elementTags?: string[];
+    // nullable: `Scene.continuity.elementTags` is `.nullish()` (model emits
+    // null when no elements) — keep this assignable from production `Scene`.
+    elementTags?: string[] | null;
   } | null;
   metadata?: { location?: string } | null;
   originalScript?: { extract?: string } | null;
@@ -96,12 +96,6 @@ export type PersistImageScopedDb = {
 };
 
 const NO_SNAPSHOT_SENTINEL = '';
-
-function sortedHashes(values: Array<string | null | undefined>): string[] {
-  return values
-    .filter((v): v is string => typeof v === 'string' && v.length > 0)
-    .sort();
-}
 
 function requireAspectRatio(
   input: ImageWorkflowInput
@@ -160,34 +154,19 @@ export async function computeImageWorkflowHashCurrent(
     scopedDb.sequenceElements.list(input.sequenceId),
   ]);
 
-  const scene = frame.metadata;
-  const matchedCharacters = matchCharactersToScene(
+  const refs = resolveSceneFrameImageReferences({
+    scene: frame.metadata,
     characters,
-    scene.continuity?.characterTags ?? []
-  );
-  const matchedLocations = matchLocationsToScene(
     locations,
-    scene.continuity?.environmentTag ?? '',
-    scene.metadata?.location ?? ''
-  );
-  const matchedElements = matchElementsToScene(
     elements,
-    scene.continuity?.elementTags ?? [],
-    scene.originalScript?.extract ?? ''
-  );
+  });
 
   const currentSnapshot: FrameImageSceneSnapshot = {
     sceneId: input.sceneSnapshot.sceneId,
     visualPrompt: input.sceneSnapshot.visualPrompt,
-    characterSheetHashes: sortedHashes(
-      matchedCharacters.map((c) => c.sheetInputHash)
-    ),
-    locationSheetHashes: sortedHashes(
-      matchedLocations.map((l) => l.referenceInputHash)
-    ),
-    elementReferenceHashes: sortedHashes(
-      matchedElements.map((e) => e.imageUrl)
-    ),
+    characterSheetHashes: refs.characterSheetHashes,
+    locationSheetHashes: refs.locationSheetHashes,
+    elementReferenceHashes: refs.elementReferenceHashes,
   };
 
   return computeFrameImageSceneHash(currentSnapshot, model, aspectRatio);
@@ -277,6 +256,7 @@ export function buildImageDivergentWrites(opts: {
 export type PersistImageOutcome =
   | { status: 'divergent'; imageUrl: string; snapshotHash: string }
   | { status: 'convergent'; imageUrl: string }
+  | { status: 'variant-only'; imageUrl: string }
   | { status: 'frame-deleted' };
 
 /**
@@ -306,8 +286,15 @@ export async function persistImageResult(opts: {
       status: 'pending' | 'completed';
       model: string;
       thumbnailUrl?: string;
+      variantOnly?: boolean;
     }
   ) => Promise<void>;
+  /**
+   * Variant-only (#547): write only this model's `frame_variants` row, never
+   * the primary `frames.*`. Skips divergence detection — with no primary to
+   * protect, there is nothing to diverge from.
+   */
+  variantOnly?: boolean;
   now?: () => Date;
 }): Promise<PersistImageOutcome> {
   const {
@@ -320,8 +307,40 @@ export async function persistImageResult(opts: {
     currentHash,
     promptHash,
     emit,
+    variantOnly,
     now = () => new Date(),
   } = opts;
+
+  if (variantOnly) {
+    // Reuse the convergent variant payload (url/path/status/hashes), but apply
+    // it ONLY to the variant row — the primary `frames.*` stay exactly as they
+    // were. A null update means the frame (and its cascade-deleted variant) is
+    // gone.
+    const { variant } = buildImageConvergentWrites({
+      upload,
+      snapshotHash,
+      promptHash,
+      generatedAt: now(),
+    });
+    const updated = await scopedDb.frameVariants.updateByFrameAndModel(
+      frameId,
+      'image',
+      model,
+      variant
+    );
+    if (!updated) return { status: 'frame-deleted' };
+
+    await emit('generation.image:progress', {
+      frameId,
+      status: 'completed',
+      thumbnailUrl: upload.url,
+      model,
+      // Alternate model — the cache updater must not repoint the primary.
+      variantOnly: true,
+    });
+
+    return { status: 'variant-only', imageUrl: upload.url };
+  }
 
   if (snapshotHash && currentHash !== snapshotHash) {
     const writes = buildImageDivergentWrites({

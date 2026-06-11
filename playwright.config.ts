@@ -1,4 +1,5 @@
 import { defineConfig, devices } from 'playwright/test';
+import { E2E_RECORDING } from './e2e/recording-mode';
 
 /**
  * Playwright E2E Test Configuration
@@ -22,15 +23,28 @@ export default defineConfig({
   // Local: html only
   reporter: process.env.CI ? [['github'], ['html']] : 'html',
 
-  // Global test timeout (longer on CI due to slower 2-vCPU runners)
-  timeout: process.env.CI ? 60_000 : 30_000,
+  // Global test timeout. Recording mode hits live OpenRouter / fal so it needs
+  // headroom; CI is slower than local; replay-only local is the fast path.
+  timeout: E2E_RECORDING ? 600_000 : process.env.CI ? 60_000 : 30_000,
+
+  // Default expect() timeout. Recording lets streaming/vision calls take their
+  // time; replay keeps the snappy 5s default so flakes surface fast.
+  expect: { timeout: E2E_RECORDING ? 60_000 : 5_000 },
 
   // Shared settings for all projects
   use: {
     baseURL: 'http://localhost:3001',
+    viewport: { width: 1920, height: 1080 },
     trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'on-first-retry',
+    video: process.env.CI
+      ? 'on-first-retry'
+      : { mode: 'on', size: { width: 1920, height: 1080 } },
+    // Local recordings render the app in dark mode (matches the design's
+    // primary palette). CI keeps the default light scheme. The app uses
+    // `@media (prefers-color-scheme: dark)` so this toggles natively
+    // without injecting a class.
+    colorScheme: process.env.CI ? 'light' : 'dark',
   },
 
   // Configure projects
@@ -44,7 +58,10 @@ export default defineConfig({
     {
       name: 'auth',
       testMatch: /auth\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1920, height: 1080 },
+      },
     },
     // All other tests - use stored auth state
     {
@@ -52,6 +69,7 @@ export default defineConfig({
       testIgnore: /auth\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
+        viewport: { width: 1920, height: 1080 },
         storageState: 'e2e/.auth/user.json',
       },
       dependencies: ['setup'],
@@ -59,37 +77,64 @@ export default defineConfig({
   ],
 
   webServer: (() => {
-    const useBuiltServer = process.env.E2E_BUILT === 'true';
     const fullPipeline = process.env.PLAYWRIGHT_FULL_PIPELINE === 'true';
+    const useBuiltServer = process.env.E2E_BUILT === 'true';
     const envPrefix = [
       'E2E_TEST=true',
+      // CLOUDFLARE_ENV activates wrangler.jsonc's [env.test] block under both
+      // `vite dev` and `vite preview` (both go through @cloudflare/vite-plugin
+      // which reads the source wrangler.jsonc with its nested env blocks).
+      'CLOUDFLARE_ENV=test',
+      // Forward this process's env into the Worker's getEnv()/process.env.
+      // @cloudflare/vite-plugin builds the worker env from wrangler.jsonc `vars`
+      // + `.env*`/`.dev.vars` and, by default, does NOT include the launcher's
+      // process.env (unstable_getVarsForDev → includeProcessEnv defaults false).
+      // Without this, the per-run flags below (E2E_FULL_PIPELINE, E2E_RECORD,
+      // OPENROUTER_BASE_URL, FAL_PROXY_URL) set here never reach the worker — so
+      // workflows were skipped and the record branch never fired. This only
+      // affects text vars, not bindings, so the D1/R2 remote-binding safety net
+      // is unaffected.
+      'CLOUDFLARE_INCLUDE_PROCESS_ENV=true',
       ...(fullPipeline
         ? ['E2E_FULL_PIPELINE=true', 'FAL_PROXY_URL=http://localhost:4010/fal']
         : []),
+      // Propagate the record flag so the dev server's adapter factory can
+      // disable the OpenRouter SDK's retry loop — see create-adapter.ts. We
+      // do this only when recording because aimock buffers SSE responses
+      // upstream, which can trip the SDK's retry path and produce duplicate
+      // fixture writes for the same prompt.
+      ...(process.env.E2E_RECORD === '1' ? ['E2E_RECORD=1'] : []),
       'PORT=3001',
-      'DATABASE_URL=file:test.db',
       'VITE_APP_URL=http://localhost:3001',
       'OPENROUTER_BASE_URL=http://localhost:4010',
       'VITE_DISABLE_DEVTOOLS=true',
     ].join(' ');
 
-    // E2E_FULL_PIPELINE opts the server into running real workflows + routing
-    // fal traffic through the aimock fal handler. Off by default so existing
-    // hermetic specs keep using browser-side route mocks. Set
-    // PLAYWRIGHT_FULL_PIPELINE=true (e.g. for the full-sequence spec) to flip.
+    // The dev server runs the app inside Workerd via @cloudflare/vite-plugin,
+    // matching production at the runtime layer. E2E_BUILT=true switches to
+    // `vite preview` against a production-built worker — CI uses this to
+    // catch bundling regressions; local keeps `vite dev` for HMR.
     //
-    // E2E_BUILT=true runs the production-built Nitro server (`bun start`)
-    // instead of `vite dev` — used on CI to avoid HMR/dev-only behaviour and
-    // to catch bundling/Nitro-runtime issues earlier. Local dev keeps the
-    // dev-server path for fast iteration.
+    // Both paths read bindings from wrangler.jsonc [env.test]: an isolated
+    // D1 (openstory-test) and isolated R2 buckets backed by Miniflare local
+    // state in .wrangler/state/.
+    //
+    // Why `vite preview` (not `wrangler dev`)? Both serve a built worker,
+    // but `wrangler dev` spawns a *separate* Node + Workerd process with its
+    // own Miniflare. Historically, e2e fixtures also spawned Miniflare via
+    // getPlatformProxy for direct D1 access, causing SQLITE_BUSY lock races
+    // on the shared .wrangler D1 SQLite under parallel workers. All direct DB
+    // access from playwright fixtures has been migrated to the guarded
+    // /api/test/* routes (which execute inside the single in-process Miniflare
+    // of the vite server). The comment above is retained for history; the
+    // lock risk from fixtures is now eliminated. `vite preview` still provides
+    // consistent built-server testing.
     return {
       command: useBuiltServer
-        ? `${envPrefix} bun start`
-        : `${envPrefix} bun dev:e2e`,
-      // Wait for the TCP port, not an HTTP 2xx. The Nitro build returns 500
-      // for SSR errors (vite dev wraps them in 2xx error-overlay HTML), and
-      // we only need the server reachable — individual specs handle their
-      // own page readiness via `page.goto()`.
+        ? `${envPrefix} vite preview --port=3001`
+        : `${envPrefix} vite dev --port=3001`,
+      // Wait for the TCP port, not an HTTP 2xx — SSR errors should surface to
+      // the individual specs via `page.goto()` rather than fail server boot.
       port: 3001,
       reuseExistingServer: !useBuiltServer,
       timeout: 300_000,

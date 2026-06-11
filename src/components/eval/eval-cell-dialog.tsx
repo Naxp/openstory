@@ -7,19 +7,26 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { VideoPlayer } from '@/components/motion/video-player';
+import { buildMentionItems } from '@/components/scenes/prompt-mention/mention-items';
+import { HighlightedPrompt } from '@/components/text-editor/mention/highlighted-prompt';
+import { useSequenceCharacters } from '@/hooks/use-sequence-characters';
+import { useSequenceElements } from '@/hooks/use-sequence-elements';
+import { useSequenceLocations } from '@/hooks/use-sequence-locations';
 import type { Frame } from '@/types/database';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
-import {
-  Clapperboard,
-  FileTextIcon,
-  ImageIcon,
-  Film,
-  TextIcon,
-} from 'lucide-react';
-import { Image } from '@unpic/react';
+import { stripMarkdown } from '@/lib/utils/markdown-plain';
+import { Clapperboard, FileTextIcon, ImageIcon, TextIcon } from 'lucide-react';
+import { AppImage } from '@/components/ui/app-image';
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   getMotionPrompt,
   getSceneScript,
@@ -27,7 +34,16 @@ import {
 } from './eval-scene-cell';
 import type { ViewMode } from './eval-view';
 
-export type DialogTab = ViewMode | 'theatre';
+export type DialogTab = ViewMode;
+
+function isDialogTab(value: string): value is DialogTab {
+  return (
+    value === 'script' ||
+    value === 'prompts' ||
+    value === 'images' ||
+    value === 'motion'
+  );
+}
 
 type EvalCellDialogProps = {
   open: boolean;
@@ -37,8 +53,6 @@ type EvalCellDialogProps = {
   sequenceTitle: string;
   aspectRatio: AspectRatio;
   initialTab: DialogTab;
-  mergedVideoUrl?: string | null;
-  mergedVideoPoster?: string | null;
   onNavigateLeft?: () => void;
   onNavigateRight?: () => void;
   onNavigateUp?: () => void;
@@ -53,17 +67,32 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
   sequenceTitle,
   aspectRatio,
   initialTab,
-  mergedVideoUrl,
-  mergedVideoPoster,
   onNavigateLeft,
   onNavigateRight,
   onNavigateUp,
   onNavigateDown,
 }) => {
-  const hasTheatre = Boolean(mergedVideoUrl);
   const prompt = getVisualPrompt(frame);
   const motionPrompt = getMotionPrompt(frame);
   const script = getSceneScript(frame);
+  const [selectedTab, setSelectedTab] = useState<DialogTab>(initialTab);
+
+  // Mention pills for the prompt text. Gated on `open` so the lists are only
+  // fetched for the dialog the user actually opened — each grid cell mounts its
+  // own dialog, so unconditional fetching would hit every sequence at once.
+  const seqId = open ? frame.sequenceId : undefined;
+  const { data: mentionElements } = useSequenceElements(seqId);
+  const { data: mentionCharacters } = useSequenceCharacters(seqId ?? '');
+  const { data: mentionLocations } = useSequenceLocations(seqId ?? '');
+  const mentionItems = useMemo(
+    () =>
+      buildMentionItems({
+        characters: mentionCharacters ?? [],
+        elements: mentionElements ?? [],
+        locations: mentionLocations ?? [],
+      }),
+    [mentionCharacters, mentionElements, mentionLocations]
+  );
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -111,7 +140,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[80vw]! max-h-[80vh] w-full h-full flex flex-col">
+      <DialogContent className="max-w-[calc(100vw-1rem)]! sm:max-w-[80vw]! max-h-[80vh] w-full h-full flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {sequenceTitle} - Scene {sceneNumber}
@@ -122,10 +151,34 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
         </DialogHeader>
 
         <Tabs
-          defaultValue={initialTab}
+          value={selectedTab}
+          onValueChange={(value) => {
+            if (isDialogTab(value)) setSelectedTab(value);
+          }}
           className="w-full flex-1 flex flex-col min-h-0"
         >
-          <div className="flex justify-center mb-4">
+          {/* Mobile: Select dropdown */}
+          <div className="sm:hidden mb-4">
+            <Select
+              value={selectedTab}
+              onValueChange={(value) => {
+                if (isDialogTab(value)) setSelectedTab(value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="script">Script</SelectItem>
+                <SelectItem value="prompts">Prompts</SelectItem>
+                <SelectItem value="images">Image</SelectItem>
+                <SelectItem value="motion">Motion</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Desktop: Tab buttons */}
+          <div className="hidden sm:flex justify-center mb-4">
             <TabsList
               onKeyDown={(e) => {
                 // Prevent tabs from handling arrow keys - we use them for cell navigation
@@ -140,12 +193,6 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
                 }
               }}
             >
-              {hasTheatre && (
-                <TabsTrigger value="theatre">
-                  <Film className="h-4 w-4 mr-2" />
-                  Theatre
-                </TabsTrigger>
-              )}
               <TabsTrigger value="script">
                 <FileTextIcon className="h-4 w-4 mr-2" />
                 Script
@@ -165,21 +212,6 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
             </TabsList>
           </div>
 
-          {hasTheatre && (
-            <TabsContent value="theatre" className="flex-1 min-h-0 mt-0">
-              <div className="flex justify-center items-center h-full w-full">
-                <div className="w-full max-w-5xl">
-                  <VideoPlayer
-                    src={mergedVideoUrl ?? ''}
-                    posterSrc={mergedVideoPoster}
-                    aspectRatio={aspectRatio}
-                    className="rounded-lg"
-                  />
-                </div>
-              </div>
-            </TabsContent>
-          )}
-
           <TabsContent value="script" className="flex-1 min-h-0 mt-0">
             {!script ? (
               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -188,7 +220,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
             ) : (
               <ScrollArea className="h-full">
                 <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                  {script}
+                  {stripMarkdown(script)}
                 </p>
               </ScrollArea>
             )}
@@ -206,9 +238,11 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
                     <p className="text-xs font-medium text-muted-foreground mb-1">
                       Visual
                     </p>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {prompt}
-                    </p>
+                    <HighlightedPrompt
+                      text={prompt}
+                      items={mentionItems}
+                      className="text-sm leading-relaxed"
+                    />
                   </div>
                 )}
                 {prompt && motionPrompt && <hr className="my-3 border-muted" />}
@@ -217,9 +251,11 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
                     <p className="text-xs font-medium text-muted-foreground mb-1">
                       Motion
                     </p>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {motionPrompt}
-                    </p>
+                    <HighlightedPrompt
+                      text={motionPrompt}
+                      items={mentionItems}
+                      className="text-sm leading-relaxed"
+                    />
                   </div>
                 )}
               </ScrollArea>
@@ -233,7 +269,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
               </div>
             ) : (
               <div className="flex justify-center items-center h-full">
-                <Image
+                <AppImage
                   src={frame.thumbnailUrl}
                   alt={`Scene ${sceneNumber}`}
                   className="max-w-full max-h-full object-contain rounded-lg"
@@ -249,7 +285,7 @@ export const EvalCellDialog: React.FC<EvalCellDialogProps> = ({
               frame.thumbnailUrl ? (
                 <div className="flex justify-center items-center h-full w-full">
                   <div className="relative w-full max-w-4xl">
-                    <Image
+                    <AppImage
                       src={frame.thumbnailUrl}
                       alt={`Scene ${sceneNumber} preview`}
                       className="w-full h-auto object-contain rounded-lg opacity-60"

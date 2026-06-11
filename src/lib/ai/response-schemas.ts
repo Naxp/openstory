@@ -6,6 +6,10 @@
  */
 
 import { z } from 'zod';
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ai', 'response-schemas']);
+
 import {
   characterBibleEntrySchema,
   continuitySchema,
@@ -53,7 +57,6 @@ export const locationMatchResponseSchema = z.object({
 export const sceneSplittingResultSchema = z.object({
   status: z
     .enum(['success', 'error', 'rejected'])
-    .catch('success')
     .meta({ description: 'Processing status: success, error, or rejected' }),
   projectMetadata: projectMetadataSchema.meta({
     description: 'Project-level metadata extracted from script',
@@ -68,21 +71,28 @@ export const sceneSplittingResultSchema = z.object({
           metadata: true,
         })
         .required()
+        // Scene membership now lives upstream: scene-split, which already holds
+        // the full script + bibles, emits each scene's `continuity` so the
+        // visual-prompt LLM no longer has to derive it. Downstream prompt
+        // workflows narrow their bible inputs with this. See #867.
+        .extend({ continuity: continuitySchema })
     )
     .meta({ description: 'Array of scenes split from the script' }),
-  characterBible: z.array(characterBibleEntrySchema).catch([]).meta({
+  characterBible: z.array(characterBibleEntrySchema).meta({
     description:
       'Character descriptions extracted from the script for visual consistency',
   }),
-  locationBible: z.array(locationBibleEntrySchema).catch([]).meta({
+  locationBible: z.array(locationBibleEntrySchema).meta({
     description:
       'Location descriptions extracted from the script for visual consistency',
   }),
-  elementBible: z.array(elementBibleEntrySchema).catch([]).meta({
+  elementBible: z.array(elementBibleEntrySchema).meta({
     description:
-      'User-uploaded elements referenced in the script by UPPERCASE token',
+      'Elements referenced in the script by UPPERCASE token — user-uploaded reference images plus detected recurring products/objects that need a consistent canonical look',
   }),
 });
+
+export type SceneSplittingResult = z.infer<typeof sceneSplittingResultSchema>;
 
 /**
  * Phase 2: Character Extraction
@@ -98,8 +108,8 @@ export const characterExtractionResultSchema = sceneAnalysisSchema
  * Phase 2b: Location Extraction
  */
 export const locationExtractionResultSchema = z.object({
-  status: z.enum(['success', 'error', 'rejected']).catch('success'),
-  locationBible: z.array(locationBibleEntrySchema).catch([]),
+  status: z.enum(['success', 'error', 'rejected']),
+  locationBible: z.array(locationBibleEntrySchema),
 });
 
 /**
@@ -108,7 +118,6 @@ export const locationExtractionResultSchema = z.object({
 export const visualPromptGenerationResultSchema = z.object({
   status: z
     .enum(['success', 'error', 'rejected'])
-    .catch('success')
     .meta({ description: 'Processing status: success, error, or rejected' }),
   scenes: z
     .array(
@@ -138,7 +147,6 @@ export const visualPromptGenerationResultSchema = z.object({
 export const motionPromptGenerationResultSchema = z.object({
   status: z
     .enum(['success', 'error', 'rejected'])
-    .catch('success')
     .meta({ description: 'Processing status: success, error, or rejected' }),
   scenes: z
     .array(
@@ -154,8 +162,8 @@ export const motionPromptGenerationResultSchema = z.object({
               motion: z
                 .preprocess((val) => {
                   if (Array.isArray(val) && val.length > 0) {
-                    console.warn(
-                      '[MotionPrompts] AI returned motion as array, using first element'
+                    logger.warn(
+                      'AI returned motion as array, using first element'
                     );
                     return val[0];
                   }
@@ -167,18 +175,6 @@ export const motionPromptGenerationResultSchema = z.object({
         })
     )
     .meta({ description: 'Array of scenes with motion prompts' }),
-});
-
-/**
- * Music Prompt Generation Response
- */
-export const musicPromptSchema = z.object({
-  tags: z
-    .string()
-    .describe('Comma-separated genre/style tags for ACE-Step (20-50 words)'),
-  prompt: z
-    .string()
-    .describe('Descriptive music prompt as fallback for non-tag models'),
 });
 
 /**

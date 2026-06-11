@@ -1,8 +1,14 @@
 name: Deploy Cloudflare
 
+# PR previews only. Production deploys to `main` run on Cloudflare Workers
+# Builds (dashboard-connected, wrangler-authenticated — no Cloudflare secrets
+# in GitHub for the prod path): build command `bun run build` with
+# CLOUDFLARE_ENV=production, deploy command `bun run deploy:production`.
+# See docs/deployment/cloudflare.md and issue #900. Previews stay here
+# because Workers Builds branch previews share production bindings — no
+# per-PR D1 provisioning, no workflow-name namespacing (#805), no teardown.
+
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
@@ -22,52 +28,6 @@ jobs:
       - id: check
         run: echo "has-cf-token=${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}" >> "$GITHUB_OUTPUT"
 
-  # ── Production deploy (push to main) ──────────────────────────────
-  deploy-production:
-    needs: check-secrets
-    if: >-
-      needs.check-secrets.outputs.has-cf-token == 'true'
-      && github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Migrate D1 (production)
-        run: bun --bun drizzle-kit migrate --config=drizzle.config.d1.ts
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_D1_DATABASE_ID: d6a35f64-abb0-4a34-a092-dc20b29f5812
-
-      - name: Seed D1 (production)
-        run: bun db:seed:d1
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_D1_DATABASE_ID: d6a35f64-abb0-4a34-a092-dc20b29f5812
-          VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
-
-      - name: Deploy to production
-        run: bun cf:deploy:prd
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN }}
-          VITE_PUBLIC_POSTHOG_HOST: ${{ vars.VITE_PUBLIC_POSTHOG_HOST }}
-
   # ── PR preview deploy ─────────────────────────────────────────────
   deploy-preview:
     needs: check-secrets
@@ -82,13 +42,13 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
 
@@ -134,21 +94,6 @@ jobs:
             echo "database-id=$uuid" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Migrate D1 (preview)
-        run: bun --bun drizzle-kit migrate --config=drizzle.config.d1.ts
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_D1_DATABASE_ID: ${{ steps.d1.outputs.database-id }}
-
-      - name: Seed D1 (preview)
-        run: bun db:seed:d1
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_D1_DATABASE_ID: ${{ steps.d1.outputs.database-id }}
-          VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
-
       - name: Patch wrangler config for preview
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -163,16 +108,52 @@ jobs:
             obj.d1_databases = [{
               binding: 'DB',
               database_name: 'openstory-pr-${PR_NUMBER}',
-              database_id: '${D1_DATABASE_ID}'
+              database_id: '${D1_DATABASE_ID}',
+              migrations_dir: 'drizzle/migrations-wrangler'
             }];
             obj.r2_buckets = [
               { bucket_name: 'openstory-public-assets', binding: 'R2_PUBLIC_ASSETS_BUCKET', remote: true },
               { binding: 'R2_STORAGE_BUCKET', bucket_name: 'openstory-storage-stg' }
             ];
+            // Cloudflare Workflows are account-global resources keyed by 'name'
+            // — NOT scoped per worker. Without this, a preview's workflow
+            // entries reuse production's names (image-workflow, …), so
+            // triggerWorkflow() -> binding.create() resolves to the shared,
+            // production-owned workflow (prod code + prod D1 + prod realtime
+            // DO) and a preview deploy can last-writer-wins re-point ownership
+            // onto the preview worker, breaking prod. Namespace the name per-PR
+            // (keep binding + class_name so TRIGGER_TO_BINDING still resolves)
+            // so each preview owns an isolated set. See issue #805.
+            obj.workflows = (obj.workflows || []).map((w) => ({
+              ...w,
+              name: \`\${w.name}-pr-${PR_NUMBER}\`,
+            }));
+            // Tail-consume preview logs into the staging log forwarder
+            // (workers/posthog-log-forwarder), which transforms our LogTape
+            // JSON into proper OTLP log records and POSTs to PostHog. The
+            // forwarder must be deployed as 'openstory-log-forwarder-stg'
+            // before preview deploys can reference it. See PR #765 /
+            // issue #754 / workers/posthog-log-forwarder/README.md.
+            obj.tail_consumers = [{ service: 'openstory-log-forwarder-stg' }];
+            // NOTE: triggers.crons retained on previews so the reconciler
+            // sweep can be tested end-to-end. Each preview has its own
+            // isolated D1, so the sweep operates on preview rows only. See
+            // issue #727 / PR #730.
             fs.writeFileSync('wrangler.jsonc', JSON.stringify(obj, null, 2));
           "
           echo "Patched wrangler.jsonc:"
           cat wrangler.jsonc | head -30
+
+      # Runs after the patch so wrangler resolves the PR's own D1 (the
+      # binding's database_id was just rewritten). Seeding happens at
+      # runtime via the worker's self-seed (src/server.ts). See #897.
+      - name: Migrate D1 (preview)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          bun scripts/flatten-migrations.ts
+          bunx wrangler d1 migrations apply DB --remote
 
       - name: Build
         env:
@@ -180,9 +161,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN }}
           VITE_PUBLIC_POSTHOG_HOST: ${{ vars.VITE_PUBLIC_POSTHOG_HOST }}
+          # Baked into sheet/preview URLs by the runtime self-seed
+          # (import.meta.env, build-time).
+          VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
         run: |
           bunx wrangler types
-          BUILD_CLOUDFLARE=1 bun --bun run build
+          bun run build
 
       - name: Deploy preview
         id: deploy
@@ -209,29 +193,16 @@ jobs:
           SECRET_VITE_APP_NAME: ${{ vars.APP_NAME }}
           SECRET_VITE_APP_URL: ${{ steps.deploy.outputs.url }}
           SECRET_BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-          SECRET_CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           SECRET_EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          SECRET_FAL_CONCURRENCY_LIMIT: ${{ secrets.FAL_CONCURRENCY_LIMIT }}
           SECRET_FAL_KEY: ${{ secrets.FAL_KEY }}
           SECRET_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           SECRET_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           SECRET_LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
           SECRET_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           SECRET_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          SECRET_LANGFUSE_TRACING_ENVIRONMENT: ${{ secrets.LANGFUSE_TRACING_ENVIRONMENT }}
-          SECRET_LETZAI_API_KEY: ${{ secrets.LETZAI_API_KEY }}
           SECRET_OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
-          SECRET_QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
-          SECRET_QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
-          SECRET_QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
-          SECRET_QSTASH_URL: ${{ secrets.QSTASH_URL }}
-          SECRET_RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          SECRET_UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          SECRET_VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
-          SECRET_VITE_PRIVACY_EMAIL: ${{ vars.VITE_PRIVACY_EMAIL }}
           SECRET_VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
           SECRET_R2_PUBLIC_STORAGE_DOMAIN: ${{ vars.R2_PUBLIC_STORAGE_DOMAIN }}
-          SECRET_UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           SECRET_VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN }}
           SECRET_VITE_PUBLIC_POSTHOG_HOST: ${{ vars.VITE_PUBLIC_POSTHOG_HOST }}
         run: |
@@ -240,7 +211,7 @@ jobs:
             | bunx wrangler secret bulk --name "pr-${PR_NUMBER}"
 
       - name: Find existing PR comment
-        uses: peter-evans/find-comment@v4
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
         id: find-comment
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -248,7 +219,7 @@ jobs:
           body-includes: '<!-- cf-preview -->'
 
       - name: Comment on PR
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
@@ -290,6 +261,47 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/$WORKER_NAME")
           echo "Delete worker $WORKER_NAME response: $status"
 
+      - name: Delete preview workflows
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Workflows are account-global resources (see issue #805), so the
+          # preview's namespaced set (`<name>-pr-<n>`) survives the worker
+          # delete above. Sweep them by exact `-pr-<n>` suffix so the account
+          # doesn't accumulate orphaned `*-pr-<n>` workflow definitions.
+          SUFFIX="-pr-${PR_NUMBER}"
+          page=1
+          deleted=0
+          while :; do
+            resp=$(curl -sf \
+              -H "Authorization: Bearer $CF_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workflows?per_page=100&page=$page") || {
+                echo "::warning::Failed to list workflows (page $page) — skipping workflow cleanup"
+                break
+              }
+
+            names=$(echo "$resp" | jq -r --arg sfx "$SUFFIX" '.result[]?.name | select(endswith($sfx))')
+
+            for name in $names; do
+              status=$(curl -sw '%{http_code}' -o /dev/null \
+                -X DELETE \
+                -H "Authorization: Bearer $CF_API_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workflows/$name")
+              echo "Delete workflow $name response: $status"
+              deleted=$((deleted + 1))
+            done
+
+            count=$(echo "$resp" | jq -r '.result | length')
+            total_pages=$(echo "$resp" | jq -r '.result_info.total_pages // 1')
+            if [ "$count" -eq 0 ] || [ "$page" -ge "$total_pages" ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+          echo "Deleted $deleted preview workflow(s) with suffix $SUFFIX"
+
       - name: Delete D1 database
         env:
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -315,7 +327,7 @@ jobs:
           fi
 
       - name: Find existing PR comment
-        uses: peter-evans/find-comment@v4
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
         id: find-comment
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -324,7 +336,7 @@ jobs:
 
       - name: Update PR comment
         if: steps.find-comment.outputs.comment-id != ''
-        uses: peter-evans/create-or-update-comment@v5
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           edit-mode: replace

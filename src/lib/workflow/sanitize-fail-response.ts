@@ -19,13 +19,15 @@ export function sanitizeFailResponse(failResponse: unknown): string {
 
   // Extract inner message from QStash wrapper pattern
   const wrapperMatch = raw.match(/received:\s*'(.+)'$/s);
-  const message = wrapperMatch ? wrapperMatch[1].trim() : raw;
+  const innerMessage = wrapperMatch?.[1];
+  const message = innerMessage ? innerMessage.trim() : raw;
 
   // Map known CF error codes
   const codeMatch = message.match(/error code:\s*(\d+)/i);
-  if (codeMatch) {
-    const friendly = CF_ERROR_CODES[codeMatch[1]];
-    if (friendly) return `${friendly} (error code: ${codeMatch[1]})`;
+  const code = codeMatch?.[1];
+  if (code) {
+    const friendly = CF_ERROR_CODES[code];
+    if (friendly) return `${friendly} (error code: ${code})`;
   }
 
   // Truncate excessively long messages
@@ -81,11 +83,12 @@ function extractRawMessage(value: unknown): string {
 }
 
 /**
- * Detect whether an error message indicates OpenRouter rejected the API key
- * (revoked, expired, or otherwise unauthorised). Used by workflow failure
- * handlers to mark a stored BYOK key invalid.
+ * Detect whether an error message indicates the LLM provider rejected the API
+ * key (revoked, expired, or otherwise unauthorised) — OpenRouter directly, or
+ * fal's OpenRouter endpoint when the call was fal-routed (issue #895). Used by
+ * workflow failure handlers to mark a stored BYOK key invalid.
  */
-export function isOpenRouterAuthError(message: string): boolean {
+export function isLlmAuthError(message: string): boolean {
   return /\b(401|403|unauthori[sz]ed|forbidden|no auth credentials|invalid api key)\b/i.test(
     message
   );

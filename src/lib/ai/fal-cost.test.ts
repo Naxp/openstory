@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import {
   calculateImageCost,
   calculateVideoCost,
@@ -10,13 +10,13 @@ import { micros, ZERO_MICROS, usdToMicros } from '@/lib/billing/money';
 const usd = (n: number) => usdToMicros(n);
 
 describe('calculateImageCost', () => {
-  test('per_image model (grok-imagine-image)', () => {
+  test('per_compute_second model (grok-imagine-image-quality)', () => {
     const cost = calculateImageCost({
-      endpointId: 'xai/grok-imagine-image',
+      endpointId: 'xai/grok-imagine-image/quality/text-to-image',
       numImages: 2,
     });
-    // 20_000 micros * 2 = 40_000
-    expect(cost).toBe(micros(40_000));
+    // 170 micros * 3 (DEFAULT_COMPUTE_SECONDS) * 2 = 1_020
+    expect(cost).toBe(micros(1_020));
   });
 
   test('per_megapixel model (flux-2)', () => {
@@ -196,24 +196,24 @@ describe('calculateVideoCost', () => {
     expect(cost).toBe(micros(400_000));
   });
 
-  test('Grok Video 480p ($0.05/s + $0.002)', () => {
+  test('Grok Video 1.5 480p ($0.08/s + $0.01)', () => {
     const cost = calculateVideoCost({
-      endpointId: 'xai/grok-imagine-video/image-to-video',
+      endpointId: 'xai/grok-imagine-video/v1.5/image-to-video',
       durationSeconds: 6,
       resolution: '480p',
     });
-    // 50_000 * 6 + 2_000 = 302_000
-    expect(cost).toBe(micros(302_000));
+    // 80_000 * 6 + 10_000 = 490_000
+    expect(cost).toBe(micros(490_000));
   });
 
-  test('Grok Video 720p ($0.07/s + $0.002)', () => {
+  test('Grok Video 1.5 720p ($0.14/s + $0.01)', () => {
     const cost = calculateVideoCost({
-      endpointId: 'xai/grok-imagine-video/image-to-video',
+      endpointId: 'xai/grok-imagine-video/v1.5/image-to-video',
       durationSeconds: 6,
       resolution: '720p',
     });
-    // 70_000 * 6 + 2_000 = 422_000
-    expect(cost).toBe(micros(422_000));
+    // 140_000 * 6 + 10_000 = 850_000
+    expect(cost).toBe(micros(850_000));
   });
 
   test('unknown endpoint returns 0', () => {

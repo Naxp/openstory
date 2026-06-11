@@ -1,9 +1,9 @@
-import { type InferInsertModel, type InferSelectModel, sql } from 'drizzle-orm';
+import { type InferSelectModel, sql } from 'drizzle-orm';
 import {
   check,
   index,
   integer,
-  sqliteTable,
+  snakeCase,
   text,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
@@ -20,41 +20,47 @@ const TRANSACTION_TYPES = [
 ] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
-export const credits = sqliteTable(
+export const credits = snakeCase.table(
   'credits',
   {
-    teamId: text('team_id')
+    teamId: text()
       .primaryKey()
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
     balance: integer().default(0).notNull(),
-    updatedAt: integer('updated_at', { mode: 'timestamp' })
+    updatedAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
   },
   (table) => [check('positive_balance', sql`${table.balance} >= 0`)]
 );
 
-export const transactions = sqliteTable(
+export const transactions = snakeCase.table(
   'transactions',
   {
     id: text()
       .$defaultFn(() => generateId())
       .primaryKey()
       .notNull(),
-    teamId: text('team_id')
+    teamId: text()
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
-    userId: text('user_id').references(() => user.id, {
+    userId: text().references(() => user.id, {
       onDelete: 'set null',
     }),
     type: text().$type<TransactionType>().notNull(),
     amount: integer().notNull(),
-    balanceAfter: integer('balance_after').notNull(),
+    balanceAfter: integer().notNull(),
     metadata: text({ mode: 'json' }).$defaultFn(() => ({})),
-    stripeSessionId: text('stripe_session_id'),
+    stripeSessionId: text(),
     description: text(),
-    createdAt: integer('created_at', { mode: 'timestamp' })
+    /**
+     * Stable key making a deduction idempotent across workflow step retries
+     * (convention: `${workflowInstanceId}:<charge-name>`). Null for charges
+     * with no retry path (e.g. HTTP single-shot LLM calls).
+     */
+    idempotencyKey: text(),
+    createdAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
   },
@@ -64,25 +70,22 @@ export const transactions = sqliteTable(
     index('idx_transactions_team_id').on(table.teamId),
     index('idx_transactions_user_id').on(table.userId),
     uniqueIndex('idx_transactions_stripe_session_id').on(table.stripeSessionId),
+    uniqueIndex('idx_transactions_team_idempotency_key')
+      .on(table.teamId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
   ]
 );
 
-export const teamBillingSettings = sqliteTable('team_billing_settings', {
-  teamId: text('team_id')
+export const teamBillingSettings = snakeCase.table('team_billing_settings', {
+  teamId: text()
     .primaryKey()
     .notNull()
     .references(() => teams.id, { onDelete: 'cascade' }),
-  stripeCustomerId: text('stripe_customer_id'),
-  autoTopUpEnabled: integer('auto_top_up_enabled', { mode: 'boolean' })
-    .default(false)
-    .notNull(),
-  autoTopUpThresholdMicros: integer('auto_top_up_threshold_micros').default(
-    5_000_000
-  ),
-  autoTopUpAmountMicros: integer('auto_top_up_amount_micros').default(
-    100_000_000
-  ),
-  updatedAt: integer('updated_at', { mode: 'timestamp' })
+  stripeCustomerId: text(),
+  autoTopUpEnabled: integer({ mode: 'boolean' }).default(false).notNull(),
+  autoTopUpThresholdMicros: integer().default(5_000_000),
+  autoTopUpAmountMicros: integer().default(100_000_000),
+  updatedAt: integer({ mode: 'timestamp' })
     .$defaultFn(() => new Date())
     .notNull(),
 });
@@ -97,24 +100,24 @@ const CREDIT_BATCH_SOURCES = [
 ] as const;
 export type CreditBatchSource = (typeof CREDIT_BATCH_SOURCES)[number];
 
-export const creditBatches = sqliteTable(
+export const creditBatches = snakeCase.table(
   'credit_batches',
   {
     id: text()
       .$defaultFn(() => generateId())
       .primaryKey()
       .notNull(),
-    teamId: text('team_id')
+    teamId: text()
       .notNull()
       .references(() => teams.id, { onDelete: 'cascade' }),
-    originalAmount: integer('original_amount').notNull(),
-    remainingAmount: integer('remaining_amount').notNull(),
+    originalAmount: integer().notNull(),
+    remainingAmount: integer().notNull(),
     source: text().$type<CreditBatchSource>().notNull(),
-    transactionId: text('transaction_id').references(() => transactions.id, {
+    transactionId: text().references(() => transactions.id, {
       onDelete: 'set null',
     }),
-    expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp' })
+    expiresAt: integer({ mode: 'timestamp' }).notNull(),
+    createdAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),
   },
@@ -130,16 +133,4 @@ export const creditBatches = sqliteTable(
 );
 
 // Type exports
-export type Credit = InferSelectModel<typeof credits>;
-export type NewCredit = InferInsertModel<typeof credits>;
-
-export type Transaction = InferSelectModel<typeof transactions>;
-export type NewTransaction = InferInsertModel<typeof transactions>;
-
 export type TeamBillingSetting = InferSelectModel<typeof teamBillingSettings>;
-export type NewTeamBillingSetting = InferInsertModel<
-  typeof teamBillingSettings
->;
-
-export type CreditBatch = InferSelectModel<typeof creditBatches>;
-export type NewCreditBatch = InferInsertModel<typeof creditBatches>;

@@ -1,26 +1,19 @@
 import type React from 'react';
 import { AspectRatioIcon } from '@/components/icons/aspect-ratio-icon';
 import { ModelBadge } from '@/components/model/model-badge';
+import { StyleBadge } from '@/components/style/style-badge';
 import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import { getImageModelById } from '@/lib/ai/models';
 import { getAspectRatioData } from '@/lib/constants/aspect-ratios';
 import { formatDistanceToNow } from '@/lib/format-date';
-import { formatDuration } from '@/lib/utils/format-duration';
-import { Route as sequencesScenesRoute } from '@/routes/_protected/sequences/$id/scenes';
+import { Route as sequencesScenesRoute } from '@/routes/_app/sequences/$id/scenes';
 import { Link } from '@tanstack/react-router';
-import {
-  AlertTriangle,
-  Calendar,
-  ImageIcon,
-  Mail,
-  Timer,
-  User,
-  Workflow,
-} from 'lucide-react';
+import { AlertTriangle, Calendar, ImageIcon, Mail, User } from 'lucide-react';
+import { getCreatorIdentity } from './creator-identity';
 
 type EvalSequenceMetadataProps = {
   sequence: SequenceWithFrames;
-  divergence?: { hasVideo: boolean; hasMusic: boolean };
+  divergence?: { hasMusic: boolean };
 };
 
 export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
@@ -29,14 +22,9 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
 }) => {
   const ratioData = getAspectRatioData(sequence.aspectRatio);
   const imageModel = getImageModelById(sequence.imageModel);
-  const dotTitle =
-    divergence?.hasVideo && divergence.hasMusic
-      ? 'Alternate merged video and music available — click to compare'
-      : divergence?.hasVideo
-        ? 'Alternate merged video available — click to compare'
-        : divergence?.hasMusic
-          ? 'Alternate music track available — click to compare'
-          : null;
+  const dotTitle = divergence?.hasMusic
+    ? 'Alternate music track available — click to compare'
+    : null;
 
   return (
     <div className="relative h-full border-r border-b p-3 flex flex-col gap-2 overflow-y-auto">
@@ -48,7 +36,6 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
           className="absolute top-2 right-2 inline-flex h-2 w-2 items-center justify-center rounded-full bg-sky-500 ring-2 ring-sky-500/30"
         />
       )}
-      {/* Title */}
       <Link
         to={sequencesScenesRoute.fullPath}
         params={{ id: sequence.id }}
@@ -58,13 +45,13 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
         {sequence.title || 'Untitled Sequence'}
       </Link>
 
-      {/* Creator identity (in support mode) */}
       <CreatorIdentity sequence={sequence} />
 
-      {/* Analysis Model */}
-      <ModelBadge model={sequence.analysisModel} />
+      <div className="flex flex-wrap items-center gap-1">
+        <ModelBadge model={sequence.analysisModel} />
+        <StyleBadge styleId={sequence.styleId} />
+      </div>
 
-      {/* Image Model */}
       {imageModel && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <ImageIcon className="h-3 w-3" />
@@ -72,31 +59,12 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
         </div>
       )}
 
-      {/* Workflow */}
-      {sequence.workflow && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Workflow className="h-3 w-3" />
-          <span className="truncate">{sequence.workflow}</span>
-        </div>
-      )}
-
-      {/* Metadata Row */}
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {/* Created Date */}
         <div className="flex items-center gap-1">
           <Calendar className="h-3 w-3" />
           <span>{formatDistanceToNow(new Date(sequence.createdAt))}</span>
         </div>
 
-        {/* Analysis Duration */}
-        {sequence.analysisDurationMs > 0 && (
-          <div className="flex items-center gap-1">
-            <Timer className="h-3 w-3" />
-            <span>{formatDuration(sequence.analysisDurationMs)}</span>
-          </div>
-        )}
-
-        {/* Aspect Ratio */}
         {ratioData && (
           <div className="flex items-center gap-1">
             <AspectRatioIcon
@@ -109,12 +77,10 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
         )}
       </div>
 
-      {/* Frame Count */}
       <div className="text-xs text-muted-foreground">
         {sequence.frames.length} scene{sequence.frames.length !== 1 ? 's' : ''}
       </div>
 
-      {/* Errors */}
       <SequenceErrors sequence={sequence} />
     </div>
   );
@@ -123,15 +89,7 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
 const CreatorIdentity: React.FC<{ sequence: SequenceWithFrames }> = ({
   sequence,
 }) => {
-  const name =
-    'creatorName' in sequence && typeof sequence.creatorName === 'string'
-      ? sequence.creatorName
-      : null;
-  const email =
-    'creatorEmail' in sequence && typeof sequence.creatorEmail === 'string'
-      ? sequence.creatorEmail
-      : null;
-
+  const { name, email } = getCreatorIdentity(sequence);
   if (!name && !email) return null;
 
   if (name) {
@@ -164,7 +122,6 @@ const SequenceErrors: React.FC<{ sequence: SequenceWithFrames }> = ({
   let errorCount = 0;
 
   if (sequence.status === 'failed') errorCount++;
-  if (sequence.mergedVideoError) errorCount++;
   if (sequence.musicError) errorCount++;
 
   errorCount += sequence.frames.filter(

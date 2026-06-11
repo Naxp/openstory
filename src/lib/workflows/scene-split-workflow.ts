@@ -1,50 +1,90 @@
 /**
- * Scene Split Workflow
- * Streaming scene split with progressive frame creation.
+ * Cloudflare Workflows port of `sceneSplitWorkflow`.
  *
- * Steps:
- * 1. prepare-scene-splitting — fetch prompt from Langfuse
- * 2. scene-splitting-stream — stream LLM response, create frames progressively
- * 3. reconcile-frames — ensure all frames exist (handles cached result replay)
- * 4. deduct-llm-credits-scene-splitting — deduct credits, emit phase complete
- */
+ * Mirrors the QStash version (`src/lib/workflows/scene-split-workflow.ts`)
+ * step for step — same step names, same control flow, same side effects.
+ * Differences (all infrastructure-level, not behavioural):
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads payload from `event.payload`.
+ *   - Gap C: the streaming LLM call + per-chunk DB writes + per-chunk
+ *     `generation.scene:*` event emissions + per-chunk preview-image
+ *     fire-and-forget trigger all run inline inside a single top-level
+ *     `step.do('scene-splitting-stream', …)`. If that step fails partway,
+ *     the engine replays the entire LLM call — acceptable per the
+ *     investigation (`docs/investigations/cloudflare-workflows.md` §Gap C).
+ *   - The final value returned from `scene-splitting-stream` is Zod-inferred
+ *     and structurally rejected by CF's `Rpc.Serializable<T>` check, so we
+ *     JSON-stringify around the step boundary (same pattern as
+ *     `visual-prompt-scene-workflow.ts`). */
 
-import { callLLMStream } from '@/lib/ai/llm-client';
+import { callLLMStream, PROMPT_REASONING } from '@/lib/ai/llm-client';
+import { PREVIEW_IMAGE_MODEL } from '@/lib/ai/models';
 import { getContextWindow } from '@/lib/ai/models.config';
-import { sceneSplittingResultSchema } from '@/lib/ai/response-schemas';
+import {
+  type SceneSplittingResult,
+  sceneSplittingResultSchema,
+} from '@/lib/ai/response-schemas';
 import {
   createStreamingSceneParser,
   type SceneSplittingScene,
-  stripCodeFences,
 } from '@/lib/ai/streaming-scene-parser';
-import { parse } from 'partial-json';
 import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
+import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { NewFrame } from '@/lib/db/schema';
+import type { ScopedDb } from '@/lib/db/scoped';
 import { getChatPrompt } from '@/lib/prompts';
+import { buildPreviewPrompt } from '@/lib/prompts/poster-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
+import { previewImageDedupId } from '@/lib/workflow/dedup-ids';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
+import { triggerWorkflow } from '@/lib/workflow/client';
+import { buildWorkflowLabel } from '@/lib/workflow/labels';
+import { handleLlmAuthFailure } from '@/lib/workflow/llm-auth-failure';
+import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import type {
   ImageWorkflowInput,
   SceneSplitWorkflowInput,
   SceneSplitWorkflowResult,
 } from '@/lib/workflow/types';
-import { PREVIEW_IMAGE_MODEL } from '../ai/models';
-import { aspectRatioToImageSize } from '../constants/aspect-ratios';
-import { buildPreviewPrompt } from '../prompts/poster-prompt';
-import { triggerWorkflow } from '../workflow/client';
-import { buildWorkflowLabel } from '../workflow/labels';
-import {
-  isOpenRouterAuthError,
-  sanitizeFailResponse,
-} from '@/lib/workflow/sanitize-fail-response';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { NonRetryableError } from 'cloudflare:workflows';
+import { getLogger } from '@/lib/observability/logger';
 
-export const sceneSplitWorkflow = createScopedWorkflow<
-  SceneSplitWorkflowInput,
-  SceneSplitWorkflowResult
->(
-  async (context, scopedDb) => {
-    const input = context.requestPayload;
+const logger = getLogger(['openstory', 'workflow', 'scene-split']);
+
+const PHASE = { number: 1, name: 'Analyzing script…' } as const;
+const STEP_NAME = 'scene-splitting';
+const LOG_NAME = `phase-${PHASE.number}-${STEP_NAME}`;
+const LOG_TAGS = [STEP_NAME, `phase-${PHASE.number}`, 'analysis'];
+const LOG_METADATA = { phase: PHASE.number, phaseName: PHASE.name };
+
+/**
+ * Shape produced by the streaming step (post JSON round-trip). Mirrors the
+ * QStash `streamResult` value — note `projectMetadata` is preserved so the
+ * reconcile step can extract the title, and `frameMapping` reflects only the
+ * frames written inline during streaming.
+ */
+type StreamResult = {
+  scenes: SceneSplittingResult['scenes'];
+  projectMetadata: SceneSplittingResult['projectMetadata'];
+  frameMapping: Array<{ sceneId: string; frameId: string }>;
+  characterBible: SceneSplittingResult['characterBible'];
+  locationBible: SceneSplittingResult['locationBible'];
+  elementBible: SceneSplittingResult['elementBible'];
+};
+
+export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<SceneSplitWorkflowInput>>,
+    step: WorkflowStep,
+    scopedDb: ScopedDb
+  ): Promise<SceneSplitWorkflowResult> {
+    const input = event.payload;
     const {
       sequenceId,
       modelId,
@@ -53,53 +93,57 @@ export const sceneSplitWorkflow = createScopedWorkflow<
       elements = [],
     } = input;
 
-    const phase = { number: 1, name: 'Analyzing script\u2026' };
-    const name = 'scene-splitting';
-    const logName = `phase-${phase.number}-${name}`;
-    const logTags = [name, `phase-${phase.number}`, 'analysis'];
-    const logMetadata = { phase: phase.number, phaseName: phase.name };
-
-    // Step 1: Prepare — fetch prompt
-    const { messages, promptReference } = await context.run(
-      'prepare-scene-splitting',
-      async () => {
+    // Gap C: this single `step.do` owns the prompt fetch + the entire
+    // streaming session. Inside, the partial-JSON parser, per-chunk DB writes
+    // (upsertFrame), per-chunk realtime event emissions
+    // (`generation.scene:new`, `generation.frame:created`,
+    // `generation.scene:updated`, `generation.updated`,
+    // `generation.phase:start`) and per-chunk fire-and-forget preview-image
+    // triggers all run inline. On step failure the engine replays the whole
+    // stream — acceptable per the investigation. The prompt fetch is folded
+    // in because the Langfuse `ChatPromptClient` reference is not
+    // `Rpc.Serializable<T>` and so can't cross a step boundary; keeping it
+    // local also means the per-chunk side effects share the same retry
+    // boundary as the LLM call that produced them. JSON-stringify the final
+    // value around the boundary so the Zod-inferred result survives CF's
+    // `Rpc.Serializable<T>` typecheck.
+    const streamResultJson = await step.do(
+      'scene-splitting-stream',
+      async (): Promise<string> => {
         const elementsBlock =
           elements.length > 0
             ? elements
                 .map((el) => {
+                  // analyzeScriptWorkflow refuses to start while any element
+                  // is pending/analyzing, so a null description here means
+                  // vision genuinely failed for this row.
                   const desc = el.description
                     ? `: ${el.description}`
-                    : ' (vision description pending)';
+                    : ' (no visual reference available)';
                   return `- ${el.token}${desc}`;
                 })
                 .join('\n')
             : '(none)';
-        const promptVariables = {
-          aspectRatio,
-          script: input.script,
-          elements: elementsBlock,
-        };
-        const { prompt, messages } = await getChatPrompt(
+        const { prompt: promptReference, messages } = await getChatPrompt(
           input.promptName,
-          promptVariables
+          {
+            aspectRatio,
+            script: input.script,
+            elements: elementsBlock,
+          }
         );
 
-        return { messages, promptReference: prompt };
-      }
-    );
+        const llmKeyInfo = await scopedDb.apiKeys.resolveLlmKey();
 
-    // Step 2: Stream LLM response, create frames as scenes arrive
-    const streamResult = await context.run(
-      'scene-splitting-stream',
-      async () => {
-        const openRouterApiKeyInfo =
-          await scopedDb.apiKeys.resolveKey('openrouter');
-
-        console.log(`[LLM:${logName}] Starting streaming call`, {
-          model: modelId,
-          keySource: openRouterApiKeyInfo.source,
-          messageCount: messages.length,
-        });
+        logger.info(
+          `[SceneSplitWorkflow:cf] [LLM:${LOG_NAME}] Starting streaming call`,
+          {
+            model: modelId,
+            keySource: llmKeyInfo.source,
+            keyVia: llmKeyInfo.via,
+            messageCount: messages.length,
+          }
+        );
 
         const parser = createStreamingSceneParser();
         const frameMapping: Array<{ sceneId: string; frameId: string }> = [];
@@ -107,71 +151,76 @@ export const sceneSplitWorkflow = createScopedWorkflow<
         let chunkCount = 0;
         let prevScene: SceneSplittingScene | undefined = undefined;
         let prevFrameId: string | undefined = undefined;
-        // Stream the LLM response
-        for await (const chunk of callLLMStream({
+        let parsedResult: SceneSplittingResult | undefined;
+
+        for await (const chunk of callLLMStream<SceneSplittingResult>({
           model: modelId,
-          messages: messages,
+          messages,
           max_tokens: Math.floor(getContextWindow(modelId) * 0.65),
           responseSchema: sceneSplittingResultSchema,
-          apiKey: openRouterApiKeyInfo.key,
-          observationName: logName,
+          apiKey: llmKeyInfo,
+          reasoning: PROMPT_REASONING,
+          observationName: LOG_NAME,
           prompt: promptReference,
-          tags: logTags,
-          metadata: logMetadata,
+          tags: LOG_TAGS,
+          metadata: LOG_METADATA,
           userId: input.userId,
           sessionId: input.sequenceId,
         })) {
+          if (chunk.done && chunk.parsed !== undefined) {
+            parsedResult = chunk.parsed;
+          }
           chunkCount++;
           finalText = chunk.accumulated;
           const events = parser.feed(chunk.accumulated);
 
           if (chunkCount % 20 === 0) {
-            console.log(
-              `[Stream:${logName}] chunk #${chunkCount} | ${finalText.length} chars | ${frameMapping.length} frames so far`
+            logger.info(
+              `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] chunk #${chunkCount} | ${finalText.length} chars | ${frameMapping.length} frames so far`
             );
           }
 
-          for (const event of events) {
-            if (event.type === 'title' && sequenceId) {
-              console.log(
-                `[Stream:${logName}] Title detected: "${event.title}" (chunk #${chunkCount})`
+          for (const ev of events) {
+            if (ev.type === 'title' && sequenceId) {
+              logger.info(
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Title detected: "${ev.title}" (chunk #${chunkCount})`
               );
-              await scopedDb.sequences.updateTitle(sequenceId, event.title);
+              await scopedDb.sequences.updateTitle(sequenceId, ev.title);
               await getGenerationChannel(sequenceId).emit(
                 'generation.updated',
-                { title: event.title }
+                { title: ev.title }
               );
             }
 
-            if (event.type === 'characterBible' && sequenceId) {
-              console.log(
-                `[Stream:${logName}] Character bible detected (${event.bible.length} entries), advancing to phase 2`
+            if (ev.type === 'characterBible' && sequenceId) {
+              logger.info(
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Character bible detected (${ev.bible.length} entries), advancing to phase 2`
               );
               await getGenerationChannel(sequenceId).emit(
                 'generation.phase:start',
                 {
                   phase: 2,
-                  phaseName: 'Casting characters & locations\u2026',
+                  phaseName: 'Casting characters & locations…',
                 }
               );
             }
 
-            if (event.type === 'scene:updated') {
-              console.log(
+            if (ev.type === 'scene:updated') {
+              logger.info(
                 // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                `[Stream:${logName}] Scene ${event.index + 1} title updated: "${event.scene.metadata?.title}" (chunk #${chunkCount})`
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} title updated: "${ev.scene.metadata?.title}" (chunk #${chunkCount})`
               );
 
               if (sequenceId) {
                 await scopedDb.frames.upsert({
                   sequenceId,
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  description: event.scene.originalScript?.extract || '',
-                  orderIndex: event.index,
-                  metadata: event.scene,
+                  description: ev.scene.originalScript?.extract || '',
+                  orderIndex: ev.index,
+                  metadata: ev.scene,
                   durationMs: Math.round(
                     // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    (event.scene.metadata?.durationSeconds || 3) * 1000
+                    (ev.scene.metadata?.durationSeconds || 3) * 1000
                   ),
                   thumbnailStatus: 'generating',
                   videoStatus: 'pending',
@@ -181,35 +230,35 @@ export const sceneSplitWorkflow = createScopedWorkflow<
               await getGenerationChannel(sequenceId).emit(
                 'generation.scene:updated',
                 {
-                  sceneId: event.scene.sceneId,
-                  sceneNumber: event.scene.sceneNumber,
+                  sceneId: ev.scene.sceneId,
+                  sceneNumber: ev.scene.sceneNumber,
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  title: event.scene.metadata?.title || 'Untitled Scene',
+                  title: ev.scene.metadata?.title || 'Untitled Scene',
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  scriptExtract: event.scene.originalScript?.extract || '',
+                  scriptExtract: ev.scene.originalScript?.extract || '',
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  durationSeconds: event.scene.metadata?.durationSeconds || 3,
+                  durationSeconds: ev.scene.metadata?.durationSeconds || 3,
                 }
               );
             }
 
-            if (event.type === 'scene') {
-              console.log(
+            if (ev.type === 'scene') {
+              logger.info(
                 // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                `[Stream:${logName}] Scene ${event.index + 1} complete: "${event.scene.metadata?.title}" (chunk #${chunkCount}, ${finalText.length} chars)`
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} complete: "${ev.scene.metadata?.title}" (chunk #${chunkCount}, ${finalText.length} chars)`
               );
 
               await getGenerationChannel(sequenceId).emit(
                 'generation.scene:new',
                 {
-                  sceneId: event.scene.sceneId,
-                  sceneNumber: event.scene.sceneNumber,
+                  sceneId: ev.scene.sceneId,
+                  sceneNumber: ev.scene.sceneNumber,
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  title: event.scene.metadata?.title || 'Untitled Scene',
+                  title: ev.scene.metadata?.title || 'Untitled Scene',
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  scriptExtract: event.scene.originalScript?.extract || '',
+                  scriptExtract: ev.scene.originalScript?.extract || '',
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  durationSeconds: event.scene.metadata?.durationSeconds || 3,
+                  durationSeconds: ev.scene.metadata?.durationSeconds || 3,
                 }
               );
 
@@ -217,23 +266,23 @@ export const sceneSplitWorkflow = createScopedWorkflow<
                 const frame = await scopedDb.frames.upsert({
                   sequenceId,
                   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  description: event.scene.originalScript?.extract || '',
-                  orderIndex: event.index,
-                  metadata: event.scene,
+                  description: ev.scene.originalScript?.extract || '',
+                  orderIndex: ev.index,
+                  metadata: ev.scene,
                   durationMs: Math.round(
                     // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    (event.scene.metadata?.durationSeconds || 3) * 1000
+                    (ev.scene.metadata?.durationSeconds || 3) * 1000
                   ),
                   thumbnailStatus: 'generating',
                   videoStatus: 'pending',
                 } satisfies NewFrame);
 
-                console.log(
-                  `[Stream:${logName}] Frame created: ${frame.id} for scene "${event.scene.sceneId}"`
+                logger.info(
+                  `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Frame created: ${frame.id} for scene "${ev.scene.sceneId}"`
                 );
 
                 frameMapping.push({
-                  sceneId: event.scene.sceneId,
+                  sceneId: ev.scene.sceneId,
                   frameId: frame.id,
                 });
 
@@ -241,8 +290,8 @@ export const sceneSplitWorkflow = createScopedWorkflow<
                   'generation.frame:created',
                   {
                     frameId: frame.id,
-                    sceneId: event.scene.sceneId,
-                    orderIndex: event.index,
+                    sceneId: ev.scene.sceneId,
+                    orderIndex: ev.index,
                   }
                 );
                 if (prevScene && prevFrameId) {
@@ -254,9 +303,11 @@ export const sceneSplitWorkflow = createScopedWorkflow<
                     'A cinematic scene';
                   const prompt = buildPreviewPrompt(sceneText, styleConfig);
 
-                  // Now kick off the preview generation for the previous scene
-                  // Just trigger a workflow - don't await it
-                  // Do this instead of context.invoke because we don't want to block the main thread
+                  // Fire-and-forget preview-image trigger for the previous
+                  // scene. Routed through `triggerWorkflow` so the engine
+                  // registry picks whichever engine is configured for
+                  // `/image` at runtime. The deduplicationId makes a replay
+                  // of this mega-step idempotent (see dedup-ids.ts).
                   await triggerWorkflow(
                     '/image',
                     {
@@ -272,19 +323,22 @@ export const sceneSplitWorkflow = createScopedWorkflow<
                     } satisfies ImageWorkflowInput,
                     {
                       label: buildWorkflowLabel(sequenceId),
+                      deduplicationId: previewImageDedupId(
+                        event.instanceId,
+                        prevFrameId
+                      ),
                     }
                   );
                 }
 
                 prevFrameId = frame.id;
               }
-              // Set previous scene to the current scene
-              prevScene = event.scene;
+              prevScene = ev.scene;
             }
           }
         }
 
-        // Trigger preview for the last scene (the loop only triggers N-1)
+        // Trigger preview for the last scene (the loop only triggers N-1).
         if (prevScene && prevFrameId && sequenceId) {
           const sceneText =
             // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
@@ -309,20 +363,32 @@ export const sceneSplitWorkflow = createScopedWorkflow<
             } satisfies ImageWorkflowInput,
             {
               label: buildWorkflowLabel(sequenceId),
+              deduplicationId: previewImageDedupId(
+                event.instanceId,
+                prevFrameId
+              ),
             }
           );
         }
 
-        // Parse final accumulated text with full schema (use partial-json
-        // so a truncated stream doesn't crash — Zod still validates the shape)
-        const parsed = sceneSplittingResultSchema.parse(
-          parse(stripCodeFences(finalText))
-        );
-        console.log(
-          `[Stream:${logName}] Complete | ${chunkCount} chunks | ${parsed.scenes.length} scenes | ${finalText.length} chars`
+        if (!parsedResult) {
+          throw new NonRetryableError(
+            `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Stream ended without a validated structured-output payload. ` +
+              `chunks=${chunkCount} chars=${finalText.length} ` +
+              `streamedScenes=${frameMapping.length} model=${modelId}. ` +
+              `Likely cause: provider did not honor responseFormat:json_schema.`
+          );
+        }
+        const parsed = parsedResult;
+        logger.info(
+          `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Complete | ${chunkCount} chunks | ${parsed.scenes.length} scenes | ${finalText.length} chars`
         );
 
-        return {
+        // JSON round-trip: the inferred shape contains Zod discriminated
+        // unions / catch-defaulted arrays that confuse CF's
+        // `Rpc.Serializable<T>` typecheck. The value is JSON-clean at
+        // runtime; stringify on the way out, parse on the way in.
+        const streamResult: StreamResult = {
           scenes: parsed.scenes,
           projectMetadata: parsed.projectMetadata,
           frameMapping,
@@ -330,99 +396,120 @@ export const sceneSplitWorkflow = createScopedWorkflow<
           locationBible: parsed.locationBible,
           elementBible: parsed.elementBible,
         };
+        return JSON.stringify(streamResult);
       }
     );
+    // Defensive shape check on replay — the data was Zod-validated once
+    // inside the step, but if CF's step-cache persisted something corrupt
+    // we fail loud here instead of silently downstream.
+    const streamResult: StreamResult = JSON.parse(streamResultJson);
+    if (
+      !Array.isArray(streamResult.scenes) ||
+      !Array.isArray(streamResult.frameMapping)
+    ) {
+      throw new NonRetryableError(
+        'scene-splitting-stream returned a malformed result from cache',
+        'WorkflowValidationError'
+      );
+    }
 
-    // Step 3: Reconcile — ensure all frames exist (handles QStash cached result replay)
-    const {
-      scenes,
-      title,
-      frameMapping,
-      characterBible,
-      locationBible,
-      elementBible,
-    } = await context.run('reconcile-frames', async () => {
-      const { scenes, projectMetadata } = streamResult;
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-      const resolvedTitle = projectMetadata?.title || 'Untitled';
+    // Step 3: Reconcile — ensure all frames exist (handles cached step replay).
+    const reconcileJson = await step.do(
+      'reconcile-frames',
+      async (): Promise<string> => {
+        const { scenes, projectMetadata } = streamResult;
+        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+        const resolvedTitle = projectMetadata?.title || 'Untitled';
 
-      if (!sequenceId) {
-        return {
+        if (!sequenceId) {
+          return JSON.stringify({
+            scenes,
+            title: resolvedTitle,
+            frameMapping: streamResult.frameMapping,
+            characterBible: streamResult.characterBible,
+            locationBible: streamResult.locationBible,
+            elementBible: streamResult.elementBible,
+          } satisfies SceneSplitWorkflowResult);
+        }
+
+        // Bulk upsert all frames to catch any missed during streaming
+        // (e.g., a retry replays the streaming step's cached result without
+        // re-firing its inline side effects).
+        const frameInserts = scenes.map(
+          (scene, index) =>
+            ({
+              sequenceId,
+              // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+              description: scene.originalScript?.extract || '',
+              orderIndex: index,
+              metadata: scene,
+              durationMs: Math.round(
+                // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
+                (scene.metadata?.durationSeconds || 3) * 1000
+              ),
+              thumbnailStatus: 'generating',
+              videoStatus: 'pending',
+            }) satisfies NewFrame
+        );
+
+        const reconciledFrames = await scopedDb.frames.bulkUpsert(frameInserts);
+        const reconciledMapping = reconciledFrames.map((f) => ({
+          // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: metadata is JSONB, can be null despite Drizzle types
+          sceneId: f.metadata?.sceneId || '',
+          frameId: f.id,
+        }));
+
+        // Ensure title and workflow are set (status stays 'processing'
+        // until storyboard-workflow completes all phases).
+        await scopedDb.sequences.updateTitle(sequenceId, resolvedTitle);
+        await scopedDb.sequences.updateWorkflow(
+          sequenceId,
+          'analyze-script-shorter-prompts-batch-size-1'
+        );
+
+        // Emit frame:created for any frames the streaming step didn't cover.
+        const streamedSceneIds = new Set(
+          streamResult.frameMapping.map((f) => f.sceneId)
+        );
+        for (const { sceneId: sId, frameId } of reconciledMapping) {
+          if (!streamedSceneIds.has(sId)) {
+            const scene = scenes.find((s) => s.sceneId === sId);
+            await getGenerationChannel(sequenceId).emit(
+              'generation.frame:created',
+              {
+                frameId,
+                sceneId: sId,
+                orderIndex: scene?.sceneNumber ? scene.sceneNumber - 1 : 0,
+              }
+            );
+          }
+        }
+
+        return JSON.stringify({
           scenes,
           title: resolvedTitle,
-          frameMapping: streamResult.frameMapping,
+          frameMapping: reconciledMapping,
           characterBible: streamResult.characterBible,
           locationBible: streamResult.locationBible,
           elementBible: streamResult.elementBible,
-        };
+        } satisfies SceneSplitWorkflowResult);
       }
-
-      // Bulk upsert all frames to catch any missed during streaming
-      // (e.g., QStash replays a cached step 2 result without re-firing side effects)
-      const frameInserts = scenes.map(
-        (scene, index) =>
-          ({
-            sequenceId,
-            // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-            description: scene.originalScript?.extract || '',
-            orderIndex: index,
-            metadata: scene,
-            durationMs: Math.round(
-              // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-              (scene.metadata?.durationSeconds || 3) * 1000
-            ),
-            thumbnailStatus: 'generating',
-            videoStatus: 'pending',
-          }) satisfies NewFrame
+    );
+    const reconciled: SceneSplitWorkflowResult = JSON.parse(reconcileJson);
+    if (
+      !Array.isArray(reconciled.scenes) ||
+      !Array.isArray(reconciled.frameMapping)
+    ) {
+      throw new NonRetryableError(
+        'reconcile-frames returned a malformed result from cache',
+        'WorkflowValidationError'
       );
+    }
 
-      const reconciledFrames = await scopedDb.frames.bulkUpsert(frameInserts);
-      const reconciledMapping = reconciledFrames.map((f) => ({
-        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: metadata is JSONB, can be null despite Drizzle types
-        sceneId: f.metadata?.sceneId || '',
-        frameId: f.id,
-      }));
-
-      // Ensure title and workflow are set (status stays 'processing'
-      // until storyboard-workflow completes all phases)
-      await scopedDb.sequences.updateTitle(sequenceId, resolvedTitle);
-      await scopedDb.sequences.updateWorkflow(
-        sequenceId,
-        'analyze-script-shorter-prompts-batch-size-1'
-      );
-
-      // Emit frame:created for any frames the streaming step didn't cover
-      const streamedSceneIds = new Set(
-        streamResult.frameMapping.map((f) => f.sceneId)
-      );
-      for (const { sceneId, frameId } of reconciledMapping) {
-        if (!streamedSceneIds.has(sceneId)) {
-          const scene = scenes.find((s) => s.sceneId === sceneId);
-          await getGenerationChannel(sequenceId).emit(
-            'generation.frame:created',
-            {
-              frameId,
-              sceneId,
-              orderIndex: scene?.sceneNumber ? scene.sceneNumber - 1 : 0,
-            }
-          );
-        }
-      }
-
-      return {
-        scenes,
-        title: resolvedTitle,
-        frameMapping: reconciledMapping,
-        characterBible: streamResult.characterBible,
-        locationBible: streamResult.locationBible,
-        elementBible: streamResult.elementBible,
-      };
-    });
-
-    // Step 4: Reconcile element bible → update firstMention on existing rows
-    if (sequenceId && elementBible.length > 0) {
-      await context.run('reconcile-element-bible', async () => {
-        for (const entry of elementBible) {
+    // Step 4: Reconcile element bible → update firstMention on existing rows.
+    if (sequenceId && reconciled.elementBible.length > 0) {
+      await step.do('reconcile-element-bible', async () => {
+        for (const entry of reconciled.elementBible) {
           const existing = await scopedDb.sequenceElements.getByToken(
             sequenceId,
             entry.token
@@ -437,56 +524,59 @@ export const sceneSplitWorkflow = createScopedWorkflow<
       });
     }
 
-    // Step 5: Deduct credits
-    const openRouterKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');
-    await context.run('deduct-llm-credits-scene-splitting', async () => {
+    // Step 5: Deduct credits.
+    const llmCreditKeyInfo = await scopedDb.apiKeys.resolveLlmKey();
+    await step.do('deduct-llm-credits-scene-splitting', async () => {
       await deductWorkflowCredits({
         scopedDb,
         costMicros: ZERO_MICROS,
-        usedOwnKey: openRouterKeyInfo.source === 'team',
+        usedOwnKey: llmCreditKeyInfo.source === 'team',
         description: `LLM analysis (${modelId})`,
+        idempotencyKey: `${event.instanceId}:llm-${STEP_NAME}`,
         metadata: {
           model: modelId,
-          phase: phase.number,
-          phaseName: phase.name,
-          stepName: name,
+          phase: PHASE.number,
+          phaseName: PHASE.name,
+          stepName: STEP_NAME,
           sequenceId,
         },
       });
     });
 
-    return {
-      scenes,
-      title,
-      frameMapping,
-      characterBible,
-      locationBible,
-      elementBible,
-    };
-  },
-  {
-    failureFunction: async ({ context, scopedDb, failResponse }) => {
-      const { sequenceId } = context.requestPayload;
-      const error = sanitizeFailResponse(failResponse);
-      console.error('[SceneSplitWorkflow] Failure:', error);
+    return reconciled;
+  }
 
-      let userMessage = 'Scene splitting failed';
-      if (
-        isOpenRouterAuthError(error) &&
-        (await scopedDb.apiKeys.hasKey('openrouter'))
-      ) {
-        await scopedDb.apiKeys.markKeyInvalid('openrouter', error);
-        userMessage =
-          'Your OpenRouter API key is invalid — update it in Settings.';
-      }
+  protected override async onFailure({
+    event,
+    error,
+    scopedDb,
+  }: {
+    event: Readonly<WorkflowEvent<SceneSplitWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    const { sequenceId } = event.payload;
+    logger.error('[SceneSplitWorkflow:cf] Failure:', {
+      err: error,
+    });
 
-      if (sequenceId) {
+    const userMessage =
+      (await handleLlmAuthFailure(scopedDb, sanitizeFailResponse(error))) ??
+      'Scene splitting failed';
+
+    if (sequenceId) {
+      try {
         await getGenerationChannel(sequenceId).emit('generation.error', {
           message: userMessage,
         });
+      } catch (emitError) {
+        logger.error(
+          `[SceneSplitWorkflow:cf] Failed to emit failure event for sequence ${sequenceId}:`,
+          {
+            err: emitError,
+          }
+        );
       }
-
-      return `Scene split workflow failed: ${error}`;
-    },
+    }
   }
-);
+}

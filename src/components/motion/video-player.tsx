@@ -6,7 +6,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { Media, Video as VideoMedia } from '@videojs/core';
 import { createPlayer, Poster, useMedia } from '@videojs/react';
-import { Video, VideoSkin, videoFeatures } from '@videojs/react/video';
+import { MinimalVideoSkin, Video, videoFeatures } from '@videojs/react/video';
 import { useEffect, useRef } from 'react';
 
 // useMedia() returns the base Media capability set; the <Video> component
@@ -14,7 +14,17 @@ import { useEffect, useRef } from 'react';
 const isVideoMedia = (media: Media): media is VideoMedia =>
   'duration' in media && 'currentTime' in media;
 
-const Player = createPlayer({ features: videoFeatures });
+// `createPlayer` constructs an AbortController, which the Cloudflare Workers
+// runtime only permits inside a request (i.e. during render), NOT at module /
+// global scope. Creating it at module scope crashes SSR ("Disallowed operation
+// … within global scope"). So build it lazily on first render and memoise it as
+// a singleton — the same request-scoped lazy-init pattern we use for the Drizzle
+// client and other Workers-sensitive resources. Video.js itself renders fine on
+// the server (markup now, interactivity after hydration); only this eager
+// construction was the problem.
+let playerSingleton: ReturnType<typeof createPlayer> | undefined;
+const getPlayer = () =>
+  (playerSingleton ??= createPlayer({ features: videoFeatures }));
 
 type VideoPlayerProps = {
   src: string;
@@ -81,7 +91,7 @@ const VideoPlayerInner: React.FC<
   }, [media]);
 
   return (
-    <VideoSkin>
+    <MinimalVideoSkin>
       <Video
         src={src || undefined}
         playsInline
@@ -91,7 +101,7 @@ const VideoPlayerInner: React.FC<
         {chaptersUrl && <track kind="chapters" src={chaptersUrl} default />}
       </Video>
       {posterSrc && <Poster src={posterSrc} alt="Video thumbnail" />}
-    </VideoSkin>
+    </MinimalVideoSkin>
   );
 };
 
@@ -139,6 +149,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       </div>
     );
   }
+
+  const Player = getPlayer();
 
   return (
     <div

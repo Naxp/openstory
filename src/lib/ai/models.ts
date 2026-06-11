@@ -8,6 +8,10 @@ import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import { MOTION_INPUT_SCHEMAS } from '@/lib/motion/endpoint-map';
 import { z } from 'zod';
 
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'ai', 'models']);
+
 // ============================================================================
 // Text (Chat/LLM) Models — OpenRouter
 // ============================================================================
@@ -29,12 +33,21 @@ export type TextModel = AnalysisModelId;
  * Only model-level metadata lives here: identity, audio override, performance.
  */
 export const IMAGE_TO_VIDEO_MODELS = {
+  grok_imagine_video_1_5: {
+    id: 'xai/grok-imagine-video/v1.5/image-to-video',
+    name: 'Grok Imagine Video 1.5',
+    provider: 'Grok',
+    license: 'proprietary' as const,
+    qualityRank: 1,
+    maxPromptLength: 2500,
+    performance: { estimatedGenerationTime: 20, quality: 'best' as const },
+  },
   ltx_2_3_pro: {
     id: 'fal-ai/ltx-2.3/image-to-video',
     name: 'LTX 2.3 Pro',
     provider: 'Lightricks',
     license: 'open-source' as const,
-    qualityRank: 1,
+    qualityRank: 2,
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 15, quality: 'best' as const },
   },
@@ -53,15 +66,6 @@ export const IMAGE_TO_VIDEO_MODELS = {
     provider: 'Kling',
     license: 'proprietary' as const,
     qualityRank: 3,
-    maxPromptLength: 2500,
-    performance: { estimatedGenerationTime: 20, quality: 'best' as const },
-  },
-  grok_imagine_video: {
-    id: 'xai/grok-imagine-video/image-to-video',
-    name: 'Grok Imagine Video',
-    provider: 'Grok',
-    license: 'proprietary' as const,
-    qualityRank: 4,
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
   },
@@ -127,12 +131,12 @@ export const IMAGE_MODELS = {
     maxPromptLength: 32000,
   },
   grok_imagine_image: {
-    id: 'xai/grok-imagine-image' as const,
-    name: 'Grok Imagine Image',
+    id: 'xai/grok-imagine-image/quality/text-to-image' as const,
+    name: 'Grok Imagine Image Quality',
     provider: 'Grok',
     license: 'proprietary' as const,
     qualityRank: 3,
-    description: 'Aesthetic image generation with low censoring',
+    description: 'High-quality aesthetic image generation with low censoring',
     maxPromptLength: 4000,
   },
   flux_2_max: {
@@ -232,40 +236,10 @@ export function getImageModelById(id: string): ImageModelConfig | undefined {
   return Object.values(IMAGE_MODELS).find((model) => model.id === id);
 }
 
-// Helper to get model display name
-export function getImageModelDisplayName(modelId: string): string {
-  const model = getImageModelById(modelId);
-  return model?.name ?? modelId;
-}
-
 // Image to video model types
 export type ImageToVideoModel = keyof typeof IMAGE_TO_VIDEO_MODELS;
-// Type for the video model configuration object
-export type ImageToVideoModelConfig =
-  (typeof IMAGE_TO_VIDEO_MODELS)[ImageToVideoModel];
-// Type for the video model ID
-type ImageToVideoModelId = ImageToVideoModelConfig['id'];
 
-export const DEFAULT_VIDEO_MODEL: ImageToVideoModel = 'kling_v3_pro';
-
-// Typed list of image-to-video model keys for Zod enum schemas
-// This is type-safe because we use satisfies to validate the tuple matches the type
-export const IMAGE_TO_VIDEO_MODEL_KEYS = [
-  'grok_imagine_video',
-  'kling_v3_pro',
-  'ltx_2_3_pro',
-  'minimax_hailuo_02',
-  'seedance_v2',
-  'seedance_v2_enterprise',
-  'veo3_1',
-] as const satisfies readonly ImageToVideoModel[];
-
-// Helper to get model ID from key (for backward compatibility)
-export function getImageToVideoModelId(
-  modelKey: ImageToVideoModel
-): ImageToVideoModelId {
-  return IMAGE_TO_VIDEO_MODELS[modelKey].id;
-}
+export const DEFAULT_VIDEO_MODEL: ImageToVideoModel = 'grok_imagine_video_1_5';
 
 function schemaOf(modelKey: ImageToVideoModel) {
   return MOTION_INPUT_SCHEMAS[IMAGE_TO_VIDEO_MODELS[modelKey].id];
@@ -318,8 +292,8 @@ export function safeTextToImageModel(
 ): TextToImageModel {
   if (!value || !isValidTextToImageModel(value)) {
     if (value) {
-      console.warn(
-        `[models] Invalid TextToImageModel "${value}", using fallback "${fallback}"`
+      logger.warn(
+        `Invalid TextToImageModel "${value}", using fallback "${fallback}"`
       );
     }
     return fallback;
@@ -340,8 +314,8 @@ export function safeImageToVideoModel(
 ): ImageToVideoModel {
   if (!value || !isValidImageToVideoModel(value)) {
     if (value) {
-      console.warn(
-        `[models] Invalid ImageToVideoModel "${value}", using fallback "${fallback}"`
+      logger.warn(
+        `Invalid ImageToVideoModel "${value}", using fallback "${fallback}"`
       );
     }
     return fallback;
@@ -476,19 +450,8 @@ export const AUDIO_MODELS = {
 // Audio model types
 export type AudioModel = keyof typeof AUDIO_MODELS;
 export type AudioModelConfig = (typeof AUDIO_MODELS)[AudioModel];
-type AudioModelId = AudioModelConfig['id'];
 
 export const DEFAULT_MUSIC_MODEL: AudioModel = 'elevenlabs_music';
-
-export const AUDIO_MODEL_KEYS = [
-  'ace_step',
-  'ace_step_1_5',
-  'elevenlabs_music',
-] as const satisfies readonly AudioModel[];
-
-export function getAudioModelId(modelKey: AudioModel): AudioModelId {
-  return AUDIO_MODELS[modelKey].id;
-}
 
 export function isValidAudioModel(value: unknown): value is AudioModel {
   return typeof value === 'string' && Object.keys(AUDIO_MODELS).includes(value);
@@ -508,8 +471,8 @@ export function safeAudioModel(
 ): AudioModel {
   if (!value || !isValidAudioModel(value)) {
     if (value) {
-      console.warn(
-        `[models] Invalid AudioModel "${value}", using fallback "${fallback}"`
+      logger.warn(
+        `Invalid AudioModel "${value}", using fallback "${fallback}"`
       );
     }
     return fallback;
@@ -529,7 +492,7 @@ export const EDIT_ENDPOINTS: Partial<Record<TextToImageModel, string>> = {
   nano_banana_2: 'fal-ai/nano-banana-2/edit',
   nano_banana_pro: 'fal-ai/nano-banana-pro/edit',
   gpt_image_2: 'openai/gpt-image-2/edit',
-  grok_imagine_image: 'xai/grok-imagine-image/edit',
+  grok_imagine_image: 'xai/grok-imagine-image/quality/edit',
   flux_2_max: 'fal-ai/flux-2-max/edit',
   phota: 'fal-ai/phota/edit',
   hunyuan_image_v3: 'fal-ai/hunyuan-image/v3/instruct/edit',

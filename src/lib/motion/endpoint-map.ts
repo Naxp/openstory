@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { motionTransform } from './motion-transform';
 
 import {
-  zGrokImagineVideoImageToVideoInput,
+  zGrokImagineVideoV15ImageToVideoInput,
   zKlingVideoV3ProImageToVideoInput,
   zLtx23ImageToVideoInput,
   zMinimaxHailuo02ProImageToVideoInput,
@@ -16,7 +16,7 @@ import {
 } from './generated/zod.gen';
 
 import {
-  GrokImagineVideoImageToVideoInputSchema,
+  GrokImagineVideoV15ImageToVideoInputSchema,
   KlingVideoV3ProImageToVideoInputSchema,
   Ltx23ImageToVideoInputSchema,
   MinimaxHailuo02ProImageToVideoInputSchema,
@@ -26,7 +26,7 @@ import {
 } from './generated/schemas.gen';
 
 export type MotionJSONSchema =
-  | typeof GrokImagineVideoImageToVideoInputSchema
+  | typeof GrokImagineVideoV15ImageToVideoInputSchema
   | typeof KlingVideoV3ProImageToVideoInputSchema
   | typeof Ltx23ImageToVideoInputSchema
   | typeof MinimaxHailuo02ProImageToVideoInputSchema
@@ -43,11 +43,17 @@ export const MOTION_INPUT_SCHEMAS = {
   'fal-ai/minimax/hailuo-02/pro/image-to-video':
     zMinimaxHailuo02ProImageToVideoInput,
   'fal-ai/veo3.1/image-to-video': zVeo31ImageToVideoInput,
-  'xai/grok-imagine-video/image-to-video': zGrokImagineVideoImageToVideoInput,
+  'xai/grok-imagine-video/v1.5/image-to-video':
+    zGrokImagineVideoV15ImageToVideoInput,
 };
 
 export type MotionEndpointId = keyof typeof MOTION_INPUT_SCHEMAS;
 
+/**
+ * Input payload for a given motion endpoint. Generated API surface — kept
+ * exported even while unused so consumers of new endpoints can adopt it.
+ * @public
+ */
 export type MotionInputFor<T extends MotionEndpointId> = z.infer<
   (typeof MOTION_INPUT_SCHEMAS)[T]
 >;
@@ -62,8 +68,8 @@ export const MOTION_JSON_SCHEMAS = {
   'fal-ai/minimax/hailuo-02/pro/image-to-video':
     MinimaxHailuo02ProImageToVideoInputSchema,
   'fal-ai/veo3.1/image-to-video': Veo31ImageToVideoInputSchema,
-  'xai/grok-imagine-video/image-to-video':
-    GrokImagineVideoImageToVideoInputSchema,
+  'xai/grok-imagine-video/v1.5/image-to-video':
+    GrokImagineVideoV15ImageToVideoInputSchema,
 } satisfies Record<MotionEndpointId, MotionJSONSchema>;
 
 export const MOTION_TRANSFORMS = {
@@ -91,8 +97,8 @@ export const MOTION_TRANSFORMS = {
     zVeo31ImageToVideoInput,
     Veo31ImageToVideoInputSchema
   ),
-  'xai/grok-imagine-video/image-to-video': motionTransform(
-    zGrokImagineVideoImageToVideoInput,
-    GrokImagineVideoImageToVideoInputSchema
+  'xai/grok-imagine-video/v1.5/image-to-video': motionTransform(
+    zGrokImagineVideoV15ImageToVideoInput,
+    GrokImagineVideoV15ImageToVideoInputSchema
   ),
 };

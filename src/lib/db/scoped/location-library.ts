@@ -12,7 +12,33 @@ import type {
   NewLocationSheet,
 } from '@/lib/db/schema';
 
-export function createLocationsReadMethods(db: Database, teamId: string) {
+/**
+ * Public (anonymous) location-library reads. Takes no team scope at all, so
+ * this code path cannot express a team-scoped query — the isPublic filter is
+ * the entire data boundary for the unauthenticated location endpoints.
+ */
+export function createPublicLocationsReadMethods(db: Database) {
+  return {
+    list: async (): Promise<LibraryLocation[]> => {
+      return await db
+        .select()
+        .from(locationLibrary)
+        .where(eq(locationLibrary.isPublic, true));
+    },
+
+    getById: async (id: string): Promise<LibraryLocation | null> => {
+      const result = await db
+        .select()
+        .from(locationLibrary)
+        .where(
+          and(eq(locationLibrary.id, id), eq(locationLibrary.isPublic, true))
+        );
+      return result[0] ?? null;
+    },
+  };
+}
+
+function createLocationsReadMethods(db: Database, teamId: string) {
   return {
     list: async (): Promise<LibraryLocation[]> => {
       return await db
@@ -87,10 +113,11 @@ export function createLocationsReadMethods(db: Database, teamId: string) {
         .select({ hash: locationLibrary.referenceInputHash })
         .from(locationLibrary)
         .where(eq(locationLibrary.id, locationId));
-      if (result.length === 0) {
+      const row = result[0];
+      if (!row) {
         throw new Error(`LibraryLocation ${locationId} not found`);
       }
-      const stored = result[0].hash;
+      const stored = row.hash;
       if (stored === null) return false;
       return currentHash !== stored;
     },
@@ -112,6 +139,9 @@ export function createLocationsMethods(
         .insert(locationLibrary)
         .values({ ...data, teamId, createdBy: userId })
         .returning();
+      if (!location) {
+        throw new Error(`Failed to create LibraryLocation for team ${teamId}`);
+      }
       return location;
     },
 
@@ -160,7 +190,6 @@ export function createLocationsMethods(
         .where(eq(locationLibrary.id, id))
         .returning();
 
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
       if (!location) {
         throw new Error(`LibraryLocation ${id} not found`);
       }
@@ -179,7 +208,6 @@ export function createLocationsMethods(
         .where(eq(locationLibrary.id, id))
         .returning();
 
-      // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: DB query may return undefined
       if (!location) {
         throw new Error(`LibraryLocation ${id} not found`);
       }
@@ -215,10 +243,11 @@ export function createLocationSheetsReadMethods(db: Database) {
         .select({ hash: locationSheets.inputHash })
         .from(locationSheets)
         .where(eq(locationSheets.id, sheetId));
-      if (result.length === 0) {
+      const row = result[0];
+      if (!row) {
         throw new Error(`LocationSheet ${sheetId} not found`);
       }
-      const stored = result[0].hash;
+      const stored = row.hash;
       if (stored === null) return false;
       return currentHash !== stored;
     },

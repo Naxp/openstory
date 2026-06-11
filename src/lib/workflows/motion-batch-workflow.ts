@@ -1,188 +1,251 @@
 /**
- * Batch Motion + Music Workflow
- * Orchestrates parallel motion generation for all frames + optional music,
- * then merges videos and optionally muxes audio onto the final output.
- */
+ * Cloudflare Workflows port of `motionBatchWorkflow`.
+ *
+ * Mirrors the QStash version (`src/lib/workflows/motion-batch-workflow.ts`)
+ * step for step — same control flow, same side effects. Differences (all
+ * infrastructure-level, not behavioural):
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads payload from `event.payload` and the run id from
+ *     `event.instanceId` instead of `context.requestPayload` /
+ *     `context.workflowRunId`.
+ *   - Each `context.invoke(...)` becomes a Pattern 3 `spawnAndAwaitChild`
+ *     against the relevant binding (MOTION_WORKFLOW × N frames, optional
+ *     MUSIC_WORKFLOW). There is no server-side video merge step — playback
+ *     and the final MP4 are produced client-side (Mediabunny browser export).
+ *   - Fan-out: `Promise.all` on spawn (parents block until every child has
+ *     been queued so a transient spawn failure surfaces as a workflow error
+ *     rather than a silently-skipped child), `Promise.allSettled` on await
+ *     so a single bad frame doesn't kill the rest of the batch. */
 
+import { resolveAudioModels } from '@/lib/ai/resolve-audio-models';
+import type { ScopedDb } from '@/lib/db/scoped';
+import { assembleMotionPrompt } from '@/lib/motion/assemble-motion-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
+import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
-import { buildWorkflowLabel } from '@/lib/workflow/labels';
-import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
+import { buildMotionJobs } from '@/lib/workflows/motion-batch-jobs';
 import type {
   BatchMotionMusicWorkflowInput,
-  MergeAudioVideoWorkflowInput,
-  MergeVideoWorkflowInput,
   MotionWorkflowInput,
+  MotionWorkflowResult,
   MusicWorkflowInput,
+  MusicWorkflowResult,
 } from '@/lib/workflow/types';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { getLogger } from '@/lib/observability/logger';
 
-import { getFalFlowControl } from './constants';
-import { mergeAudioVideoWorkflow } from './merge-audio-video-workflow';
-import {
-  MERGE_VIDEO_WORKFLOW_NAME,
-  mergeVideoWorkflow,
-} from './merge-video-workflow';
-import { generateMotionWorkflow } from './motion-workflow';
-import { generateMusicWorkflow } from './music-workflow';
-import { resolveMotionBatchMergeMusicVariants } from './merge-variant-resolution';
-import { buildMergeVideoSourcesFromFrames } from './sequence-snapshots';
+const logger = getLogger(['openstory', 'workflow', 'motion-batch']);
 
-export const motionBatchWorkflow =
-  createScopedWorkflow<BatchMotionMusicWorkflowInput>(
-    async (context, scopedDb) => {
-      const input = context.requestPayload;
-      const { sequenceId, includeMusic } = input;
-      const label = buildWorkflowLabel(sequenceId);
+type MotionBatchWorkflowResult = {
+  sequenceId: string;
+};
 
-      if (!sequenceId) {
-        throw new WorkflowValidationError('sequenceId is required');
-      }
-      if (!input.frames.length) {
-        throw new WorkflowValidationError('At least one frame is required');
-      }
-      if (includeMusic && !input.music) {
-        throw new WorkflowValidationError(
-          'music config is required when includeMusic is true'
-        );
-      }
+export class MotionBatchWorkflow extends OpenStoryWorkflowEntrypoint<BatchMotionMusicWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<BatchMotionMusicWorkflowInput>>,
+    step: WorkflowStep,
+    // Fan-out uses workflow bindings, not direct DB access; the merge steps
+    // that read frames were removed (browser-side merge). Kept for signature
+    // parity with the abstract runImpl.
+    _scopedDb: ScopedDb
+  ): Promise<MotionBatchWorkflowResult> {
+    const input = event.payload;
+    const parentInstanceId = event.instanceId;
+    const { sequenceId, includeMusic } = input;
 
-      // Step 1: Invoke all motion workflows + optional music workflow in parallel
-      const motionInvocations = input.frames.map((frame, index) =>
-        context.invoke(`motion-${index}`, {
-          workflow: generateMotionWorkflow,
-          label,
-          body: {
-            userId: input.userId,
-            teamId: input.teamId,
-            frameId: frame.frameId,
-            sequenceId,
-            imageUrl: frame.imageUrl,
-            prompt: frame.prompt,
-            model: frame.model,
-            duration: frame.duration,
-            fps: frame.fps,
-            motionBucket: frame.motionBucket,
-            aspectRatio: frame.aspectRatio,
-            userEditedPrompt: frame.userEditedPrompt,
-          } satisfies MotionWorkflowInput,
-          retries: 3,
-          retryDelay: 'pow(2, retried) * 1000',
-          flowControl: getFalFlowControl(),
-        })
+    if (!sequenceId) {
+      throw new WorkflowValidationError('sequenceId is required');
+    }
+    if (!input.frames.length) {
+      throw new WorkflowValidationError('At least one frame is required');
+    }
+    if (includeMusic && !input.music) {
+      throw new WorkflowValidationError(
+        'music config is required when includeMusic is true'
       );
+    }
 
-      const musicInvocation =
-        includeMusic && input.music
-          ? context.invoke('music', {
-              workflow: generateMusicWorkflow,
-              label,
-              body: {
-                userId: input.userId,
-                teamId: input.teamId,
-                sequenceId,
-                prompt: input.music.prompt,
-                tags: input.music.tags,
-                duration: input.music.duration,
-                model: input.music.model,
-              } satisfies MusicWorkflowInput,
-              retries: 3,
-              retryDelay: 'pow(2, retried) * 1000',
-              flowControl: getFalFlowControl(),
-            })
-          : null;
+    // Step 1: Fan out motion workflows + optional music workflow in parallel.
+    // Multi-model video (#545): one MOTION_WORKFLOW child per (frame, model)
+    // — the motion analog of frame-images' per-(scene, model) fan-out (see
+    // `buildMotionJobs` for the resolution/dedupe rules). The first model is
+    // primary (its output also lands in the legacy `frames.video*` columns);
+    // the rest are alternates in `frame_variants`. Pattern 3 spawns + awaits
+    // each child via `spawnAndAwaitChild`; Promise.allSettled lets a single
+    // failing (frame, model) not poison the rest of the batch.
+    const motionJobs = buildMotionJobs(input.frames, input.videoModels);
 
-      await Promise.all([
-        Promise.all(motionInvocations),
-        ...(musicInvocation ? [musicInvocation] : []),
-      ]);
+    const motionAwaits = motionJobs.map(({ frame, frameIndex, model }) => {
+      // Per-model prompt: re-assemble from the structured motion prompt when
+      // present so audio-capable models get dialogue/audio sections, falling
+      // back to the pre-assembled `prompt` for manual single-model paths.
+      const prompt = frame.motionPrompt
+        ? assembleMotionPrompt({ motionPrompt: frame.motionPrompt, model })
+        : frame.prompt;
 
-      // Step 2: Collect video URLs and inline each frame's videoInputHash for
-      // the merge-video snapshot pattern. Frames without a videoUrl are skipped.
-      const { videoUrls, sourceFrameVideoHashes } = await context.run(
-        'collect-video-urls',
-        async () => {
-          const frames = await scopedDb.frames.listBySequence(sequenceId);
-          const sorted = [...frames].sort(
-            (a, b) => a.orderIndex - b.orderIndex
-          );
-          return buildMergeVideoSourcesFromFrames(sorted);
+      const motionBody: MotionWorkflowInput = {
+        userId: input.userId,
+        teamId: input.teamId,
+        frameId: frame.frameId,
+        sequenceId,
+        imageUrl: frame.imageUrl,
+        prompt,
+        model,
+        duration: frame.duration,
+        fps: frame.fps,
+        motionBucket: frame.motionBucket,
+        aspectRatio: frame.aspectRatio,
+        generateAudio: frame.generateAudio,
+        userEditedPrompt: frame.userEditedPrompt,
+        // Add-model (#547) batches generate alternates only — the child must
+        // not write the legacy `frames.video*` columns.
+        variantOnly: input.variantOnly,
+      };
+
+      return spawnAndAwaitChild<MotionWorkflowInput, MotionWorkflowResult>(
+        step,
+        {
+          binding: this.env.MOTION_WORKFLOW,
+          parentBindingName: 'MOTION_BATCH_WORKFLOW',
+          parentInstanceId,
+          // The model token keeps sibling-model children from colliding on the
+          // global CF instance id (mirrors frame-images' childId scheme).
+          childId: `motion:${sequenceId}:${frame.frameId}:${model}`,
+          childPayload: motionBody,
+          spawnStepName: `spawn-motion-${frameIndex}-${model}`,
+          awaitStepName: `await-motion-${frameIndex}-${model}`,
+          // Must exceed the child's own budget: motion polls fal for up to
+          // 30 minutes (MAX_BATCHES in motion-workflow.ts) plus submit/
+          // compress/persist steps and notify lag under a burst.
+          timeout: '45 minutes',
         }
       );
+    });
 
-      if (videoUrls.length === 0) {
-        throw new WorkflowValidationError(
-          'No completed frame videos found after motion generation'
-        );
+    // Multi-model audio (#546): one MUSIC_WORKFLOW child per selected model,
+    // each reusing the same prompt/tags/duration and writing its own primary
+    // row in sequence_music_variants (keyed by (sequenceId, model)). Only the
+    // first model is primary — it alone writes the live `sequences.music*`
+    // columns; the rest persist only their variant row (see `isPrimary` below).
+    // Falls back to the single `music.model` when no audioModels were threaded.
+    const audioModels =
+      includeMusic && input.music
+        ? resolveAudioModels(input.audioModels, input.music.model)
+        : [];
+
+    const musicJobs =
+      includeMusic && input.music
+        ? audioModels.map((model) => ({ model }))
+        : [];
+
+    const musicAwaits = musicJobs.map(({ model }, index) => {
+      // input.music is narrowed truthy by musicJobs construction above.
+      const music = input.music;
+      if (!music) {
+        throw new WorkflowValidationError('music config missing for batch');
       }
-
-      // Step 3: Merge all frame videos into one
-      await context.invoke(MERGE_VIDEO_WORKFLOW_NAME, {
-        workflow: mergeVideoWorkflow,
-        label,
-        body: {
+      return spawnAndAwaitChild<MusicWorkflowInput, MusicWorkflowResult>(step, {
+        binding: this.env.MUSIC_WORKFLOW,
+        parentBindingName: 'MOTION_BATCH_WORKFLOW',
+        parentInstanceId,
+        childId: `music:${sequenceId}:${model}`,
+        childPayload: {
           userId: input.userId,
           teamId: input.teamId,
           sequenceId,
-          videoUrls,
-          sourceFrameVideoHashes,
-        } satisfies MergeVideoWorkflowInput,
+          prompt: music.prompt,
+          tags: music.tags,
+          duration: music.duration,
+          model,
+          // audioModels[0] is primary (resolveAudioModels preserves order +
+          // dedupes); only it writes the live `sequences.music*` columns.
+          isPrimary: index === 0,
+        },
+        spawnStepName: `spawn-music-${index}-${model}`,
+        awaitStepName: `await-music-${index}-${model}`,
+        // Same budget as the motion children — queue backlog under a burst
+        // applies to audio generation too.
+        timeout: '45 minutes',
       });
+    });
 
-      // Step 4: If music was generated, mux audio onto merged video.
-      // Resolve both source variants — final mux is a function of (video, music).
-      if (includeMusic) {
-        const mergeAndMusicSources = await context.run(
-          'get-merge-music-variants',
-          async () =>
-            resolveMotionBatchMergeMusicVariants(
-              scopedDb,
-              sequenceId,
-              MERGE_VIDEO_WORKFLOW_NAME
-            )
-        );
+    const motionResults = await Promise.allSettled(motionAwaits);
+    const musicResults = musicAwaits.length
+      ? await Promise.allSettled(musicAwaits)
+      : null;
 
-        await context.invoke('merge-audio-video', {
-          workflow: mergeAudioVideoWorkflow,
-          label,
-          body: {
-            userId: input.userId,
-            teamId: input.teamId,
-            sequenceId,
-            mergedVideoVariantId: mergeAndMusicSources.mergedVideoVariantId,
-            musicVariantId: mergeAndMusicSources.musicVariantId,
-          } satisfies MergeAudioVideoWorkflowInput,
-        });
-      }
-
-      console.log(`[MotionBatchWorkflow] Completed for sequence ${sequenceId}`);
-
-      return { sequenceId };
-    },
-    {
-      failureFunction: async ({ context, failResponse }) => {
-        const input = context.requestPayload;
-        const error = sanitizeFailResponse(failResponse);
-
-        if (input.sequenceId) {
-          try {
-            await getGenerationChannel(input.sequenceId).emit(
-              'generation.failed',
-              { message: error }
-            );
-          } catch (emitError) {
-            console.error(
-              `[MotionBatchWorkflow] Failed to emit generation.failed for sequence ${input.sequenceId}:`,
-              emitError
-            );
+    // Log per-frame motion failures for visibility; we don't throw here — the
+    // QStash original uses Promise.all + a single combined await, but parity
+    // with the rest of the CF batch surface (frame-images) is to allSettle
+    // and rely on the collect step below to validate that we have something
+    // mergeable.
+    for (let i = 0; i < motionResults.length; i++) {
+      const r = motionResults[i];
+      if (r?.status === 'rejected') {
+        const job = motionJobs[i];
+        // Include the reason in the message itself — structured `err` fields
+        // don't reliably survive into the log body (the June 7 run produced
+        // bare "Motion failed for frame …:" lines with no cause attached).
+        logger.warn(
+          `[MotionBatchWorkflow:cf] Motion failed for frame ${job?.frame.frameId ?? '(unknown)'} model ${job?.model ?? '(unknown)'}: ${String(r.reason)}`,
+          {
+            err: r.reason,
           }
-        }
-
-        console.error(
-          `[MotionBatchWorkflow] Failed for sequence ${input.sequenceId}: ${error}`
         );
-
-        return `Batch motion+music failed for sequence ${input.sequenceId}`;
-      },
+      }
     }
-  );
+    if (musicResults) {
+      for (let i = 0; i < musicResults.length; i++) {
+        const m = musicResults[i];
+        if (m?.status === 'rejected') {
+          logger.warn(
+            `[MotionBatchWorkflow:cf] Music generation failed for sequence ${sequenceId} model ${musicJobs[i]?.model ?? '(unknown)'}: ${String(m.reason)}`,
+            {
+              err: m.reason,
+            }
+          );
+        }
+      }
+    }
+
+    // Playback and the final MP4 are produced client-side by
+    // `<SequencePlayer>` / the Mediabunny browser export — there is no
+    // server-side video merge step (parity with the QStash motion-batch).
+    return { sequenceId };
+  }
+
+  protected override async onFailure({
+    event,
+    error,
+  }: {
+    event: Readonly<WorkflowEvent<BatchMotionMusicWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    const input = event.payload;
+
+    if (input.sequenceId) {
+      try {
+        await getGenerationChannel(input.sequenceId).emit('generation.failed', {
+          message: error,
+        });
+      } catch (emitError) {
+        logger.error(
+          `[MotionBatchWorkflow:cf] Failed to emit generation.failed for sequence ${input.sequenceId}:`,
+          {
+            err: emitError,
+          }
+        );
+      }
+    }
+
+    logger.error(
+      `[MotionBatchWorkflow:cf] Failed for sequence ${input.sequenceId}: ${error}`
+    );
+  }
+}

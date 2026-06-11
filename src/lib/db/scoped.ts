@@ -6,66 +6,51 @@
  */
 
 import { getDb } from '#db-client';
-import { sequences, teamMembers, teams, user } from '@/lib/db/schema';
 import type { Sequence, User } from '@/lib/db/schema';
+import { sequences, teamMembers, teams, user } from '@/lib/db/schema';
 import type { TeamMemberRole } from '@/lib/db/schema/teams';
 import { createAdminMethods } from '@/lib/db/scoped/admin';
-import {
-  createApiKeysMethods,
-  createApiKeysReadMethods,
-} from '@/lib/db/scoped/api-keys';
-import {
-  createBillingMethods,
-  createBillingReadMethods,
-} from '@/lib/db/scoped/billing';
-import { createCharactersMethods } from '@/lib/db/scoped/characters';
+import { createApiKeysMethods } from '@/lib/db/scoped/api-keys';
+import { createBillingMethods } from '@/lib/db/scoped/billing';
 import { createCharacterSheetVariantsMethods } from '@/lib/db/scoped/character-sheet-variants';
+import { createCharactersMethods } from '@/lib/db/scoped/characters';
 import { createFramePromptVariantsMethods } from '@/lib/db/scoped/frame-prompt-variants';
 import { createFrameVariantsMethods } from '@/lib/db/scoped/frame-variants';
-import { createLocationSheetVariantsMethods } from '@/lib/db/scoped/location-sheet-variants';
-import { createSequenceVariantsMethods } from '@/lib/db/scoped/sequence-variants';
-import { createTalentSheetVariantsMethods } from '@/lib/db/scoped/talent-sheet-variants';
 import { createFramesMethods } from '@/lib/db/scoped/frames';
 import { createLibraryMethods } from '@/lib/db/scoped/library';
 import {
   createLocationSheetsMethods,
   createLocationSheetsReadMethods,
   createLocationsMethods,
-  createLocationsReadMethods,
+  createPublicLocationsReadMethods,
 } from '@/lib/db/scoped/location-library';
+import { createLocationSheetVariantsMethods } from '@/lib/db/scoped/location-sheet-variants';
 import { createSequenceElementsMethods } from '@/lib/db/scoped/sequence-elements';
+import { createSequenceExportsMethods } from '@/lib/db/scoped/sequence-exports';
 import { createSequenceLocationsMethods } from '@/lib/db/scoped/sequence-locations';
 import { createSequenceMusicPromptVariantsMethods } from '@/lib/db/scoped/sequence-music-prompt-variants';
+import { createSequenceVariantsMethods } from '@/lib/db/scoped/sequence-variants';
 import {
   createSequenceMethods,
-  createSequenceReadMethods,
   createSequencesMethods,
-  createSequencesReadMethods,
 } from '@/lib/db/scoped/sequences';
 import {
+  createPublicStylesReadMethods,
   createStylesMethods,
-  createStylesReadMethods,
 } from '@/lib/db/scoped/styles';
 import {
+  createPublicTalentReadMethods,
   createTalentMethods,
-  createTalentReadMethods,
 } from '@/lib/db/scoped/talent';
-import {
-  createTeamManagementMethods,
-  createTeamManagementReadMethods,
-} from '@/lib/db/scoped/team-management';
+import { createTalentSheetVariantsMethods } from '@/lib/db/scoped/talent-sheet-variants';
+import { createTeamManagementMethods } from '@/lib/db/scoped/team-management';
 import { and, eq, sql } from 'drizzle-orm';
 
-export type {
-  GiftTokenStatus,
-  GiftTokenWithStatus,
-  UserActivityRow,
-} from '@/lib/db/scoped/admin';
+import { getLogger } from '@/lib/observability/logger';
 
-export type {
-  MergedVideoFieldsUpdate,
-  MusicFieldsUpdate,
-} from '@/lib/db/scoped/sequences';
+const logger = getLogger(['openstory', 'db', 'scoped']);
+
+export type { UserActivityRow } from '@/lib/db/scoped/admin';
 
 /**
  * Resolve a user's default team (highest-role team).
@@ -122,6 +107,61 @@ export async function getUserTeamMembership(
 
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB result may be undefined at runtime
   return result ?? null;
+}
+
+/**
+ * Public (anonymous) read surface — everything a logged-out visitor can read.
+ * Each function delegates to a createPublic*ReadMethods factory that takes no
+ * team scope at all, so these code paths cannot express a team-scoped query;
+ * the isPublic filters inside the factories are the entire data boundary.
+ */
+
+/**
+ * List publicly-shared styles without any team scoping or auth.
+ * Used to populate the style picker for anonymous (logged-out) visitors so
+ * they can compose a sequence before being prompted to sign in.
+ */
+export async function listPublicStyles() {
+  return createPublicStylesReadMethods(getDb()).list();
+}
+
+/**
+ * List public ("system") talent without team scoping or auth. Lets anonymous
+ * visitors browse and pre-cast system talent on the public new-sequence
+ * screen and talent library page.
+ */
+export async function listPublicTalent(options?: { favoritesOnly?: boolean }) {
+  return createPublicTalentReadMethods(getDb()).list(options);
+}
+
+/**
+ * List public ("system") library locations without team scoping or auth.
+ */
+export async function listPublicLibraryLocations() {
+  return createPublicLocationsReadMethods(getDb()).list();
+}
+
+/**
+ * Fetch a public ("system") talent with its sheets and media, no auth.
+ * Returns undefined if the talent isn't public. Lets anonymous visitors open a
+ * talent detail page read-only.
+ */
+export async function getPublicTalentWithRelations(talentId: string) {
+  return createPublicTalentReadMethods(getDb()).getWithRelations(talentId);
+}
+
+/**
+ * Fetch a public ("system") library location with its sheets, no auth.
+ * Returns null if the location isn't public. Mirrors getLibraryLocationByIdFn's
+ * shape so the same detail page renders for anonymous visitors.
+ */
+export async function getPublicLibraryLocationById(locationId: string) {
+  const db = getDb();
+  const location =
+    await createPublicLocationsReadMethods(db).getById(locationId);
+  if (!location) return null;
+  const sheets = await createLocationSheetsReadMethods(db).list(locationId);
+  return { ...location, sequenceTitle: 'Library' as const, sheets };
 }
 
 /**
@@ -217,7 +257,7 @@ export async function ensureUserAndTeam(authUser: {
       },
     };
   } catch (error) {
-    console.error('[ensureUserAndTeam] Error:', error);
+    logger.error('Error:', { err: error });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unexpected error',
@@ -252,6 +292,7 @@ export function createScopedDb(teamId: string, userId: string) {
     talentSheetVariants: createTalentSheetVariantsMethods(db),
     sequenceMusicPromptVariants: createSequenceMusicPromptVariantsMethods(db),
     sequenceVariants: createSequenceVariantsMethods(db),
+    sequenceExports: createSequenceExportsMethods(db),
 
     characters: createCharactersMethods(db),
     sequenceLocations: createSequenceLocationsMethods(db),
@@ -265,46 +306,6 @@ export function createScopedDb(teamId: string, userId: string) {
 
 export type ScopedDb = ReturnType<typeof createScopedDb>;
 
-/**
- * Read-only scoped DB — for webhooks, public queries, and system operations.
- * No userId required; write methods that need audit fields are not available.
- */
-export function createReadOnlyScopedDb(teamId: string) {
-  const db = getDb();
-
-  return {
-    teamId,
-
-    sequences: createSequencesReadMethods(db, teamId),
-    sequence: (sequenceId: string) => createSequenceReadMethods(db, sequenceId),
-
-    talent: createTalentReadMethods(db, teamId),
-    styles: createStylesReadMethods(db, teamId),
-    locations: createLocationsReadMethods(db, teamId),
-    locationSheets: createLocationSheetsReadMethods(db),
-    library: createLibraryMethods(db, teamId),
-
-    frames: createFramesMethods(db),
-    frameVariants: createFrameVariantsMethods(db),
-    framePromptVariants: createFramePromptVariantsMethods(db),
-    characterSheetVariants: createCharacterSheetVariantsMethods(db),
-    locationSheetVariants: createLocationSheetVariantsMethods(db),
-    talentSheetVariants: createTalentSheetVariantsMethods(db),
-    sequenceMusicPromptVariants: createSequenceMusicPromptVariantsMethods(db),
-    sequenceVariants: createSequenceVariantsMethods(db),
-
-    characters: createCharactersMethods(db),
-    sequenceLocations: createSequenceLocationsMethods(db),
-    sequenceElements: createSequenceElementsMethods(db),
-
-    billing: createBillingReadMethods(db, teamId),
-    apiKeys: createApiKeysReadMethods(db, teamId),
-    teamManagement: createTeamManagementReadMethods(db, teamId),
-  };
-}
-
-export type ReadOnlyScopedDb = ReturnType<typeof createReadOnlyScopedDb>;
-
 export function createSystemAdminScopedDb() {
   const db = getDb();
 
@@ -312,5 +313,3 @@ export function createSystemAdminScopedDb() {
     admin: createAdminMethods(db),
   };
 }
-
-export type SystemAdminScopedDb = ReturnType<typeof createSystemAdminScopedDb>;

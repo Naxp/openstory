@@ -1,4 +1,7 @@
-import { BaseModelSelector } from './base-model-selector';
+import {
+  BaseModelSelector,
+  type ModelGenerationStatus,
+} from './base-model-selector';
 import {
   AUDIO_MODELS,
   isValidAudioModel,
@@ -8,23 +11,16 @@ import { useMemo } from 'react';
 
 const GROUP_ORDER = ['all'] as const;
 
-type MusicModelSelectorProps = {
-  selectedModel: AudioModel;
-  onModelChange: (model: AudioModel) => void;
-  disabled?: boolean;
-};
-
-export const MusicModelSelector: React.FC<MusicModelSelectorProps> = ({
-  selectedModel,
-  onModelChange,
-  disabled = false,
-}) => {
-  const models = useMemo(
+// Shared option list — only music models (not SFX), sorted by quality.
+function useMusicModels() {
+  return useMemo(
     () =>
       Object.entries(AUDIO_MODELS)
         .filter(([key, m]) => {
           if (!isValidAudioModel(key)) return false;
-          // Only show music models, not SFX
+          // Only show music models, not SFX. All current entries are 'music',
+          // but keep the check so adding an SFX model can't accidentally appear here.
+          // oxlint-disable-next-line typescript/no-unnecessary-condition
           return m.type === 'music';
         })
         .sort(([, a], [, b]) => a.qualityRank - b.qualityRank)
@@ -35,6 +31,31 @@ export const MusicModelSelector: React.FC<MusicModelSelectorProps> = ({
           badge: m.license,
         })),
     []
+  );
+}
+
+type MusicModelSelectorProps = {
+  selectedModel: AudioModel;
+  onModelChange: (model: AudioModel) => void;
+  disabled?: boolean;
+  /** Per-model generation status (#546); renders ⊙/✓/⟳/! in the list. */
+  generatedStatuses?: Map<string, ModelGenerationStatus>;
+};
+
+export const MusicModelSelector: React.FC<MusicModelSelectorProps> = ({
+  selectedModel,
+  onModelChange,
+  disabled = false,
+  generatedStatuses,
+}) => {
+  const baseModels = useMusicModels();
+  const models = useMemo(
+    () =>
+      baseModels.map((m) => ({
+        ...m,
+        generationStatus: generatedStatuses?.get(m.id),
+      })),
+    [baseModels, generatedStatuses]
   );
 
   return (
@@ -51,6 +72,35 @@ export const MusicModelSelector: React.FC<MusicModelSelectorProps> = ({
       }}
       disabled={disabled}
       multiSelect={false}
+    />
+  );
+};
+
+type MusicModelMultiSelectorProps = {
+  selectedModels: AudioModel[];
+  onModelsChange: (models: AudioModel[]) => void;
+  disabled?: boolean;
+};
+
+export const MusicModelMultiSelector: React.FC<
+  MusicModelMultiSelectorProps
+> = ({ selectedModels, onModelsChange, disabled = false }) => {
+  const models = useMusicModels();
+
+  return (
+    <BaseModelSelector
+      label="Music Models"
+      models={models}
+      groupOrder={GROUP_ORDER}
+      selectedIds={selectedModels}
+      onSelectionChange={(ids) => {
+        const validIds = ids.filter(isValidAudioModel);
+        if (validIds.length > 0) {
+          onModelsChange(validIds);
+        }
+      }}
+      disabled={disabled}
+      multiSelect={true}
     />
   );
 };

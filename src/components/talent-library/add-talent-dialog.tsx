@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuthGate } from '@/components/auth/auth-gate-provider';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,21 +15,26 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { useCreateTalent } from '@/hooks/use-talent';
+import type { Talent } from '@/lib/db/schema';
 import { Plus } from 'lucide-react';
 import { TalentMediaUpload } from './talent-media-upload';
 
 type AddTalentDialogProps = {
   trigger?: React.ReactNode;
+  /** Called with the newly created talent so callers can auto-select it. */
+  onCreated?: (talent: Talent) => void;
 };
 
 export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
   trigger,
+  onCreated,
 }) => {
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
 
   const isHydrated = useHydrated();
+  const { requireAuth } = useAuthGate();
   const createTalent = useCreateTalent();
 
   const closeAndReset = () => {
@@ -52,6 +58,11 @@ export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Anonymous visitors can open the dialog and fill the form; the actual
+    // add prompts a login.
+    if (!requireAuth()) return;
+
     const formData = new FormData(e.currentTarget);
     const nameValue = formData.get('name');
     const descriptionValue = formData.get('description');
@@ -70,7 +81,10 @@ export const AddTalentDialog: React.FC<AddTalentDialogProps> = ({
         referenceImageUrls: uploadedUrls,
       },
       {
-        onSuccess: () => closeAndReset(),
+        onSuccess: (talent) => {
+          onCreated?.(talent);
+          closeAndReset();
+        },
       }
     );
   };

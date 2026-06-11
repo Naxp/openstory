@@ -163,6 +163,13 @@ export const TalentSuggestionSelector: React.FC<
     onSelectionChange(selectedTalentIds.filter((id) => id !== talentId));
   };
 
+  // Auto-select freshly added talent so the user doesn't have to find and
+  // re-pick it in the grid after the dialog closes.
+  const handleTalentCreated = (talent: { id: string }) => {
+    if (selectedTalentIds.includes(talent.id)) return;
+    onSelectionChange([...selectedTalentIds, talent.id]);
+  };
+
   return (
     <>
       <div className="flex items-center gap-2">
@@ -254,6 +261,7 @@ export const TalentSuggestionSelector: React.FC<
                   </p>
                   {!searchQuery && (
                     <AddTalentDialog
+                      onCreated={handleTalentCreated}
                       trigger={
                         <Button variant="outline" size="sm" className="mt-3">
                           <Plus className="mr-2 h-4 w-4" />
@@ -280,6 +288,7 @@ export const TalentSuggestionSelector: React.FC<
             {/* Footer */}
             <div className="flex justify-between">
               <AddTalentDialog
+                onCreated={handleTalentCreated}
                 trigger={
                   <Button variant="outline" size="sm">
                     <Plus className="mr-2 h-4 w-4" />

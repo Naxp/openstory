@@ -5,11 +5,57 @@ import rehypeStringify from 'rehype-stringify';
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
-import { codeToHtml } from 'shiki';
+import {
+  bundledLanguages,
+  createHighlighter,
+  type BundledLanguage,
+  type Highlighter,
+} from 'shiki';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import { unified } from 'unified';
 import type { Element, Root, RootContent } from 'hast';
 
-export type MarkdownHeading = {
+// Shiki's default Oniguruma engine compiles WASM at runtime, which Cloudflare
+// Workers forbids ("Wasm code generation disallowed by embedder") — every
+// docs page with a highlighted code fence 500'd in production (#814). The
+// JavaScript regex engine runs the grammars as plain RegExp, no WASM needed.
+// `forgiving` skips the rare grammar rule that can't be translated instead of
+// throwing.
+let highlighterPromise: Promise<Highlighter> | null = null;
+
+function getHighlighter(): Promise<Highlighter> {
+  highlighterPromise ??= createHighlighter({
+    themes: ['github-light', 'github-dark'],
+    langs: [],
+    engine: createJavaScriptRegexEngine({ forgiving: true }),
+  });
+  return highlighterPromise;
+}
+
+function isBundledLanguage(lang: string): lang is BundledLanguage {
+  return lang in bundledLanguages;
+}
+
+async function highlightCode(code: string, lang: string): Promise<string> {
+  const highlighter = await getHighlighter();
+  // Unknown languages fall back to an unhighlighted block.
+  const resolved = isBundledLanguage(lang) ? lang : 'text';
+  if (
+    resolved !== 'text' &&
+    !highlighter.getLoadedLanguages().includes(resolved)
+  ) {
+    await highlighter.loadLanguage(resolved);
+  }
+  return highlighter.codeToHtml(code, {
+    lang: resolved,
+    themes: {
+      light: 'github-light',
+      dark: 'github-dark',
+    },
+  });
+}
+
+type MarkdownHeading = {
   id: string;
   text: string;
   level: number;
@@ -43,7 +89,7 @@ function rehypeExtractHeadings(headings: MarkdownHeading[]) {
       const match = /^h([1-6])$/.exec(node.tagName);
       if (!match) continue;
       const level = Number(match[1]);
-      const id = String(node.properties?.id ?? '');
+      const id = String(node.properties.id ?? '');
       const text = extractText(node);
       headings.push({ id, text, level });
     }
@@ -60,6 +106,7 @@ function rehypeMermaidPlaceholder() {
     for (let i = 0; i < tree.children.length; i++) {
       const node = tree.children[i];
       if (
+        !node ||
         node.type !== 'element' ||
         node.tagName !== 'pre' ||
         node.children.length !== 1
@@ -67,7 +114,8 @@ function rehypeMermaidPlaceholder() {
         continue;
       }
       const child = node.children[0];
-      if (child.type !== 'element' || child.tagName !== 'code') continue;
+      if (!child || child.type !== 'element' || child.tagName !== 'code')
+        continue;
 
       const className = child.properties.className;
       if (!Array.isArray(className)) continue;
@@ -102,12 +150,13 @@ function rehypeShiki() {
     for (let i = 0; i < tree.children.length; i++) {
       const node = tree.children[i];
       if (
+        node &&
         node.type === 'element' &&
         node.tagName === 'pre' &&
         node.children.length === 1
       ) {
         const child = node.children[0];
-        if (child.type === 'element' && child.tagName === 'code') {
+        if (child && child.type === 'element' && child.tagName === 'code') {
           const className = child.properties.className;
           let lang = 'text';
           if (Array.isArray(className)) {
@@ -126,26 +175,19 @@ function rehypeShiki() {
 
     // Process all code blocks in parallel
     const results = await Promise.all(
-      codeBlocks.map(async ({ code, lang }) => {
-        const html = await codeToHtml(code, {
-          lang,
-          themes: {
-            light: 'github-light',
-            dark: 'github-dark',
-          },
-        });
-        return html;
-      })
+      codeBlocks.map(({ code, lang }) => highlightCode(code, lang))
     );
 
     // Replace nodes with raw HTML (rehype-stringify will output it)
     for (let i = 0; i < codeBlocks.length; i++) {
-      const { index } = codeBlocks[i];
+      const block = codeBlocks[i];
+      const value = results[i];
+      if (!block || value === undefined) continue;
       const rawNode: RootContent = {
         type: 'raw',
-        value: results[i],
+        value,
       } satisfies { type: 'raw'; value: string };
-      tree.children[index] = rawNode;
+      tree.children[block.index] = rawNode;
     }
   };
 }

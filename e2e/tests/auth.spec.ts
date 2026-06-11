@@ -8,29 +8,82 @@ import { expect, test } from '../fixtures/auth.fixture';
 
 // Route Protection Tests (no auth fixture needed)
 baseTest.describe('Route Protection', () => {
-  baseTest('unauthenticated user is redirected to login', async ({ page }) => {
-    // Try to access protected route directly
-    await page.goto('/sequences');
+  baseTest(
+    'anonymous visitor lands in the app, not a marketing page',
+    async ({ page }) => {
+      await page.goto('/');
 
-    // Should be redirected to login
-    await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByLabel('Email')).toBeVisible();
-  });
+      // The app itself is the front page now — anonymous visitors land directly
+      // in the new-sequence composer rather than a marketing landing page.
+      await expect(page).toHaveURL(/\/sequences\/new/);
+    }
+  );
+
+  baseTest(
+    'anonymous visitor can browse the shell without being redirected',
+    async ({ page }) => {
+      // Browsable, account-data pages show a sign-in prompt in place of data
+      // rather than bouncing to /login.
+      await page.goto('/sequences');
+
+      await expect(page).toHaveURL(/\/sequences/);
+      await expect(page).not.toHaveURL(/\/login/);
+      await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    }
+  );
+
+  baseTest(
+    'anonymous generate is intercepted by the login dialog',
+    async ({ page }) => {
+      await page.goto('/sequences/new');
+
+      // Composing a draft is allowed while logged out… (the script input is a
+      // TipTap contenteditable, not a <textarea> — same locator as
+      // full-sequence.spec.ts)
+      const scriptEditor = page.locator(
+        '[data-slot="markdown-editor"] .ProseMirror'
+      );
+      await expect(scriptEditor).toBeVisible();
+      await scriptEditor.fill(
+        'INT. KITCHEN - DAY\n\nA cat knocks a glass off the counter.'
+      );
+
+      const generate = page.getByRole('button', {
+        name: 'Generate',
+        exact: true,
+      });
+      await expect(generate).toBeEnabled();
+      await generate.click();
+
+      // …but the action itself is gated: the auth gate opens the login dialog
+      // in place and bails — no sequence is created, we stay on the composer.
+      const dialog = page.getByRole('dialog', { name: 'Sign in to continue' });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByLabel('Email')).toBeVisible();
+      await expect(page).toHaveURL(/\/sequences\/new/);
+    }
+  );
+
+  baseTest(
+    'account-bound routes redirect anonymous users to login',
+    async ({ page }) => {
+      // Settings is genuinely account-only — it redirects.
+      await page.goto('/settings');
+
+      await expect(page).toHaveURL(/\/login/);
+      await expect(page.getByLabel('Email')).toBeVisible();
+    }
+  );
 
   baseTest('login page is accessible', async ({ page }) => {
     await page.goto('/login');
 
     await expect(page).toHaveURL('/login');
     await expect(page.getByLabel('Email')).toBeVisible({ timeout: 15000 });
-    await expect(
-      page.getByRole('button', { name: 'Continue with email' })
-    ).toBeVisible({
-      timeout: 10000,
-    });
   });
 
   baseTest(
-    'login page shows email input and submit button',
+    'login page reveals the submit button once an email is entered',
     async ({ page }) => {
       await page.goto('/login');
 
@@ -41,12 +94,14 @@ baseTest.describe('Route Protection', () => {
 
       await expect(emailInput).toBeVisible({ timeout: 15000 });
       await expect(emailInput).toBeEnabled();
-      await expect(submitButton).toBeVisible({ timeout: 10000 });
-      await expect(submitButton).toBeEnabled();
 
-      // Verify email input accepts input
+      // The submit button stays hidden until an email is entered.
+      await expect(submitButton).toBeHidden();
+
       await emailInput.fill('test@example.com');
       await expect(emailInput).toHaveValue('test@example.com');
+      await expect(submitButton).toBeVisible();
+      await expect(submitButton).toBeEnabled();
     }
   );
 });
@@ -101,8 +156,10 @@ baseTest.describe('Email OTP Flow', () => {
       name: 'Continue with email',
     });
 
-    // Enter invalid email
+    // Enter invalid email — the submit button only appears once the field is
+    // non-empty, so wait for it before clicking.
     await emailInput.fill('invalid-email');
+    await expect(submitButton).toBeVisible();
     await submitButton.click();
 
     // Browser should show validation error (HTML5 validation)

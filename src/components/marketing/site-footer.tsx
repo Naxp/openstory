@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Image } from '@unpic/react';
+import { AppImage } from '@/components/ui/app-image';
 import { Button } from '@/components/ui/button';
 import { OpenStoryLogo } from '@/components/icons/openstory-logo';
 import { XIcon } from '@/components/icons/x-icon';
@@ -50,7 +50,7 @@ export function SiteFooter() {
           style={{ animation: 'marquee 45s linear infinite' }}
         >
           {duplicatedFilmstrip.map(({ src, id }) => (
-            <Image
+            <AppImage
               key={id}
               src={src}
               alt=""

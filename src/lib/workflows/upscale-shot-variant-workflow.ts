@@ -1,3 +1,18 @@
+/**
+ * Cloudflare Workflows port of `upscaleShotVariantWorkflow`.
+ *
+ * Mirrors the QStash version (`src/lib/workflows/upscale-shot-variant-workflow.ts`)
+ * step for step — same step names, same control flow, same side effects. The
+ * only differences are:
+ *
+ *   - Extends `OpenStoryWorkflowEntrypoint` instead of being built by
+ *     `createScopedWorkflow`. Failure parity comes from the base class
+ *     (see `base-workflow.ts`).
+ *   - Uses `step.do` instead of `context.run`.
+ *   - Reads the workflow run id from `event.instanceId` instead of
+ *     `context.workflowRunId`.
+ */
+
 import { IMAGE_MODELS } from '@/lib/ai/models';
 import { ZERO_MICROS } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
@@ -5,17 +20,21 @@ import {
   aspectRatioToImageSize,
   DEFAULT_IMAGE_SIZE,
 } from '@/lib/constants/aspect-ratios';
+import type { ScopedDb } from '@/lib/db/scoped';
 import { generateImageWithProvider } from '@/lib/image/image-generation';
 import { uploadImageToStorage } from '@/lib/image/image-storage';
 import { buildReferenceImagePrompt } from '@/lib/prompts/reference-image-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
-import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
-import { createScopedWorkflow } from '@/lib/workflow/scoped-workflow';
+import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
+import { WorkflowValidationError } from '@/lib/workflow/errors';
 import type {
   UpscaleShotVariantWorkflowInput,
   UpscaleShotVariantWorkflowResult,
 } from '@/lib/workflow/types';
-import { WorkflowValidationError } from '../workflow/errors';
+import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
+import { getLogger } from '@/lib/observability/logger';
+
+const logger = getLogger(['openstory', 'workflow', 'upscale-shot-variant']);
 
 const UPSCALE_PROMPT = `Upscale this image to a clean, high-resolution frame suitable for animation.
 
@@ -42,24 +61,25 @@ OUTPUT
 - Resolution: upscale to animation-ready quality.
 - No text overlays, borders, watermarks, or new graphics added by the model.`;
 
-export const upscaleShotVariantWorkflow = createScopedWorkflow<
-  UpscaleShotVariantWorkflowInput,
-  UpscaleShotVariantWorkflowResult
->(
-  async (context, scopedDb) => {
-    const input = context.requestPayload;
+export class UpscaleShotVariantWorkflow extends OpenStoryWorkflowEntrypoint<UpscaleShotVariantWorkflowInput> {
+  protected override async runImpl(
+    event: Readonly<WorkflowEvent<UpscaleShotVariantWorkflowInput>>,
+    step: WorkflowStep,
+    scopedDb: ScopedDb
+  ): Promise<UpscaleShotVariantWorkflowResult> {
+    const input = event.payload;
+    const workflowRunId = event.instanceId;
 
     const { sequenceId, teamId, frameId } = input;
     if (!sequenceId || !teamId || !frameId) {
       throw new WorkflowValidationError('sequenceId and teamId are required');
     }
 
-    console.log(
-      '[UpscaleShotVariantWorkflow]',
-      `Starting upscale for frame ${frameId}`
+    logger.info(
+      `[UpscaleShotVariantWorkflow:cf] Starting upscale for frame ${frameId}`
     );
 
-    const upscaleResult = await context.run('upscale-image', async () => {
+    const upscaleResult = await step.do('upscale-image', async () => {
       await getGenerationChannel(sequenceId).emit('generation.image:progress', {
         frameId: frameId,
         status: 'generating',
@@ -69,15 +89,14 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
         frameId,
         {
           thumbnailStatus: 'generating',
-          thumbnailWorkflowRunId: context.workflowRunId,
+          thumbnailWorkflowRunId: workflowRunId,
         },
         { throwOnMissing: false }
       );
 
       if (!frame) {
-        console.log(
-          '[UpscaleShotVariantWorkflow]',
-          `Frame ${frameId} was deleted, skipping workflow`
+        logger.info(
+          `[UpscaleShotVariantWorkflow:cf] Frame ${frameId} was deleted, skipping workflow`
         );
         return null;
       }
@@ -128,18 +147,22 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
       return { upscaledUrl: '', upscaledPath: '' };
     }
 
-    await context.run('deduct-credits', async () => {
+    await step.do('deduct-credits', async () => {
       await deductWorkflowCredits({
         scopedDb,
         costMicros: upscaleResult.cost,
         usedOwnKey: upscaleResult.usedOwnKey,
         description: 'Variant upscale (nano_banana_2)',
+        idempotencyKey: `${event.instanceId}:upscale`,
         metadata: { frameId: input.frameId, sequenceId: input.sequenceId },
         workflowName: 'UpscaleShotVariantWorkflow',
       });
     });
 
-    const storageResult = await context.run('upload-to-storage', async () => {
+    const storageResult = await step.do('upload-to-storage', async () => {
+      if (!upscaleResult.imageUrl) {
+        throw new Error('Upscale did not return an image URL');
+      }
       const result = await uploadImageToStorage({
         imageUrl: upscaleResult.imageUrl,
         teamId: teamId,
@@ -154,7 +177,7 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
       return { url: result.url, path: result.path };
     });
 
-    await context.run('update-frame', async () => {
+    await step.do('update-frame', async () => {
       const updatedFrame = await scopedDb.frames.update(
         input.frameId,
         {
@@ -167,9 +190,8 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
       );
 
       if (!updatedFrame) {
-        console.log(
-          '[UpscaleShotVariantWorkflow]',
-          `Frame ${input.frameId} was deleted, skipping final update`
+        logger.info(
+          `[UpscaleShotVariantWorkflow:cf] Frame ${input.frameId} was deleted, skipping final update`
         );
         return;
       }
@@ -183,9 +205,8 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
         }
       );
 
-      console.log(
-        '[UpscaleShotVariantWorkflow]',
-        `Upscale completed for frame ${input.frameId}`
+      logger.info(
+        `[UpscaleShotVariantWorkflow:cf] Upscale completed for frame ${input.frameId}`
       );
     });
 
@@ -193,34 +214,37 @@ export const upscaleShotVariantWorkflow = createScopedWorkflow<
       upscaledUrl: storageResult.url,
       upscaledPath: storageResult.path || '',
     } satisfies UpscaleShotVariantWorkflowResult;
-  },
-  {
-    failureFunction: async ({ context, scopedDb, failResponse }) => {
-      const input = context.requestPayload;
-      const error = sanitizeFailResponse(failResponse);
+  }
 
-      console.error(
-        '[UpscaleShotVariantWorkflow]',
-        `Upscale failed for frame ${input.frameId}: ${error}`
+  protected override async onFailure({
+    event,
+    error,
+    scopedDb,
+  }: {
+    event: Readonly<WorkflowEvent<UpscaleShotVariantWorkflowInput>>;
+    error: string;
+    scopedDb: ScopedDb;
+  }): Promise<void> {
+    const input = event.payload;
+
+    logger.error(
+      `[UpscaleShotVariantWorkflow:cf] Upscale failed for frame ${input.frameId}: ${error}`
+    );
+
+    if (input.frameId && input.teamId) {
+      await scopedDb.frames.update(
+        input.frameId,
+        {
+          thumbnailStatus: 'completed',
+          thumbnailGeneratedAt: new Date(),
+        },
+        { throwOnMissing: false }
       );
 
-      if (input.frameId && input.teamId) {
-        await scopedDb.frames.update(
-          input.frameId,
-          {
-            thumbnailStatus: 'completed',
-            thumbnailGeneratedAt: new Date(),
-          },
-          { throwOnMissing: false }
-        );
-
-        await getGenerationChannel(input.sequenceId).emit(
-          'generation.image:progress',
-          { frameId: input.frameId, status: 'completed' }
-        );
-      }
-
-      return `Upscale failed for frame ${input.frameId}`;
-    },
+      await getGenerationChannel(input.sequenceId).emit(
+        'generation.image:progress',
+        { frameId: input.frameId, status: 'completed' }
+      );
+    }
   }
-);
+}
