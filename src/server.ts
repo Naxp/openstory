@@ -15,10 +15,27 @@ import {
   withHtmlAccept,
 } from '@/lib/agent/discovery';
 import { reconcileAllStuckJobs } from '@/lib/cron/reconcile-all';
+import { ensureSystemTemplatesSeeded } from '@/lib/db/seed-system-templates';
 
 import { getLogger } from '@/lib/observability/logger';
+import { drizzle } from 'drizzle-orm/d1';
 
 const logger = getLogger(['openstory', 'server']);
+
+// System templates self-seed on first request (one SELECT per isolate when
+// the stored seed hash is current; a full idempotent sync when it's stale —
+// fresh deployments and template changes). Memoized per isolate; a failure
+// resets the memo so a later request retries, and never blocks serving.
+let seedPromise: Promise<void> | null = null;
+function ensureSeededOnce(db: D1Database): Promise<void> {
+  seedPromise ??= ensureSystemTemplatesSeeded(drizzle(db), (message) =>
+    logger.info(`[seed] ${message}`)
+  ).catch((error) => {
+    seedPromise = null;
+    logger.error('System template self-seed failed:', { err: error });
+  });
+  return seedPromise;
+}
 
 // Re-export Cloudflare Workflow entrypoint classes so the Worker bundle
 // includes them. Each must have a matching entry in `wrangler.jsonc` under
@@ -68,8 +85,14 @@ interface WorkerEnv {
 }
 
 const exportedHandler: ExportedHandler<WorkerEnv> = {
-  async fetch(request) {
+  async fetch(request, env) {
     const { pathname } = new URL(request.url);
+
+    // Media serving (/r2/<key>) never needs templates — don't put the
+    // seed check's D1 round trip in front of it on cold starts.
+    if (!pathname.startsWith('/r2/')) {
+      await ensureSeededOnce(env.DB);
+    }
 
     // Markdown content negotiation for agents (#819): serve a real markdown
     // rendition where one exists; otherwise fall back to HTML rather than

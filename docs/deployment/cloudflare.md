@@ -49,14 +49,45 @@ bun cf:deploy:prd
 
 ## Database Migrations
 
-D1 migrations use a separate Drizzle config:
+Remote databases are migrated with `wrangler d1 migrations apply` (tracked in
+wrangler's `d1_migrations` table). drizzle-kit only **generates** migrations
+(`bun db:generate`); it never touches a remote database.
+
+Because drizzle-kit emits nested `<timestamp>_<name>/migration.sql` files that
+wrangler can't read, `scripts/flatten-migrations.ts` renders them to flat
+`drizzle/migrations-wrangler/*.sql` (gitignored) first. The relevant scripts
+run it automatically:
 
 ```bash
-bun --bun drizzle-kit migrate --config=drizzle.config.d1.ts
-bun db:seed:d1
+bun run deploy          # flatten → wrangler d1 migrations apply DB --remote → wrangler deploy
+                        # (what the Deploy to Cloudflare button / Workers Builds runs)
+bun db:migrate:prd      # flatten → wrangler d1 migrations apply DB --env=production --remote
 ```
 
-CI runs both before each deploy.
+- **Button deploys / Workers Builds**: the `deploy` package script is picked
+  up as the deploy command and re-runs on every push, so new migrations apply
+  idempotently. It references the binding name `DB` (not the database name) so
+  it works whatever the user named their database.
+- **Production CI**: `cf:deploy:prd` runs `db:migrate:prd` between build and
+  deploy.
+- **PR previews**: CI applies migrations with `wrangler d1 migrations apply DB
+--remote` after patching the PR's database id into the config.
+- **Local dev / e2e**: unchanged — drizzle-orm's migrator applies the nested
+  files directly against the Miniflare binding (`bun db:migrate:local`).
+
+Migrations must stay backwards-compatible for the moment between migrate and
+deploy, and the D1 table-rebuild CASCADE trap (see CLAUDE.md) applies to every
+remote apply path.
+
+## Seeding
+
+There are no CI seed steps: the worker self-seeds system templates on first
+request (`src/server.ts` → `src/lib/db/seed-system-templates.ts`). A hash of
+the template definitions is stored in `app_metadata`; when it matches, the
+check is a single SELECT per isolate, and when it doesn't (fresh database, or
+a deploy that changed templates) the idempotent sync runs once. `bun
+db:seed:local` / `bun scripts/seed.ts --test` reuse the same module for local
+setup.
 
 ## Secrets
 
@@ -71,11 +102,47 @@ Secrets are pushed to the Worker via `wrangler secret bulk`. The full list is de
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials                                                              |
 | `EMAIL_FROM`                                | Sender address for transactional email (domain onboarded in Cloudflare Email Service) |
 
+## Prod database cutover (velro-prd → openstory-prd)
+
+One-time runbook for #897: the production D1 predates the project rename (the
+account still calls it `velro-prd`) and its migration history lives in
+drizzle's `__drizzle_migrations` table, which wrangler doesn't read. D1 has no
+rename, so the move is a recreate — which also gives the new database a fully
+native `d1_migrations` history with no baselining:
+
+```bash
+# 1. Snapshot (also the import source). Quiet window: writes after this are lost.
+bunx wrangler d1 export velro-prd --remote --output=backup.sql
+
+# 2. Fresh DB, schema from migrations (empty tables — the rebuild-pattern
+#    migrations in our history are CASCADE-safe on an empty database).
+bunx wrangler d1 create openstory-prd
+bun scripts/flatten-migrations.ts
+bunx wrangler d1 migrations apply openstory-prd --remote
+
+# 3. Data-only import (the export wraps INSERTs with defer_foreign_keys).
+#    Drop drizzle's tracking rows — that table doesn't exist in the new DB
+#    (wrangler's d1_migrations replaces it).
+bunx wrangler d1 export velro-prd --remote --no-schema --output=data-raw.sql
+grep -v '__drizzle_migrations' data-raw.sql > data.sql
+bunx wrangler d1 execute openstory-prd --remote --file=data.sql
+
+# 4. Flip [env.production].d1_databases[0].database_id (and keep database_name
+#    openstory-prd) in wrangler.jsonc, merge, deploy. The deploy's
+#    `wrangler d1 migrations apply` reports everything already applied.
+
+# 5. Soak, then delete the old DB:
+bunx wrangler d1 delete velro-prd
+```
+
+Existing PR-preview databases also only have drizzle tracking — close and
+reopen the PR to get a fresh, wrangler-tracked preview database.
+
 ## CI/CD
 
 [`deploy-cloudflare.yml`](https://github.com/anthropics/openstory/blob/main/.github/workflows/deploy-cloudflare.yml) handles:
 
-- **Production**: pushes to `main` migrate D1, seed, then `bun cf:deploy:prd`.
+- **Production**: pushes to `main` run `bun cf:deploy:prd` (build → migrate → deploy).
 - **PR previews**: each PR gets its own Worker (`pr-<number>`) and D1 database (`openstory-pr-<number>`), with secrets pushed and the preview URL posted as a PR comment.
 - **Cleanup**: closing a PR deletes both the Worker and the D1 database.
 

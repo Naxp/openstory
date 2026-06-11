@@ -55,7 +55,13 @@
       "binding": "DB",
       "database_name": "openstory-dev",
       "database_id": "dev-local-d1",
-      "migrations_dir": "drizzle/migrations",
+      // Flat *.sql rendering of drizzle/migrations (which nests files as
+      // <dir>/migration.sql — wrangler silently reads zero of those). Built
+      // by `bun scripts/flatten-migrations.ts`; consumed by
+      // `wrangler d1 migrations apply` in the `deploy` / `db:migrate:prd`
+      // package scripts. Local dev/e2e apply migrations via drizzle-orm
+      // (scripts/migrate-local-d1.ts) and don't read this.
+      "migrations_dir": "drizzle/migrations-wrangler",
     },
   ],
   // Local-only R2 (Miniflare state in .wrangler/state). Reads are served by
@@ -275,13 +281,16 @@
         {
           "binding": "DB",
           // `database_id` is authoritative — it's what wrangler binds and
-          // deploys against. `database_name` is just a label here, so we use
-          // the canonical `openstory-prd` (the underlying D1 with this id is
-          // still named `velro-prd` in the account from before the rename;
-          // rename it in the dashboard to match when convenient).
+          // deploys against (`database_name` is just a label, and wrangler
+          // requires the id; name-only resolution doesn't exist outside
+          // auto-provisioning). The underlying D1 is still the pre-rename
+          // `velro-prd` — D1 has NO rename, so the #897 cutover runbook
+          // (docs/deployment/cloudflare.md) recreates it as `openstory-prd`:
+          // create fresh → run all migrations → import data → update the
+          // name + id here.
           "database_name": "openstory-prd",
           "database_id": "d6a35f64-abb0-4a34-a092-dc20b29f5812",
-          "migrations_dir": "drizzle/migrations",
+          "migrations_dir": "drizzle/migrations-wrangler",
         },
       ],
       "r2_buckets": [
@@ -516,7 +525,7 @@
           "binding": "DB",
           "database_name": "openstory-test",
           "database_id": "openstory-test-local",
-          "migrations_dir": "drizzle/migrations",
+          "migrations_dir": "drizzle/migrations-wrangler",
         },
       ],
       "r2_buckets": [

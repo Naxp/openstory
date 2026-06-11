@@ -82,7 +82,14 @@ export const sequences = snakeCase.table(
       .notNull(),
     analysisDurationMs: integer().default(0).notNull(),
     imageModel: text({ length: 100 }).default(DEFAULT_IMAGE_MODEL).notNull(),
-    videoModel: text({ length: 100 }).default(DEFAULT_VIDEO_MODEL).notNull(),
+    videoModel: text({ length: 100 })
+      // SQL-level default stays 'kling_v3_pro' — every deployed DB has it,
+      // and changing a column default forces a full table rebuild, which on
+      // D1 CASCADE-deletes child rows (see CLAUDE.md "D1 table-rebuild
+      // trap"). Drizzle inserts get DEFAULT_VIDEO_MODEL via $defaultFn.
+      .default('kling_v3_pro')
+      .$defaultFn(() => DEFAULT_VIDEO_MODEL)
+      .notNull(),
     workflow: text({ length: 100 }),
 
     // Music track fields (sequence-level background music)
