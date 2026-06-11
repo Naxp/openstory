@@ -14,6 +14,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import type { drizzle as drizzleD1 } from 'drizzle-orm/d1';
+import type { Database } from './client';
 import {
   DEFAULT_SYSTEM_LOCATIONS,
   getLocationSheetUrl,
@@ -37,7 +38,8 @@ import {
 
 export type SeedDb =
   | ReturnType<typeof drizzleD1>
-  | ReturnType<typeof createD1HttpClient>;
+  | ReturnType<typeof createD1HttpClient>
+  | Database;
 
 type SeedLog = (message: string) => void;
 
@@ -148,10 +150,16 @@ async function releaseSeedLock(db: SeedDb, token: string): Promise<void> {
  * acquireSeedLock). Lock losers return without seeding — that's safe, since
  * the winner writes to the shared database and templates are read from it
  * at request time; no isolate-local state depends on having run the sync.
+ *
+ * `force` skips the hash gate (but still takes the lock): the manual CLI
+ * path (`bun scripts/seed.ts --force`) uses it to restore template rows
+ * that were lost while the hash row survived — without it the "escape
+ * hatch" would no-op exactly when it's needed.
  */
 export async function ensureSystemTemplatesSeeded(
   db: SeedDb,
-  log: SeedLog = () => {}
+  log: SeedLog = () => {},
+  options: { force?: boolean } = {}
 ): Promise<void> {
   const currentHash = await computeSeedHash();
   const [stored] = await db
@@ -160,7 +168,7 @@ export async function ensureSystemTemplatesSeeded(
     .where(eq(appMetadata.key, SEED_HASH_KEY));
 
   // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- DB query returns undefined when no rows match
-  if (stored?.value === currentHash) {
+  if (!options.force && stored?.value === currentHash) {
     log('System templates up to date (seed hash match)');
     return;
   }
@@ -182,7 +190,14 @@ export async function ensureSystemTemplatesSeeded(
         set: { value: currentHash, updatedAt: new Date() },
       });
   } finally {
-    await releaseSeedLock(db, lockToken);
+    // The lock has a TTL steal as its designed recovery, so a failed release
+    // must not mask the sync's outcome (a throw here would replace the real
+    // error — or turn a fully successful seed into a reported failure).
+    try {
+      await releaseSeedLock(db, lockToken);
+    } catch {
+      log('Seed lock release failed — a stale lock will be stolen after TTL');
+    }
   }
 }
 

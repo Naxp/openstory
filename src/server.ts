@@ -17,22 +17,36 @@ import {
 import { reconcileAllStuckJobs } from '@/lib/cron/reconcile-all';
 import { ensureSystemTemplatesSeeded } from '@/lib/db/seed-system-templates';
 
-import { getLogger } from '@/lib/observability/logger';
+import { getLogger, toErrorPayload } from '@/lib/observability/logger';
 import { drizzle } from 'drizzle-orm/d1';
 
 const logger = getLogger(['openstory', 'server']);
 
-// System templates self-seed on first request (one SELECT per isolate when
-// the stored seed hash is current; a full idempotent sync when it's stale —
-// fresh deployments and template changes). Memoized per isolate; a failure
-// resets the memo so a later request retries, and never blocks serving.
+// System templates self-seed on first request: the first request per isolate
+// waits on one D1 SELECT (and, when the stored seed hash is stale — fresh
+// deployment or a deploy that changed templates — on the full idempotent
+// sync). Memoized per isolate after that. Errors never propagate into the
+// response: a failure logs, arms a cooldown, and a later request retries —
+// the cooldown keeps a permanently broken state (e.g. missing table) from
+// re-running the lock dance and partial sync at request rate.
+const SEED_RETRY_COOLDOWN_MS = 60_000;
 let seedPromise: Promise<void> | null = null;
+let seedRetryAt = 0;
 function ensureSeededOnce(db: D1Database): Promise<void> {
+  if (seedPromise === null && Date.now() < seedRetryAt) {
+    return Promise.resolve();
+  }
   seedPromise ??= ensureSystemTemplatesSeeded(drizzle(db), (message) =>
     logger.info(`[seed] ${message}`)
   ).catch((error) => {
     seedPromise = null;
-    logger.error('System template self-seed failed:', { err: error });
+    seedRetryAt = Date.now() + SEED_RETRY_COOLDOWN_MS;
+    // toErrorPayload preserves .cause — the raw D1 reason that a bare
+    // { err } would drop (see logger.ts / #864). This log line is the
+    // seeding subsystem's only failure signal.
+    logger.error('System template self-seed failed', {
+      err: toErrorPayload(error),
+    });
   });
   return seedPromise;
 }

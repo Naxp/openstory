@@ -114,26 +114,39 @@ native `d1_migrations` history with no baselining:
 # 1. Snapshot (also the import source). Quiet window: writes after this are lost.
 bunx wrangler d1 export velro-prd --remote --output=backup.sql
 
-# 2. Fresh DB, schema from migrations (empty tables — the rebuild-pattern
-#    migrations in our history are CASCADE-safe on an empty database).
+# 2. Create the fresh DB and flip wrangler.jsonc to it FIRST:
+#    set [env.production].d1_databases[0].database_id to the new DB's id
+#    (keep database_name openstory-prd). Unlike `d1 export`/`execute`,
+#    `d1 migrations apply` resolves ONLY from wrangler config — it can't
+#    look a database up by name, and without the flip `--env=production`
+#    would target the old velro id.
 bunx wrangler d1 create openstory-prd
-bun scripts/flatten-migrations.ts
-bunx wrangler d1 migrations apply openstory-prd --remote
+# ... edit wrangler.jsonc ...
 
-# 3. Data-only import (the export wraps INSERTs with defer_foreign_keys).
+# 3. Apply all migrations to the empty DB (rebuild-pattern migrations in our
+#    history are CASCADE-safe with no rows). Same command prod CI runs:
+bun db:migrate:prd
+
+# 4. Data-only import (the export wraps INSERTs with defer_foreign_keys).
 #    Drop drizzle's tracking rows — that table doesn't exist in the new DB
 #    (wrangler's d1_migrations replaces it).
 bunx wrangler d1 export velro-prd --remote --no-schema --output=data-raw.sql
 grep -v '__drizzle_migrations' data-raw.sql > data.sql
 bunx wrangler d1 execute openstory-prd --remote --file=data.sql
 
-# 4. Flip [env.production].d1_databases[0].database_id (and keep database_name
-#    openstory-prd) in wrangler.jsonc, merge, deploy. The deploy's
+# 5. Commit the wrangler.jsonc flip, merge, deploy. The deploy's
 #    `wrangler d1 migrations apply` reports everything already applied.
 
-# 5. Soak, then delete the old DB:
+# 6. Soak, then delete the old DB:
 bunx wrangler d1 delete velro-prd
 ```
+
+**Merge order matters:** run this runbook (through step 4) before merging the
+PR that contains the id flip. Merging first isn't destructive — wrangler sees
+an empty `d1_migrations` on the old DB, migration #1's `CREATE TABLE` fails
+against the existing tables, the file rolls back, and CI fails loudly with
+the previous deploy still serving — but it blocks deploys until the cutover
+is done.
 
 Existing PR-preview databases also only have drizzle tracking — close and
 reopen the PR to get a fresh, wrangler-tracked preview database.

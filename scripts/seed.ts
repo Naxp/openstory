@@ -8,9 +8,11 @@
  * and as a manual escape hatch for remote databases.
  *
  * Usage:
- *   bun db:seed:local     # Wrangler local D1 (dev env)
- *   bun db:seed:test      # Wrangler local D1 (test env, isolated state)
- *   bun scripts/seed.ts --d1   # Cloudflare D1 via HTTP API (manual remote)
+ *   bun db:seed:local                  # Wrangler local D1 (dev env)
+ *   bun scripts/seed.ts --test         # Wrangler local D1 (test env, isolated state)
+ *   bun scripts/seed.ts --d1           # Cloudflare D1 via HTTP API (manual remote)
+ *   bun scripts/seed.ts --d1 --force   # bypass the seed-hash gate (restore lost
+ *                                      # template rows when the hash row survived)
  */
 
 import { createD1HttpClient } from '@/lib/db/client-d1-http';
@@ -27,11 +29,12 @@ function parseArgs() {
     local: args.includes('--local'),
     test: args.includes('--test'),
     d1: args.includes('--d1'),
+    force: args.includes('--force'),
   };
 }
 
 async function seed() {
-  const { local, test, d1 } = parseArgs();
+  const { local, test, d1, force } = parseArgs();
 
   let platformProxy:
     | Awaited<ReturnType<typeof getLocalPlatformProxy<{ DB?: D1Database }>>>
@@ -79,8 +82,8 @@ async function seed() {
   }
 
   try {
-    console.log('🌱 Seeding database...\n');
-    await ensureSystemTemplatesSeeded(db, console.log);
+    console.log(`🌱 Seeding database...${force ? ' (forced)' : ''}\n`);
+    await ensureSystemTemplatesSeeded(db, console.log, { force });
     console.log('🎉 Database seeded successfully!');
   } catch (error) {
     console.error('❌ Error seeding database:', error);

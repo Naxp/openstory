@@ -7,10 +7,17 @@
  * (see scripts/migrate-local-d1.ts). This script writes each migration to
  * `drizzle/migrations-wrangler/<timestamp>_<name>.sql` (gitignored, rebuilt
  * from scratch on every run), so the nested directory stays the single
- * source of truth. Lexicographic filename order == chronological order,
- * which is the order wrangler applies and records them in `d1_migrations`.
+ * source of truth.
  *
- * Run automatically by the `deploy` and `db:migrate:prd` package scripts.
+ * Ordering: wrangler sorts unapplied migrations by NUMERIC filename prefix
+ * (parseInt of the segment before the first underscore), and records applied
+ * ones by full filename in `d1_migrations`. drizzle's fixed-width 14-digit
+ * timestamps make numeric and lexicographic order coincide — keep that
+ * prefix shape for any hand-named migration (a non-numeric prefix sorts as
+ * NaN). src/lib/db/migrations-layout.test.ts pins this.
+ *
+ * Run by the `deploy` and `db:migrate:prd` package scripts, and directly by
+ * the PR-preview migrate step in .github/workflows/deploy-cloudflare.yml.
  */
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
@@ -24,6 +31,17 @@ const migrationDirs = readdirSync(SOURCE_DIR, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && entry.name !== 'meta')
   .map((entry) => entry.name)
   .sort();
+
+// Zero migrations means the layout changed (drizzle-kit has reshuffled its
+// emit format across majors) or the checkout is broken. Exiting 0 here would
+// let `wrangler d1 migrations apply` report "no migrations to apply" and the
+// deploy go green against an unmigrated database — the exact failure this
+// script exists to prevent.
+if (migrationDirs.length === 0) {
+  throw new Error(
+    `[flatten-migrations] no migration folders found in ${SOURCE_DIR} — did drizzle-kit's output layout change?`
+  );
+}
 
 const missing = migrationDirs.filter(
   (dir) => !existsSync(join(SOURCE_DIR, dir, 'migration.sql'))
