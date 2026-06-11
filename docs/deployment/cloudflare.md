@@ -7,6 +7,20 @@ order: 10
 
 OpenStory deploys to Cloudflare Workers, using D1 (SQLite) for the database and R2 for media storage.
 
+## One-Click Deploy
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/openstory-so/openstory)
+
+The deploy button clones the repo into your GitHub/GitLab account, provisions the resources declared in `wrangler.jsonc`, prompts for the secrets listed in `.dev.vars.example`, and sets up CI for your copy.
+
+The created repo is an independent clone, not a fork — there's no upstream link for GitHub's "Sync fork" button. To pull future OpenStory updates into a button-deployed copy, add the upstream remote manually (`git remote add upstream https://github.com/openstory-so/openstory && git pull upstream main`). If you'd rather start from a real fork, fork on GitHub first, then connect the fork to [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) in the Cloudflare dashboard (or deploy from a local clone with `bun setup --prod`).
+
+AI keys (`FAL_KEY`, `OPENROUTER_KEY`) are deliberately not part of the deploy prompts — every field in that dialog is mandatory, and a placeholder value would be worse than none. Add them after deploy, either per team in the app (Settings → API Keys) or server-wide with `wrangler secret put`.
+
+## Guided Setup
+
+From your own clone, `bun setup --prod` walks through everything interactively: production env vars (`.env.production`), R2 domains + CORS, optional services, pushing secrets to Cloudflare and GitHub, and the first deploy. `bun setup --deploy` re-runs just the secrets-push + deploy phase, and `bun setup --pr-preview` pushes preview secrets to the GitHub `staging` environment used by PR preview deploys.
+
 ## Prerequisites
 
 - A [Cloudflare](https://cloudflare.com) account
@@ -29,10 +43,7 @@ The Worker entry point is `src/server.ts` with `nodejs_compat` enabled.
 # Generate Worker types from wrangler.jsonc
 bun cf:typegen
 
-# Build for Cloudflare (sets BUILD_CLOUDFLARE=1 so Vite uses the Cloudflare preset)
-bun cf:build
-
-# Deploy to production (runs cf:build then `wrangler deploy`)
+# Deploy to production (typegen, CLOUDFLARE_ENV=production build, wrangler deploy)
 bun cf:deploy:prd
 ```
 
@@ -56,9 +67,7 @@ Secrets are pushed to the Worker via `wrangler secret bulk`. The full list is de
 | `BETTER_AUTH_SECRET`                        | Better Auth signing secret                                                            |
 | `VITE_APP_URL`                              | Public URL of the deployment                                                          |
 | `FAL_KEY`                                   | fal.ai API key for image/video generation                                             |
-| `QSTASH_TOKEN`                              | QStash token for workflow execution                                                   |
-| `QSTASH_CURRENT_SIGNING_KEY`                | QStash request verification                                                           |
-| `QSTASH_NEXT_SIGNING_KEY`                   | QStash request verification (rotation)                                                |
+| `OPENROUTER_KEY`                            | OpenRouter API key for LLM script analysis                                            |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials                                                              |
 | `EMAIL_FROM`                                | Sender address for transactional email (domain onboarded in Cloudflare Email Service) |
 

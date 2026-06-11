@@ -4,8 +4,6 @@
  *   bun scripts/db-worktree.ts --fork      # main repo  → current worktree
  *   bun scripts/db-worktree.ts --promote   # current worktree → main repo
  *
- * Wired up as `bun db:fork:local` and `bun db:promote:local`.
- *
  * Use --fork right after `git worktree add` so the new worktree starts with the
  * same D1 schema + data as your main checkout (no re-migrate, no re-seed). Use
  * --promote when you've built up useful state inside a worktree and want it to

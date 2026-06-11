@@ -13,7 +13,8 @@ import { defineConfig } from 'drizzle-kit';
  * hash. We mirror that derivation so Studio opens the exact file the worker
  * reads/writes — no out-of-band sync.
  *
- * Honors `CLOUDFLARE_ENV=test` so `bun db:studio:test` targets [env.test]'s D1.
+ * Honors `CLOUDFLARE_ENV=test` (`CLOUDFLARE_ENV=test bun db:studio:local`)
+ * to target [env.test]'s D1.
  *
  * Hash source: miniflare's `durableObjectNamespaceIdFromName` with
  * uniqueKey = `miniflare-D1DatabaseObject`.

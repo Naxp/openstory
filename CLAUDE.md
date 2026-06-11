@@ -6,7 +6,7 @@ AI-powered video sequence platform built with TanStack Start, deployed to Cloudf
 
 ```bash
 # Dev
-bun dev                            # All-in-one: DB migrate + seed, Vite (Workerd via cf-plugin)
+bun dev                            # All-in-one: env bootstrap, DB migrate + seed, Vite (Workerd via cf-plugin), Stripe listener
 bun storybook                      # Storybook on :6006
 bun db:studio:local                # Inspect local D1 tables (wrangler d1 execute)
 
@@ -44,7 +44,7 @@ bun cf:dev                         # wrangler dev against built worker (preview)
 bun cf:deploy:prd                  # Cloudflare Workers production deploy
 ```
 
-`bun dev` runs vite dev (cf-plugin → Workerd via Miniflare, port 3000) alongside the Stripe listener. The app runs in **Workerd locally** — same runtime as production — so D1, R2 bindings, **Cloudflare Workflows**, env.\* access, and request lifecycle all match prod. No QStash/Docker needed: workflows execute in-process in Workerd.
+`bun dev` runs vite dev (cf-plugin → Workerd via Miniflare, port 3000) alongside the Stripe listener (skipped without `STRIPE_SECRET_KEY`). Its first step (`scripts/ensure-env.ts`) creates `.env.local` with generated secrets if missing, so a fresh clone needs only `bun install && bun dev`. The app runs in **Workerd locally** — same runtime as production — so D1, R2 bindings, **Cloudflare Workflows**, env.\* access, and request lifecycle all match prod. No QStash/Docker needed: workflows execute in-process in Workerd.
 
 **Bun-as-launcher pattern:** `bun script.ts` (no `--bun`) keeps Bun as the CLI launcher but executes under **Node**, while still autoloading `.env*`. Use `bun --env-file=<path>` to override the default `.env.local`. No `--bun` flag should appear in package.json scripts.
 
@@ -93,8 +93,9 @@ teams
 
 ```bash
 bun install
-bun setup                          # Auto-configure local dev (SQLite + secrets)
-bun db:setup                       # Migrate + seed database
+bun dev                            # That's it — env, migrations, seed all happen on first run
+bun setup                          # Optional: add FAL_KEY / OPENROUTER_KEY interactively
+bun setup --prod                   # Production config + deploy (--deploy, --pr-preview also available)
 ```
 
 **Branch + commit conventions:** Branches must be named `<issue-number>-feature-name` (e.g. `393-improve-readme`). Lefthook extracts the issue number and tags commits with `#<issue>` automatically. See `CONTRIBUTING.md`. Lefthook also runs quality checks pre-commit.
@@ -234,13 +235,13 @@ bun db:migrate   # Apply migrations to local.db
 - **ULID** primary keys (not UUID).
 - **Typed JSONB:** `frame.metadata` typed as `Scene`.
 
-### wrangler.jsonc env layout + `@cloudflare/vite-plugin` remoteBindings footgun — READ BEFORE TOUCHING EITHER
+### wrangler.jsonc env layout — READ BEFORE TOUCHING
 
-**The footgun.** `@cloudflare/vite-plugin` defaults `remoteBindings: true`. With Cloudflare credentials present, that auto-routes bindings to real Cloudflare — `bun dev` writes can land in prod D1 / prod R2. We've been bitten by this already (Better Auth verification rows leaking to `openstory-prd` D1 mid-#755).
+**Why the env split exists.** Remote bindings are **opt-in per binding** in current wrangler/`@cloudflare/vite-plugin` (`"remote": true`); local dev simulates everything in Miniflare by default. But the split is not just a remote-bindings guard — each block has its own job (see below), and historically the plugin DID default remote bindings on, which leaked Better Auth verification rows into `openstory-prd` D1 mid-#755. The placeholder-id strategy keeps that incident class impossible even if a plugin default flips again or someone runs a `--remote` command against the dev config.
 
 **The structure.** `wrangler.jsonc` separates dev from prod via env blocks:
 
-- **default** (no env) — used by `bun dev` / `vite dev`. D1 binding has a **placeholder** `database_id: "dev-local-d1"` so even if cf-plugin promotes it remote, it 404s against Cloudflare rather than silently writing to prod. R2 buckets are **local Miniflare** too — reads are served by the worker's `/r2/$` route because `getPublicUrl()` falls back to `${VITE_APP_URL}/r2/<key>` when `R2_PUBLIC_STORAGE_DOMAIN` is unset. Local dev needs no Cloudflare credentials. (Opt back into remote R2 by setting `"remote": true` on the binding + `R2_PUBLIC_STORAGE_DOMAIN` in `.env.local`; revert when done.)
+- **default** (no env) — triple duty: (1) `bun dev` / `vite dev` / `bun cf:dev` local simulation, (2) the patch base for PR-preview deploys (CI rewrites D1/bucket/workflow names in place), and (3) the provisioning template for Deploy-to-Cloudflare button deploys — its `database_name`/`bucket_name` are what a button user's fresh resources get called, and `tail_consumers` must stay `[]` so button deploys don't reference our log-forwarder Worker. The D1 binding has a **placeholder** `database_id: "dev-local-d1"` so any misrouted remote call (or buggy preview patch, or wrong-env deploy) 404s against Cloudflare rather than silently writing to prod. R2 buckets are **local Miniflare** too — reads are served by the worker's `/r2/$` route because `getPublicUrl()` falls back to `${VITE_APP_URL}/r2/<key>` when `R2_PUBLIC_STORAGE_DOMAIN` is unset. Local dev needs no Cloudflare credentials. (Opt back into remote R2 by setting `"remote": true` on the binding + `R2_PUBLIC_STORAGE_DOMAIN` in `.env.local`; revert when done.)
 - **`[env.production]`** — real prod D1 (`database_id: d6a35f64-...`). Production deploys MUST use `wrangler deploy --env=production` (already wired in `cf:deploy:prd`).
 - **`[env.test]`** — Playwright e2e. Local Miniflare D1 (`database_id: "openstory-test-local"`) AND local Miniflare R2 — fully hermetic, no Cloudflare credentials in CI. Activated via `CLOUDFLARE_ENV=test` (set in `playwright.config.ts` envPrefix and CI workflow env block) for `vite dev`, or `wrangler dev --env=test` for the built-server path.
 
