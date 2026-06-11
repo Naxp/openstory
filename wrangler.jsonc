@@ -3,11 +3,15 @@
   "main": "./src/server.ts",
   "name": "openstory",
   "compatibility_date": "2025-11-18",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "triggers": {
     // Sweep stuck generating-status rows every 5 minutes. See
     // src/lib/cron/reconcile-all.ts and issue #727.
-    "crons": ["*/5 * * * *"],
+    "crons": [
+      "*/5 * * * *"
+    ],
   },
   "observability": {
     "enabled": true,
@@ -258,9 +262,21 @@
   // inherited across env blocks, so they are redeclared in [env.production] and
   // [env.test] below.
   "durable_objects": {
-    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+    "bindings": [
+      {
+        "name": "REALTIME",
+        "class_name": "RealtimeChannel"
+      }
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] }],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "RealtimeChannel"
+      ]
+    }
+  ],
   "env": {
     // Production deploy target. @cloudflare/vite-plugin selects the env at
     // BUILD time via CLOUDFLARE_ENV — `cf:deploy:prd` sets
@@ -289,7 +305,7 @@
           // create fresh → run all migrations → import data → update the
           // name + id here.
           "database_name": "openstory-prd",
-          "database_id": "d6a35f64-abb0-4a34-a092-dc20b29f5812",
+          "database_id": "d5981bee-ef84-4006-b585-d1f2ebc81114",
           "migrations_dir": "drizzle/migrations-wrangler",
         },
       ],
@@ -472,17 +488,33 @@
       // are non-inheritable across env blocks. Keep the `v1` migration tag in
       // sync with the top-level block.
       "durable_objects": {
-        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel"
+          }
+        ],
       },
       "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
+        {
+          "tag": "v1",
+          "new_sqlite_classes": [
+            "RealtimeChannel"
+          ]
+        },
       ],
       "triggers": {
-        "crons": ["*/5 * * * *"],
+        "crons": [
+          "*/5 * * * *"
+        ],
       },
       // Same forwarder as the top-level default — redeclared because
       // tail_consumers is non-inheritable across env blocks.
-      "tail_consumers": [{ "service": "openstory-log-forwarder-prd" }],
+      "tail_consumers": [
+        {
+          "service": "openstory-log-forwarder-prd"
+        }
+      ],
     },
     // Playwright e2e environment. D1 AND R2 are local (Miniflare) for
     // hermetic runs — no remote bindings, so no Cloudflare credentials are
@@ -705,10 +737,20 @@
       // are non-inheritable across env blocks. Keep the `v1` migration tag in
       // sync with the top-level block.
       "durable_objects": {
-        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel"
+          }
+        ],
       },
       "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
+        {
+          "tag": "v1",
+          "new_sqlite_classes": [
+            "RealtimeChannel"
+          ]
+        },
       ],
       // Explicit empty array opts out of inheritance and silences wrangler's
       // "tail_consumers not on env.test" warning. We don't want e2e runs
