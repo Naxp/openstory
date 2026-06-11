@@ -18,6 +18,7 @@ import {
   StyleSampleVideoSchema,
   type StyleSampleVideo,
 } from '@/lib/db/schema/libraries';
+import { GENERATED_STYLE_BRIEFS } from '@/lib/style/style-briefs.generated';
 import { styleSlug } from '@/lib/style/style-slug';
 
 /** A single curated shot, flattened into script prose via `beatsToScript`. */
@@ -94,57 +95,30 @@ export const CATEGORY_BRIEFS: Record<string, string> = {
 };
 
 /**
- * Per-style brief overrides (keyed by style slug), consulted before
- * `CATEGORY_BRIEFS`. Primarily the nine film genres: they share
- * `category: 'film'` but need genre-specific events — the style config only
- * shapes the LOOK at image time, not what happens in the script.
+ * Per-style brief overrides (keyed by style slug), consulted BEFORE the
+ * generated per-style briefs (`style-briefs.generated.ts`) and the category
+ * fallback. The generated briefs now cover every style on-style, so this map
+ * holds ONLY the three single-shot styles: their real render is the verbatim
+ * `CANONICAL_SCRIPT_OVERRIDES` below; the entry here is only the review-tool
+ * BRIEF label, kept matching so it doesn't show the generated multi-cut text.
+ *
+ * (We deliberately do NOT soften content here — e.g. the generated `action` /
+ * `western-epic` briefs render verbatim so we can see what the model actually
+ * does, rather than pre-empting the content checker.)
+ *
+ * `documentary` ships a full hand-written script via CANONICAL_SCRIPT_OVERRIDES
+ * (`enhance: 'off'`), so it needs no brief here.
  */
 export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
-  action:
-    'a rooftop chase at night — a wiry man in his 30s in a battered jacket vaults between buildings clutching a stolen drive, a pursuit drone closing in, ending with a leap off the roof edge',
-  'western-epic':
-    'a horseback ride across open desert at golden hour — a woman in a dust-caked duster coat gallops through a canyon as a dust storm rises behind her, and clears a wide ravine in a single soaring leap',
-  'sci-fi-futuristic':
-    'an escape from a docking bay — a woman pilot in a flight suit sprints to her ship as blast doors close, slides under at the last second, and the ship tears away from the station',
-  'neo-noir-thriller':
-    'a rain-soaked double-cross — a briefcase handoff in an alley goes wrong, a man in a long trench coat bolts through neon-lit traffic, and the case bursts open scattering cash in the rain',
-  'horror-gothic':
-    'a candlelit flight through a derelict manor — a young woman in a white nightgown runs down a corridor as doors slam behind her, reaches the grand staircase, and the candle blows out',
-  'rom-com':
-    'a missed-train almost-kiss — a woman in a yellow coat sprints across the platform, a man in a grey suit holds the doors, and the train pulls away with both of them inside, laughing',
-  'award-season':
-    'a wordless reunion — a man in military uniform steps off a bus in the rain, his young daughter breaks from the crowd and runs to him, and he drops his bag to lift her up',
-  pastel:
-    'a symmetrical hotel caper — a young man in a crimson bellhop uniform wheels a squeaky luggage cart down a long corridor, a cat leaps aboard, and matching doors open in sequence as the cart accelerates toward the lobby',
-  // Not a film genre — overrides the shared `commercial` brief because its
-  // dark-warehouse + body-close-crimson default kept tripping the video
-  // content checker; a brighter, full-figure motion study renders cleanly.
-  'fashion-editorial':
-    'a high-fashion motion study in a bright minimalist studio — a woman model in a structured emerald gown strides across the open space, the fabric lifting and rippling with each step, then turns sharply as studio strobes flare and freeze her mid-movement',
-  // Styles whose shared category brief handed them the wrong content (grok
-  // flagged a subject/action mismatch — e.g. a still-life style got a "sprint
-  // through a warehouse"). Each is matched to the style's intent, with one
-  // genuine motion beat per scene so it still honors the enhancer's motion rule.
-  'luxury-still':
-    'a boutique still-life launch for a single craft object — light sweeps slowly across a hand-thrown ceramic bottle on dark stone, two hands enter and turn it a quarter-rotation into the light, then set it down as a last ribbon of light crosses the rim',
+  // Single-shot review labels — the verbatim render lives in
+  // CANONICAL_SCRIPT_OVERRIDES; kept matching so the review BRIEF isn't the
+  // generated multi-cut text.
   'mood-only-frames':
-    'a mood-treatment lookbook in three atmospheric beats — smoke curls up through a hard shaft of light, a sheer curtain breathes inward on a draft, and a neon reflection ripples across wet night pavement',
-  'alcohol-pour':
-    'a slow-motion spirits pour — amber whisky streams from a tilted bottle into a crystal glass over a single clear ice sphere, the splash crowning in slow motion, condensation beading down the glass as the last drops fall',
+    'a single continuous mood frame in one charcoal-and-amber palette — incense smoke curls up through a hard diagonal shaft of light as it slowly intensifies, one unbroken locked shot, no scene change',
   '360-turntable':
-    'a 360 turntable product pass — a pair of premium wireless earbuds in an open charging case rotates a full slow revolution on a seamless white pedestal, light tracking across the metal hinge and matte shell as it turns to face the camera',
-  'returns-friendly-diagnostic':
-    'an honest product diagnostic — a hand sets a leather crossbody bag beside a ruler and a phone for scale, opens the main zip to show the lined interior, then turns it to reveal the adjustable strap and stitched seams in close detail',
-  'automotive-showroom':
-    'a showroom car reveal — a single silver coupe sits on a polished dealership floor as the overhead lights warm up across the hood, the camera tracks slowly down the flank catching the reflection, and a door swings open to show the cabin',
-  'fintech-explainer':
-    'a fintech savings explainer — a young woman checks her phone as a clean savings dashboard animates a balance ticking upward, a soft card flips to reveal a completed goal, and she exhales with a small relieved smile',
-  'saas-product-demo':
-    'a SaaS product demo — a cursor glides across a crisp project dashboard, a new task card snaps into a column and its status toggles to done, then the view zooms to a clean analytics chart filling in as the data lands',
+    'a single continuous 360 turntable pass — one pair of premium wireless earbuds in an open charging case makes one unbroken slow revolution on a seamless white pedestal, the same case throughout, no cuts',
   'restaurant-menu-hero':
-    'a signature-dish hero — two hands lower a final garnish onto a plated dish, a ladle pours glossy sauce that pools and spreads across the plate, and steam curls up as the plate turns slowly to camera',
-  // `documentary` ships a full hand-written script via
-  // CANONICAL_SCRIPT_OVERRIDES (enhance: 'off'), so no brief here.
+    'a single continuous signature-dish hero — one unbroken overhead shot as a ladle pours glossy amber jus across a plated sliced duck breast and a hand lowers a final micro-herb garnish, the same dish throughout, no cuts',
 };
 
 /**
@@ -155,8 +129,17 @@ export function briefForStyle(style: {
   name: string;
   category: string | null;
 }): string {
-  const override = STYLE_BRIEF_OVERRIDES[styleSlug(style.name)];
+  const slug = styleSlug(style.name);
+  // Hand-written overrides (film genres + the single-shot product fixes) win.
+  const override = STYLE_BRIEF_OVERRIDES[slug];
   if (override) return override;
+  // Then the per-style brief derived from this style's OWN description+config
+  // (generate-style-briefs.ts) — replaces the too-coarse category bucket that
+  // gave e.g. the "Car Talk" driving-monologue style a product-unboxing brief.
+  const generated = GENERATED_STYLE_BRIEFS[slug];
+  if (generated) return generated;
+  // Category brief is the last-resort fallback (only hit by a new style not yet
+  // in the generated set).
   const brief = style.category ? CATEGORY_BRIEFS[style.category] : undefined;
   if (!brief) {
     throw new Error(
@@ -187,6 +170,28 @@ export const CANONICAL_SCRIPT_OVERRIDES: Record<
       'Handheld close shot: her hands plane the spruce top of an unfinished violin, pale wood shavings curling away from the blade, dust drifting in the window light.\n\n' +
       'Cut to: a handheld medium close-up. Elena lifts the unvarnished violin body to the window light and turns it slowly, checking the curve of the arching with her thumb.\n\n' +
       'Cut to: a wide shot. Elena sits back on her stool, the violin resting on her knee, and looks at it in silence — the workshop quiet around her, morning light across the bench.',
+  },
+  // Single-hero-object styles. With NO recurring person to anchor, the
+  // character-bible can't keep the product consistent, so multi-scene versions
+  // morphed the hero object across cuts (earbuds→briefcase, duck→a different
+  // duck, smoke→an unrelated street). Written as continuous prose with NO cut
+  // markers so the splitter keeps them to ONE scene → one image → nothing to
+  // morph between. (Brief copies live in STYLE_BRIEF_OVERRIDES for the review
+  // label only; these scripts are what render, verbatim.)
+  '360-turntable': {
+    enhancedScript:
+      'A premium product turntable shot. A single pair of matte-black wireless earbuds nestled in their open charging case, centered on a seamless white pedestal under soft, even three-point studio light, the brushed-metal hinge catching one clean specular highlight. ' +
+      'In one continuous, unbroken locked-camera shot the turntable rotates the case through a single slow full revolution — the very same case throughout, its matte shell and the two earbuds never changing shape or finish — the traveling highlight sweeping across the hinge and lid as each face turns to camera and the case settles back exactly where it began. No cuts, no scene change, one steady rotation.',
+  },
+  'restaurant-menu-hero': {
+    enhancedScript:
+      'A signature-dish restaurant hero shot. A sliced duck breast fanned in five even pieces over a single swipe of glossy amber jus on a matte charcoal ceramic plate, lit by warm directional restaurant light, shallow depth of field. ' +
+      'In one continuous, unbroken overhead shot a ladle pours a thin ribbon of that same amber jus, which pools and spreads slowly across the plate, fine steam curling upward, as a single hand lowers one last micro-herb garnish onto the duck and the plate turns a few degrees to camera — the same dish the whole time, the duck slices, the amber sauce colour and the garnish never changing. No cuts, no second dish, one held shot.',
+  },
+  'mood-only-frames': {
+    enhancedScript:
+      'A single atmospheric mood frame in a charcoal-and-amber palette. A dark, near-empty room with one hard diagonal shaft of warm light falling across suspended dust; a slow ribbon of incense smoke rises into the beam. ' +
+      'In one continuous, unbroken locked shot the smoke twists and blooms upward as the light gradually intensifies and a sheer curtain at the edge of frame breathes inward on a faint draft — the same room and the same palette throughout, pure evolving mood. No cuts, no scene change, no figures.',
   },
 };
 

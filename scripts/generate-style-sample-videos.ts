@@ -94,7 +94,8 @@ const OPENSTORY_API_KEY = process.env.OPENSTORY_API_KEY;
 const clipProgress = { done: 0, total: 0 };
 
 type Flags = {
-  filter: string | null;
+  /** Style names/slugs to include; empty = all. `--filter` accepts a comma list. */
+  filters: string[];
   canonicalOnly: boolean;
   bespokeOnly: boolean;
   heroOnly: boolean;
@@ -105,8 +106,14 @@ type Flags = {
 
 function parseFlags(argv: string[]): Flags {
   const filterIdx = argv.findIndex((a) => a === '--filter');
+  const filterRaw = filterIdx >= 0 ? (argv[filterIdx + 1]?.trim() ?? '') : '';
   return {
-    filter: filterIdx >= 0 ? (argv[filterIdx + 1]?.trim() ?? null) : null,
+    filters: filterRaw
+      ? filterRaw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
     canonicalOnly: argv.includes('--canonical-only'),
     bespokeOnly: argv.includes('--bespoke-only'),
     heroOnly: argv.includes('--hero-only'),
@@ -136,10 +143,11 @@ type RenderJob = {
 };
 
 function buildJobs(flags: Flags): RenderJob[] {
+  const filterSet = flags.filters.length ? new Set(flags.filters) : null;
   const jobs: RenderJob[] = [];
   for (const style of DEFAULT_STYLE_TEMPLATES) {
     const slug = styleSlug(style.name);
-    if (flags.filter && flags.filter !== style.name && flags.filter !== slug) {
+    if (filterSet && !filterSet.has(style.name) && !filterSet.has(slug)) {
       continue;
     }
     const bespoke = BESPOKE_SCRIPTS[slug];
@@ -477,9 +485,12 @@ function printDryRun(jobs: RenderJob[]) {
         `video:${IMAGE_TO_VIDEO_MODELS[first.videoModel].name}, ${first.aspectRatio}`
     );
     for (const job of styleJobs) {
+      const scriptOverride = CANONICAL_SCRIPT_OVERRIDES[job.slug];
       const detail =
         job.kind === 'canonical'
-          ? `brief: "${job.brief}" → ~${job.plannedScenes} scenes (platform-enhanced)`
+          ? scriptOverride
+            ? `verbatim single-shot script, enhance:off — "${job.brief}"`
+            : `brief: "${job.brief}" → ~${job.plannedScenes} scenes (platform-enhanced)`
           : `${job.plannedScenes} curated beats`;
       console.log(`    ${job.kind}: ${detail} × ${NOMINAL_BEAT_SECONDS}s`);
     }

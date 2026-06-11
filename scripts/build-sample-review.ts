@@ -69,7 +69,10 @@ function discoverSets(): { dir: string; label: string }[] {
   return readdirSync(ROOT)
     .filter((d) => d === 'sample-videos' || d.startsWith('sample-videos-v'))
     .filter((d) => {
-      // Skip near-empty sets (e.g. v3/v4 partial test runs) — need a real column.
+      // The live `sample-videos` set is always a column (the "cur" / newest),
+      // even when it holds just a handful of freshly re-rendered fixes.
+      if (d === 'sample-videos') return true;
+      // Skip near-empty versioned sets (e.g. v3/v4 partial test runs).
       const inner = path.join(ROOT, d);
       try {
         const count = readdirSync(inner).filter((slug) =>
@@ -99,7 +102,9 @@ type Cell = {
   score: number | null;
   note: string | null;
   script: string | null;
-  judges: JudgeScore[] | null;
+  judges: JudgeScore[];
+  /** True when this set has its own multi-judge files → render the full block. */
+  multi: boolean;
 };
 
 type StyleRow = {
@@ -122,27 +127,49 @@ function main(): void {
     process.exit(1);
   }
 
-  // Per-set flash scores.
-  const setScores = new Map<string, Map<string, ScoreEntry>>();
+  // Scores are stored PER SET inside that set's own dir, so re-scoring one set
+  // can never clobber another:
+  //   flash:               <setdir>/eval-scores.json
+  //   gemini-pro/grok/…:   <setdir>/eval-judges/<judge>.json
+  const JUDGES: { judge: string; file: (dir: string) => string }[] = [
+    { judge: 'flash', file: (d) => path.join(ROOT, d, 'eval-scores.json') },
+    {
+      judge: 'gemini-pro',
+      file: (d) => path.join(ROOT, d, 'eval-judges', 'gemini-pro.json'),
+    },
+    {
+      judge: 'grok',
+      file: (d) => path.join(ROOT, d, 'eval-judges', 'grok.json'),
+    },
+    {
+      judge: 'sonnet',
+      file: (d) => path.join(ROOT, d, 'eval-judges', 'claude.json'),
+    },
+    {
+      judge: 'opus',
+      file: (d) => path.join(ROOT, d, 'eval-judges', 'opus.json'),
+    },
+  ];
+  // Per set: each judge's slug→score map, plus whether it has any non-flash
+  // judge file (→ render the full multi-judge block rather than flash alone).
+  const setJudges = new Map<
+    string,
+    { judge: string; scores: Map<string, ScoreEntry> }[]
+  >();
+  const setHasMulti = new Map<string, boolean>();
   for (const s of sets) {
-    setScores.set(
+    setJudges.set(
       s.label,
-      loadCanonicalScores(path.join(ROOT, s.dir, 'eval-scores.json'))
+      JUDGES.map((j) => ({
+        judge: j.judge,
+        scores: loadCanonicalScores(j.file(s.dir)),
+      }))
+    );
+    setHasMulti.set(
+      s.label,
+      JUDGES.some((j) => j.judge !== 'flash' && existsSync(j.file(s.dir)))
     );
   }
-
-  // Multi-judge scores for the current set (eval-judges/<judge>/).
-  const JUDGE_DIRS: { judge: string; dir: string }[] = [
-    { judge: 'flash', dir: 'sample-videos' },
-    { judge: 'gemini-pro', dir: 'eval-judges/gemini-pro' },
-    { judge: 'grok', dir: 'eval-judges/grok' },
-    { judge: 'sonnet', dir: 'eval-judges/claude' },
-    { judge: 'opus', dir: 'eval-judges/opus' },
-  ];
-  const judgeScores = JUDGE_DIRS.map((j) => ({
-    judge: j.judge,
-    scores: loadCanonicalScores(path.join(ROOT, j.dir, 'eval-scores.json')),
-  }));
   const curLabel = sets[sets.length - 1]?.label ?? 'cur';
 
   const styles: StyleRow[] = DEFAULT_STYLE_TEMPLATES.map((style) => {
@@ -150,25 +177,25 @@ function main(): void {
     const cells: Cell[] = sets.map((s) => {
       const videoFull = path.join(ROOT, s.dir, slug, 'canonical.mp4');
       const has = existsSync(videoFull);
-      const score = setScores.get(s.label)?.get(slug) ?? null;
-      const isCur = s.label === curLabel;
-      const judges: JudgeScore[] | null = isCur
-        ? judgeScores.map((j) => {
-            const e = j.scores.get(slug);
-            return {
-              judge: j.judge,
-              overall: e?.overall ?? null,
-              note: e?.note ?? null,
-            };
-          })
-        : null;
+      const perSet = setJudges.get(s.label) ?? [];
+      const flash =
+        perSet.find((j) => j.judge === 'flash')?.scores.get(slug) ?? null;
+      const judges: JudgeScore[] = perSet.map((j) => {
+        const e = j.scores.get(slug);
+        return {
+          judge: j.judge,
+          overall: e?.overall ?? null,
+          note: e?.note ?? null,
+        };
+      });
       return {
         set: s.label,
         video: has ? path.relative(ROOT, videoFull) : null,
-        score: score?.overall ?? null,
-        note: score?.note ?? null,
+        score: flash?.overall ?? null,
+        note: flash?.note ?? null,
         script: readScript(s.dir, slug),
         judges,
+        multi: setHasMulti.get(s.label) ?? false,
       };
     });
     return {
@@ -295,9 +322,9 @@ function render() {
     const el = document.createElement('div');
     el.className = 'style';
     const cur = s.cells.find(c => c.set === DATA.curLabel);
-    const gradeTxt = cur && cur.judges
+    const gradeTxt = cur && cur.multi
       ? cur.judges.filter(j=>j.overall!=null).map(j => j.judge[0] + ':' + j.overall).join('  ')
-      : '';
+      : (cur && cur.score != null ? 'f:' + cur.score : '');
     el.innerHTML =
       '<div class="head"><span class="name">'+esc(s.name)+'</span>'
       + '<span class="cat">'+esc(s.category)+'</span>'
@@ -321,7 +348,7 @@ function cellEl(s, c, mark) {
   const jrow = (label, overall, note) =>
     '<div class="jrow"><b>'+esc(label)+'</b> '+(overall==null?'—':overall)
     + (note ? ' <span class="jnote">'+esc(note)+'</span>' : '')+'</div>';
-  const scoreBlock = (c.set === DATA.curLabel && c.judges)
+  const scoreBlock = c.multi
     ? '<div class="judges">'+c.judges.map(j=>jrow(j.judge, j.overall, j.note)).join('')+'</div>'
     : '<div class="judges">'+jrow('flash', c.score, c.note)+'</div>';
   d.innerHTML =
