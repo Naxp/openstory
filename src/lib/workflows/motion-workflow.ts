@@ -340,6 +340,24 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
       // thrown) so the loop owns the retry; a non-content 422 stays a hard
       // stop; anything else throws for CF's per-step retry.
       const submitOutcome = await step.do(`submit-motion${tag}`, async () => {
+        // Surface the same-model content-flag re-roll (#881) as in-flight retry
+        // state so the scenes UI shows "Retrying (N/3)…" instead of a spinner
+        // indistinguishable from a hang (#882). `attempt` is 0-indexed; show it
+        // 1-based.
+        if (attempt > 0 && input.frameId && input.sequenceId) {
+          await getGenerationChannel(input.sequenceId).emit(
+            'generation.video:progress',
+            {
+              frameId: input.frameId,
+              status: 'generating',
+              phase: 'retrying',
+              attempt: attempt + 1,
+              maxAttempts: MAX_MOTION_ATTEMPTS,
+              model,
+              variantOnly: input.variantOnly,
+            }
+          );
+        }
         try {
           const job = await submitMotionJob({
             imageUrl: startImageUrl,

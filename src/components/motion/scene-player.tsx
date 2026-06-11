@@ -59,6 +59,11 @@ type ScenePlayerProps = {
    */
   modelMismatchLabel?: string | null;
   progressMessage?: string;
+  /**
+   * In-flight retry state for the selected frame (#882) — rendered as
+   * "Retrying (N/M)…" (or "Retrying…") in the player overlay.
+   */
+  retry?: { attempt: number; maxAttempts?: number };
   posterUrl?: string;
   onTimeUpdate?: (currentTime: number) => void;
   onEnded?: () => void;
@@ -76,6 +81,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   badgeMessage,
   modelMismatchLabel,
   progressMessage,
+  retry,
   posterUrl,
   onTimeUpdate,
   onEnded,
@@ -428,6 +434,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
                 : (currentFrame.videoStatus ?? null)
             }
             progressMessage={progressMessage}
+            retry={retry}
           />
           {badgeMessage && (
             <span className="absolute top-2 left-2 z-10 rounded bg-primary/80 px-2 py-1 text-xs font-medium text-primary-foreground backdrop-blur-sm">

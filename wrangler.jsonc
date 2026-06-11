@@ -31,11 +31,13 @@
   // PostHog log forwarder — receives every tail event from this Worker,
   // transforms our LogTape JSON lines into proper OTLP log records, and POSTs
   // them to PostHog's /i/v1/logs endpoint. The forwarder is its own Worker
-  // (workers/posthog-log-forwarder/) and must be deployed first. Previews are
-  // patched to use 'openstory-log-forwarder-stg' in deploy-cloudflare.yml.
-  // tail_consumers is NON-inheritable, so each env block below must
-  // redeclare it (or set [] to opt out).
-  "tail_consumers": [{ "service": "openstory-log-forwarder-prd" }],
+  // (workers/posthog-log-forwarder/) and must be deployed first.
+  // tail_consumers is NON-inheritable, so each env block declares its own:
+  // [env.production] uses the -prd forwarder, PR previews patch this default
+  // block to the -stg forwarder in deploy-cloudflare.yml, and the default
+  // stays empty so local dev and Deploy-to-Cloudflare button deploys don't
+  // reference a forwarder Worker that doesn't exist on the account.
+  "tail_consumers": [],
   // ─────────────────────────────────────────────────────────────────────────
   // DEFAULT env = local dev. The D1 here uses a placeholder `database_id` so
   // it can ONLY resolve to a local Miniflare D1 — there is no real Cloudflare
@@ -53,7 +55,13 @@
       "binding": "DB",
       "database_name": "openstory-dev",
       "database_id": "dev-local-d1",
-      "migrations_dir": "drizzle/migrations",
+      // Flat *.sql rendering of drizzle/migrations (which nests files as
+      // <dir>/migration.sql — wrangler silently reads zero of those). Built
+      // by `bun scripts/flatten-migrations.ts`; consumed by
+      // `wrangler d1 migrations apply` in the `deploy` / `db:migrate:prd`
+      // package scripts. Local dev/e2e apply migrations via drizzle-orm
+      // (scripts/migrate-local-d1.ts) and don't read this.
+      "migrations_dir": "drizzle/migrations-wrangler",
     },
   ],
   // Local-only R2 (Miniflare state in .wrangler/state). Reads are served by
@@ -250,9 +258,19 @@
   // inherited across env blocks, so they are redeclared in [env.production] and
   // [env.test] below.
   "durable_objects": {
-    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+    "bindings": [
+      {
+        "name": "REALTIME",
+        "class_name": "RealtimeChannel",
+      },
+    ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] }],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RealtimeChannel"],
+    },
+  ],
   "env": {
     // Production deploy target. @cloudflare/vite-plugin selects the env at
     // BUILD time via CLOUDFLARE_ENV — `cf:deploy:prd` sets
@@ -273,13 +291,16 @@
         {
           "binding": "DB",
           // `database_id` is authoritative — it's what wrangler binds and
-          // deploys against. `database_name` is just a label here, so we use
-          // the canonical `openstory-prd` (the underlying D1 with this id is
-          // still named `velro-prd` in the account from before the rename;
-          // rename it in the dashboard to match when convenient).
+          // deploys against (`database_name` is just a label, and wrangler
+          // requires the id; name-only resolution doesn't exist outside
+          // auto-provisioning). The underlying D1 is still the pre-rename
+          // `velro-prd` — D1 has NO rename, so the #897 cutover runbook
+          // (docs/deployment/cloudflare.md) recreates it as `openstory-prd`:
+          // create fresh → run all migrations → import data → update the
+          // name + id here.
           "database_name": "openstory-prd",
-          "database_id": "d6a35f64-abb0-4a34-a092-dc20b29f5812",
-          "migrations_dir": "drizzle/migrations",
+          "database_id": "d5981bee-ef84-4006-b585-d1f2ebc81114",
+          "migrations_dir": "drizzle/migrations-wrangler",
         },
       ],
       "r2_buckets": [
@@ -461,17 +482,29 @@
       // are non-inheritable across env blocks. Keep the `v1` migration tag in
       // sync with the top-level block.
       "durable_objects": {
-        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel",
+          },
+        ],
       },
       "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["RealtimeChannel"],
+        },
       ],
       "triggers": {
         "crons": ["*/5 * * * *"],
       },
       // Same forwarder as the top-level default — redeclared because
       // tail_consumers is non-inheritable across env blocks.
-      "tail_consumers": [{ "service": "openstory-log-forwarder-prd" }],
+      "tail_consumers": [
+        {
+          "service": "openstory-log-forwarder-prd",
+        },
+      ],
     },
     // Playwright e2e environment. D1 AND R2 are local (Miniflare) for
     // hermetic runs — no remote bindings, so no Cloudflare credentials are
@@ -514,7 +547,7 @@
           "binding": "DB",
           "database_name": "openstory-test",
           "database_id": "openstory-test-local",
-          "migrations_dir": "drizzle/migrations",
+          "migrations_dir": "drizzle/migrations-wrangler",
         },
       ],
       "r2_buckets": [
@@ -694,10 +727,18 @@
       // are non-inheritable across env blocks. Keep the `v1` migration tag in
       // sync with the top-level block.
       "durable_objects": {
-        "bindings": [{ "name": "REALTIME", "class_name": "RealtimeChannel" }],
+        "bindings": [
+          {
+            "name": "REALTIME",
+            "class_name": "RealtimeChannel",
+          },
+        ],
       },
       "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["RealtimeChannel"] },
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["RealtimeChannel"],
+        },
       ],
       // Explicit empty array opts out of inheritance and silences wrangler's
       // "tail_consumers not on env.test" warning. We don't want e2e runs

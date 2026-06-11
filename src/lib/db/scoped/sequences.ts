@@ -3,6 +3,7 @@
  * Team-scoped sequence CRUD and per-sequence update methods.
  */
 
+import { DEFAULT_VIDEO_MODEL } from '@/lib/ai/models';
 import {
   type AspectRatio,
   DEFAULT_ASPECT_RATIO,
@@ -28,7 +29,7 @@ type SequenceWithFrames = Sequence & {
   style: Style | null;
 };
 
-export function createSequencesReadMethods(db: Database, teamId: string) {
+function createSequencesReadMethods(db: Database, teamId: string) {
   return {
     list: async (): Promise<Sequence[]> => {
       return await db
@@ -114,7 +115,10 @@ export function createSequencesMethods(
         aspectRatio: params.aspectRatio ?? DEFAULT_ASPECT_RATIO,
         analysisModel: params.analysisModel,
         imageModel: params.imageModel,
-        videoModel: params.videoModel,
+        // The sequences SQL column default is the stale 'kling_v3_pro' (see
+        // schema/sequences.ts) and can't be changed without a D1 table
+        // rebuild, so default the app's choice here instead of relying on it.
+        videoModel: params.videoModel ?? DEFAULT_VIDEO_MODEL,
         musicModel: params.musicModel,
         autoGenerateMotion: params.autoGenerateMotion ?? false,
         autoGenerateMusic: params.autoGenerateMusic ?? false,
@@ -245,7 +249,7 @@ export function createSequencesMethods(
   };
 }
 
-export function createSequenceReadMethods(db: Database, sequenceId: string) {
+function createSequenceReadMethods(db: Database, sequenceId: string) {
   return {
     getMusicStatus: async () => {
       const [row] = await db

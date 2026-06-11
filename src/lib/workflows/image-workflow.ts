@@ -225,10 +225,31 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
     // same-model call; a deterministic content-checker hit exhausts the retries
     // and fails with its real message — recorded on the frame by onFailure and
     // surfaced in the failure banner.
-    const imageResult = await step.do('generate-image', async () => {
+    const imageResult = await step.do('generate-image', async (ctx) => {
       logger.info(
-        `[ImageWorkflow:cf] Generating image ${input.frameId} with model ${generationParams.model}`
+        `[ImageWorkflow:cf] Generating image ${input.frameId} with model ${generationParams.model} (attempt ${ctx.attempt})`
       );
+      // `ctx.attempt` is 1 on the first run and increments on each CF retry —
+      // surface that as in-flight retry state so the scenes UI shows
+      // "Retrying…" instead of an indistinguishable hung spinner (#882). No
+      // fixed denominator: this leans on CF's default retry budget (above), so
+      // `maxAttempts` reflects the resolved config when present, else is omitted.
+      if (ctx.attempt > 1 && input.frameId && input.sequenceId) {
+        await getGenerationChannel(input.sequenceId).emit(
+          'generation.image:progress',
+          {
+            frameId: input.frameId,
+            status: 'generating',
+            phase: 'retrying',
+            attempt: ctx.attempt,
+            ...(ctx.config.retries?.limit !== undefined && {
+              maxAttempts: ctx.config.retries.limit + 1,
+            }),
+            model: generationParams.model,
+            variantOnly: input.variantOnly,
+          }
+        );
+      }
       return generateImageWithProvider(generationParams, { scopedDb });
     });
 
