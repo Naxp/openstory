@@ -70,7 +70,7 @@ export const CATEGORY_BRIEFS: Record<string, string> = {
   corporate:
     'a brand film following one package across the world in three cuts — a warehouse robot lifts it, a cargo drone carries it through a storm, and a man in a courier uniform hands it over at a sunlit door',
   realestate:
-    'a luxury home tour that begins underwater in the infinity pool, surfaces at sunset, and glides through open glass doors into the living room as the lights come on',
+    'a luxury home tour at golden hour — an elegant woman in a flowing floor-length champagne gown walks through the property: across the terrace past the still infinity pool, in through the open glass doors, and into the living room as the pendant lights bloom on one by one',
   // Narrative film genres get per-style briefs in STYLE_BRIEF_OVERRIDES (a
   // shared "cinematic scene" brief enhanced into the same figure-standing-in-
   // rain mood piece for every genre — action had no action). This entry is
@@ -103,7 +103,7 @@ export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
   action:
     'a rooftop chase at night — a wiry man in his 30s in a battered jacket vaults between buildings clutching a stolen drive, a pursuit drone closing in, ending with a leap off the roof edge',
   'western-epic':
-    'a horseback pursuit across open desert — a hard-eyed woman in a dust-caked duster coat gallops through a canyon as a dust storm rises behind, and clears a ravine the pursuers refuse to jump',
+    'a horseback ride across open desert at golden hour — a woman in a dust-caked duster coat gallops through a canyon as a dust storm rises behind her, and clears a wide ravine in a single soaring leap',
   'sci-fi-futuristic':
     'an escape from a docking bay — a woman pilot in a flight suit sprints to her ship as blast doors close, slides under at the last second, and the ship tears away from the station',
   'neo-noir-thriller':
@@ -116,6 +116,11 @@ export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
     'a wordless reunion — a man in military uniform steps off a bus in the rain, his young daughter breaks from the crowd and runs to him, and he drops his bag to lift her up',
   pastel:
     'a symmetrical hotel caper — a young man in a crimson bellhop uniform wheels a squeaky luggage cart down a long corridor, a cat leaps aboard, and matching doors open in sequence as the cart accelerates toward the lobby',
+  // Not a film genre — overrides the shared `commercial` brief because its
+  // dark-warehouse + body-close-crimson default kept tripping the video
+  // content checker; a brighter, full-figure motion study renders cleanly.
+  'fashion-editorial':
+    'a high-fashion motion study in a bright minimalist studio — a woman model in a structured emerald gown strides across the open space, the fabric lifting and rippling with each step, then turns sharply as studio strobes flare and freeze her mid-movement',
   // `documentary` ships a full hand-written script via
   // CANONICAL_SCRIPT_OVERRIDES (enhance: 'off'), so no brief here.
 };
