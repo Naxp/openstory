@@ -127,15 +127,6 @@ describe('createAdapter routing (issue #895)', () => {
     expect(config.httpClient).toBeUndefined();
   });
 
-  it('treats a bare string key as an OpenRouter key (legacy overload)', () => {
-    createAdapter(MODEL, 'sk-or-legacy');
-
-    const { key, config } = lastKeyedCall();
-    expect(key).toBe('sk-or-legacy');
-    expect(config.serverURL).toBeUndefined();
-    expect(config.httpClient).toBeUndefined();
-  });
-
   it('lets OPENROUTER_BASE_URL (aimock) win over the fal proxy URL', () => {
     testEnv.OPENROUTER_BASE_URL = 'http://localhost:4010/v1';
     createAdapter(MODEL, { key: 'sk-fal-team', via: 'fal' });

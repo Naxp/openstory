@@ -62,17 +62,14 @@ export function getPlatformLlmKey():
 
 let loggedRetryMode = false;
 
-export function createAdapter(model: TextModel, keyInfo?: string | LlmKeyInfo) {
+// Callers must say which API a key belongs to (`via`) — a bare string can't:
+// a fal key mistaken for an OpenRouter key gets Bearer auth against
+// openrouter.ai and 401s at runtime, invisibly to the compiler.
+export function createAdapter(model: TextModel, keyInfo?: LlmKeyInfo) {
   const env = getEnv();
-  const resolved: LlmKeyInfo | undefined =
-    typeof keyInfo === 'string'
-      ? { key: keyInfo, via: 'openrouter' }
-      : (keyInfo ?? getPlatformLlmKey());
+  const resolved = keyInfo ?? getPlatformLlmKey();
   const key = resolved?.key;
   const via = resolved?.via ?? 'openrouter';
-  // Adapter type list lags behind OpenRouter's catalog — cast at the boundary
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Model is dynamic from config but always a valid OpenRouter model ID
-  const adapterModel = model as Parameters<typeof openRouterText>[0];
 
   // During E2E recording, aimock proxies our OpenRouter calls upstream and
   // *buffers* the entire SSE response before relaying — see
@@ -110,6 +107,6 @@ export function createAdapter(model: TextModel, keyInfo?: string | LlmKeyInfo) {
   };
 
   return key
-    ? createOpenRouterText(adapterModel, key, config)
-    : openRouterText(adapterModel, config);
+    ? createOpenRouterText(model, key, config)
+    : openRouterText(model, config);
 }

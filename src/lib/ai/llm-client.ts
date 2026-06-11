@@ -59,8 +59,8 @@ export type LLMRequestParams<T = unknown> = {
   /** Session id for Langfuse trace grouping (typically sequenceId) */
   sessionId?: string;
   responseSchema?: z.ZodType<T>;
-  /** Resolved LLM key info, or a bare OpenRouter key string. */
-  apiKey?: string | LlmKeyInfo;
+  /** Resolved LLM key info — `via` decides endpoint routing + auth scheme. */
+  apiKey?: LlmKeyInfo;
   /**
    * Enable OpenRouter's web-search server tool for this request. The model
    * decides when to search; OpenRouter runs the search server-side inside the
