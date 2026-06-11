@@ -10,6 +10,7 @@ import {
   useSequenceTabItems,
 } from '@/components/sequence/sequence-tabs';
 import { PageHeader } from '@/components/typography/page-header';
+import { StyleBadge } from '@/components/style/style-badge';
 import { getSequenceFn } from '@/functions/sequences';
 import { sequenceKeys, useSequence } from '@/hooks/use-sequences';
 import { useSwipeNavigation } from '@/hooks/use-swipe-navigation';
@@ -83,6 +84,7 @@ function SequenceLayout() {
         <PageHeader>
           <div className="hidden md:flex flex-row flex-wrap items-center gap-2">
             <ModelBadge model={sequence?.analysisModel} />
+            <StyleBadge styleId={sequence?.styleId} />
             <SequenceImageModelSelector
               sequenceId={sequenceId}
               sequenceImageModel={sequence?.imageModel}
