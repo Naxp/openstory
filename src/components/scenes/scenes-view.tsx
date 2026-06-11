@@ -407,6 +407,15 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     [frames, curSelectedFrameId]
   );
 
+  // In-flight retry state (#882) for the selected frame. Image retry matters
+  // before the thumbnail exists; video retry after — the image entry is cleared
+  // once it completes, so preferring it is correct in both stages.
+  const selectedFrameRetry = useMemo(() => {
+    if (!curSelectedFrameId) return undefined;
+    const r = generationState.frameRetries.get(curSelectedFrameId);
+    return r?.image ?? r?.video;
+  }, [generationState.frameRetries, curSelectedFrameId]);
+
   // Filter variants for the currently selected frame
   const selectedFrameVariants = useMemo(() => {
     if (!imageVariants || !curSelectedFrameId) return undefined;
@@ -992,6 +1001,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
                 generationState.phases.find((p) => p.status === 'active')
                   ?.phaseName
               }
+              retry={selectedFrameRetry}
               posterUrl={sequence?.posterUrl ?? undefined}
               className={PLAYER_MAX_H}
               wrapperClassName={PLAYER_MAX_W_BY_RATIO[aspectRatio]}
