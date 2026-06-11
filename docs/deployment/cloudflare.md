@@ -127,12 +127,19 @@ bunx wrangler d1 create openstory-prd
 #    history are CASCADE-safe with no rows). Same command prod CI runs:
 bun db:migrate:prd
 
-# 4. Data-only import (the export wraps INSERTs with defer_foreign_keys).
-#    Drop drizzle's tracking rows — that table doesn't exist in the new DB
-#    (wrangler's d1_migrations replaces it).
+# 4. Data-only import. Three transforms on the raw export:
+#    - drop drizzle's tracking rows (that table doesn't exist in the new DB —
+#      wrangler's d1_migrations replaces it)
+#    - reorder tables parent-first: D1 ingests large files in multiple
+#      internal transactions, the dump's single leading
+#      `PRAGMA defer_foreign_keys=TRUE` doesn't span them, and the export's
+#      alphabetical order (`account` before `user`) fails at a chunk commit
+#      with "FOREIGN KEY constraint failed" and rolls the import back.
+#      Parent-first order needs no deferral, so chunking can't break it.
 bunx wrangler d1 export velro-prd --remote --no-schema --output=data-raw.sql
 grep -v '__drizzle_migrations' data-raw.sql > data.sql
-bunx wrangler d1 execute openstory-prd --remote --file=data.sql
+bun scripts/reorder-d1-dump.ts data.sql data-ordered.sql
+bunx wrangler d1 execute openstory-prd --remote --file=data-ordered.sql
 
 # 5. Commit the wrangler.jsonc flip, merge, deploy. The deploy's
 #    `wrangler d1 migrations apply` reports everything already applied.
