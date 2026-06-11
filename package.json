@@ -54,18 +54,18 @@
     "db:generate": "bun drizzle-kit generate --config=drizzle.config.d1.ts",
     "db:migrate:local": "bun scripts/migrate-local-d1.ts",
     "db:migrate:test": "bun scripts/migrate-local-d1.ts --test",
-    "db:migrate:d1": "bun drizzle-kit migrate --config=drizzle.config.d1.ts",
+    "db:migrate:prd": "bun scripts/flatten-migrations.ts && wrangler d1 migrations apply DB --env=production --remote",
     "db:studio:local": "bun drizzle-kit studio --config=drizzle.config.local.ts",
     "db:studio:d1": "bun drizzle-kit studio --config=drizzle.config.d1.ts",
     "db:seed:local": "bun scripts/seed.ts --local",
-    "db:seed:d1": "bun scripts/seed.ts --d1",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "motion:codegen": "bun scripts/pull-motion-schemas.ts",
     "models:check": "bun scripts/check-model-updates.ts",
     "cf:typegen": "wrangler types",
     "cf:dev": "wrangler dev",
-    "cf:deploy:prd": "bun run cf:typegen && CLOUDFLARE_ENV=production bun run build && wrangler deploy --env=production"
+    "cf:deploy:prd": "bun run cf:typegen && CLOUDFLARE_ENV=production bun run build && bun run db:migrate:prd && wrangler deploy --env=production",
+    "deploy": "bun scripts/flatten-migrations.ts && wrangler d1 migrations apply DB --remote && wrangler deploy"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1047.0",
@@ -216,7 +216,7 @@
         "description": "Encrypts AI keys that teams add in-app (bring-your-own-key). Generate with `openssl rand -hex 32`."
       },
       "DB": {
-        "description": "D1 database for app data. Created automatically — migrations and seeding run on deploy."
+        "description": "D1 database for app data. Created automatically — the deploy command applies migrations on every deploy, and starter templates seed themselves on first request."
       },
       "R2_STORAGE_BUCKET": {
         "description": "R2 bucket for generated media (images, video, audio). Created automatically."

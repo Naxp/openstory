@@ -30,18 +30,18 @@ bun test:e2e:full                  # full-pipeline e2e (Cloudflare Workflows + a
 bun run build:e2e                  # built-server e2e build (VITE_APP_URL=:3001, devtools off)
 
 # DB (Wrangler local D1 via Miniflare)
-bun db:migrate:local               # wrangler d1 migrations apply DB --local
-bun db:migrate:test                # wrangler d1 migrations apply DB --local --env=test
-bun db:migrate:d1                  # drizzle-kit migrate against production D1 (HTTP)
+bun db:migrate:local               # drizzle-orm migrator against local D1 (default env)
+bun db:migrate:test                # drizzle-orm migrator against local D1 ([env.test])
+bun db:migrate:prd                 # flatten + wrangler d1 migrations apply DB --env=production --remote
 bun db:seed:local                  # seed local D1 via getPlatformProxy
-bun db:seed:d1                     # seed production D1 via HTTP API
 bun db:generate                    # generate migration from schema edits
 bun db:studio:d1                   # Drizzle Studio against production D1
 
 # Build / deploy
 bun run build                      # Vite production build (NOT `bun build`)
 bun cf:dev                         # wrangler dev against built worker (preview)
-bun cf:deploy:prd                  # Cloudflare Workers production deploy
+bun cf:deploy:prd                  # Cloudflare Workers production deploy (build → migrate → deploy)
+bun run deploy                     # Deploy-button / Workers Builds deploy command (migrate + deploy, default env)
 ```
 
 `bun dev` runs vite dev (cf-plugin → Workerd via Miniflare, port 3000) alongside the Stripe listener (skipped without `STRIPE_SECRET_KEY`). Its first step (`scripts/ensure-env.ts`) creates `.env.local` with generated secrets if missing, so a fresh clone needs only `bun install && bun dev`. The app runs in **Workerd locally** — same runtime as production — so D1, R2 bindings, **Cloudflare Workflows**, env.\* access, and request lifecycle all match prod. No QStash/Docker needed: workflows execute in-process in Workerd.
@@ -257,17 +257,19 @@ bun db:migrate   # Apply migrations to local.db
 
 ### D1 table-rebuild trap — READ BEFORE CHANGING SCHEMA
 
-drizzle-kit's `d1-http` HTTP migrator joins all migration statements into a single HTTP body. D1 wraps multi-statement bodies in an implicit transaction, and SQLite **silently** ignores `PRAGMA foreign_keys = OFF` inside a transaction. So when the standard SQLite "table rebuild" pattern (`CREATE __new_X` → `INSERT SELECT` → `DROP X` → `RENAME`) drops the parent table, every inbound `ON DELETE CASCADE` FK fires and child rows are deleted.
+Remote migrations apply via `wrangler d1 migrations apply` (#897: the `deploy` script for button deploys / Workers Builds, `db:migrate:prd` inside `cf:deploy:prd` for prod CI), which sends each migration file as one multi-statement body. D1 wraps multi-statement bodies in an implicit transaction, and SQLite **silently** ignores `PRAGMA foreign_keys = OFF` inside a transaction. So when the standard SQLite "table rebuild" pattern (`CREATE __new_X` → `INSERT SELECT` → `DROP X` → `RENAME`) drops the parent table, every inbound `ON DELETE CASCADE` FK fires and child rows are deleted. (The original #612 incident hit the same trap through drizzle-kit's `d1-http` migrator, which no longer touches remote DBs — drizzle-kit only generates migrations now. Note drizzle-kit emits nested `<dir>/migration.sql` files; `scripts/flatten-migrations.ts` renders the flat gitignored `drizzle/migrations-wrangler/` dir that wrangler reads.)
 
 This destroyed `team_members`, `session`, `account`, and `passkey` in production on 2026-04-29 (issue #612, migration `20260428013041_productive_kabuki`). `PRAGMA defer_foreign_keys = ON` does **not** help — it defers constraint _checks_ but CASCADE still fires.
 
 **Workarounds (in order):**
 
 1. **Avoid table rebuilds.** Prefer `ALTER TABLE … RENAME COLUMN / ADD COLUMN / DROP COLUMN` — SQLite/D1 support these without a rebuild.
-2. **Apply destructive migrations manually.** Snapshot first (`wrangler d1 export`), then apply via the D1 dashboard or `wrangler d1 ... --file=…`. Do not let `db:migrate:d1` run it.
+2. **Apply destructive migrations manually.** Snapshot first (`wrangler d1 export`), then apply via the D1 dashboard or `wrangler d1 ... --file=…`. Do not let the automated `wrangler d1 migrations apply` paths run it (mark it applied in `d1_migrations` afterwards so they skip it).
 3. **Avoid `ON DELETE CASCADE`** on FKs to long-lived parent tables (`user`, `teams`, `sequences`). Use `'restrict'` or `'no action'` and clean up children in app code.
 
 **Local guardrail:** `scripts/check-migrations.ts` runs as a Lefthook pre-commit step on staged `drizzle/migrations/**/*.sql`. It flags `DROP TABLE`, `TRUNCATE`, `DELETE FROM`, `ALTER TABLE … DROP COLUMN`, and annotates each `DROP TABLE` with the count of inbound `ON DELETE CASCADE` FKs. Bypass for a manually-applied migration: `bun scripts/check-migrations.ts --allow-destructive`.
+
+**Schema-drift trap (#898):** drizzle-kit only diffs **top-level exported** tables — removing a table's named export from `src/lib/db/schema/index.ts` (e.g. in a dead-code sweep) makes the next `db:generate` emit `DROP TABLE` for it. Keep every table individually exported. And never change a column's SQL `.default()` without generating the migration in the same PR — a default change forces a full table rebuild (see trap above); prefer `$defaultFn()` for app-level defaults with no DDL impact.
 
 Refs: [drizzle-orm#3065](https://github.com/drizzle-team/drizzle-orm/issues/3065), [workers-sdk#5438](https://github.com/cloudflare/workers-sdk/issues/5438), [SQLite foreign_keys docs](https://sqlite.org/foreignkeys.html#fk_enable).
 

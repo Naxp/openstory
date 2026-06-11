@@ -63,6 +63,8 @@ import { teamApiKeys } from './team-api-keys';
 
 import { giftTokenRedemptions, giftTokens } from './gift-tokens';
 
+import { appMetadata } from './app-metadata';
+
 // Better Auth tables
 export { account, apikey, passkey, session, user, verification };
 
@@ -201,6 +203,16 @@ export type { Audio, NewStyle, Style, StyleConfig, Vfx } from './libraries';
 // Credits, Transactions, and Billing
 export { credits, transactions };
 
+/**
+ * drizzle-kit only diffs TOP-LEVEL exported tables — tables reachable only
+ * through the `schema` object below are treated as deleted and produce
+ * DROP TABLE migrations (this bit us when the knip sweep removed these two).
+ * Keep every table individually exported.
+ *
+ * @public used by drizzle-kit generate, not the app graph
+ */
+export { creditBatches, teamBillingSettings };
+
 // Team API Keys
 export { teamApiKeys };
 
@@ -208,6 +220,9 @@ export type { ApiKeyProvider } from './team-api-keys';
 
 // Gift Tokens
 export { giftTokens, giftTokenRedemptions };
+
+// App Metadata (key/value bookkeeping, e.g. system-template seed hash)
+export { appMetadata };
 
 /**
  * Complete schema object for Drizzle client initialization (tables only).
@@ -276,4 +291,7 @@ export const schema = {
   // Gift Tokens
   giftTokens,
   giftTokenRedemptions,
+
+  // App Metadata
+  appMetadata,
 };
