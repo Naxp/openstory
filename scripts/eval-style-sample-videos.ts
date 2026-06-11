@@ -35,11 +35,15 @@ import { z } from 'zod';
 
 const run = promisify(execFile);
 
-const OUTPUT_DIR = path.join(process.cwd(), 'sample-videos');
+// Mutable so `--dir <path>` can retarget a versioned sample set
+// (e.g. `sample-videos-v2`); reassigned in main() before any path is built.
+let OUTPUT_DIR = path.join(process.cwd(), 'sample-videos');
 const OPENROUTER_KEY = process.env.OPENROUTER_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 type Flags = {
+  dir: string | null;
+  out: string | null;
   filter: string | null;
   model: string;
   frames: number;
@@ -59,6 +63,8 @@ function parseFlags(argv: string[]): Flags {
     return Number.isFinite(n) ? n : fallback;
   };
   return {
+    dir: valueAfter('--dir'),
+    out: valueAfter('--out'),
     filter: valueAfter('--filter'),
     model: valueAfter('--model') ?? 'google/gemini-3.5-flash',
     frames: num('--frames', 6),
@@ -374,6 +380,7 @@ function fmtRow(r: Result): string {
 
 async function main() {
   const flags = parseFlags(process.argv.slice(2));
+  if (flags.dir) OUTPUT_DIR = path.resolve(process.cwd(), flags.dir);
   if (!existsSync(OUTPUT_DIR)) {
     console.error(
       `No ${path.relative(process.cwd(), OUTPUT_DIR)}/ — render samples first.`
@@ -433,8 +440,12 @@ async function main() {
   const errored = results.filter((r) => r.error).length;
   if (errored) console.log(`${errored} eval error(s).`);
 
-  await mkdir(OUTPUT_DIR, { recursive: true });
-  const outPath = path.join(OUTPUT_DIR, 'eval-scores.json');
+  // `--out` lets a judge write its own file (e.g. eval-scores-grok.json) so
+  // re-scoring the same set with multiple models doesn't clobber.
+  const outPath = flags.out
+    ? path.resolve(process.cwd(), flags.out)
+    : path.join(OUTPUT_DIR, 'eval-scores.json');
+  await mkdir(path.dirname(outPath), { recursive: true });
   await writeFile(
     outPath,
     JSON.stringify({ model: flags.model, results: ranked }, null, 2)
