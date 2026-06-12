@@ -46,8 +46,10 @@
   // true), the request would 404 against Cloudflare rather than silently
   // writing to production.
   //
-  // PROD D1 lives in [env.production] below. Deploys MUST pass
-  // `--env=production` (see .github/workflows/deploy-cloudflare.yml).
+  // PROD D1 lives in [env.production] below. Prod builds MUST set
+  // CLOUDFLARE_ENV=production (a Workers Builds build env var; see
+  // docs/deployment/cloudflare.md) and the migrate step MUST pass
+  // `--env=production` (wired in the `deploy:production` package script).
   // PR-preview deploys patch this default block in CI before deploying.
   // ─────────────────────────────────────────────────────────────────────────
   "d1_databases": [
@@ -64,10 +66,11 @@
       "migrations_dir": "drizzle/migrations-wrangler",
     },
   ],
-  // Local-only R2 (Miniflare state in .wrangler/state). Reads are served by
-  // the worker's /r2/$ route (src/routes/r2.$.ts) because getPublicUrl()
-  // falls back to `${VITE_APP_URL}/r2/<key>` when R2_PUBLIC_STORAGE_DOMAIN
-  // is unset — so local dev needs no remote R2 and no Cloudflare credentials.
+  // Local-only R2 (Miniflare state in .wrangler/state). Stored media URLs are
+  // origin-relative (`/r2/<key>`, #894) and the worker's /r2/$ route
+  // (src/routes/r2.$.ts) streams them from the binding when
+  // R2_PUBLIC_STORAGE_DOMAIN is unset — so local dev needs no remote R2 and
+  // no Cloudflare credentials.
   // To opt back into remote R2 (e.g. to repro a CDN-specific bug), set
   // `"remote": true` here plus R2_PUBLIC_STORAGE_DOMAIN in .env.local, and
   // revert when done.
@@ -273,8 +276,9 @@
   ],
   "env": {
     // Production deploy target. @cloudflare/vite-plugin selects the env at
-    // BUILD time via CLOUDFLARE_ENV — `cf:deploy:prd` sets
-    // `CLOUDFLARE_ENV=production bun run build`, which bakes these bindings
+    // BUILD time via CLOUDFLARE_ENV — Workers Builds sets it as a dashboard
+    // build env var (manual deploys: `cf:deploy:prd` sets
+    // `CLOUDFLARE_ENV=production bun run build`), which bakes these bindings
     // into dist/server/wrangler.json. The `--env=production` flag on
     // `wrangler deploy` is a no-op against that generated (already-flattened)
     // config; without CLOUDFLARE_ENV the build bakes the DEFAULT block (whose
