@@ -36,6 +36,9 @@ jobs:
       - name: Check formatting
         run: bun format:check
 
+      - name: Check dead code (knip)
+        run: bun dead-code
+
       - name: Run tests
         run: bun run test
 
@@ -117,8 +120,6 @@ jobs:
           FAL_KEY: ${{ secrets.FAL_KEY }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: |
           if [ -z "$BETTER_AUTH_SECRET" ]; then
@@ -135,8 +136,6 @@ jobs:
           FAL_KEY=$FAL_KEY
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-          UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL
-          UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN
           EMAIL_FROM=$EMAIL_FROM
           E2E_TEST=true
           VITE_APP_URL=http://localhost:3001
@@ -170,9 +169,6 @@ jobs:
           # Miniflare, so wrangler skips the remote-proxy auth check.
           BETTER_AUTH_URL: http://localhost:3001
           VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
-          # Redis - preview environment
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           # Auth - preview environment
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -223,8 +219,6 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
         run: |
           if [ -z "$BETTER_AUTH_SECRET" ]; then
@@ -242,8 +236,6 @@ jobs:
           FAL_PROXY_URL=http://localhost:4010/fal
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-          UPSTASH_REDIS_REST_URL=$UPSTASH_REDIS_REST_URL
-          UPSTASH_REDIS_REST_TOKEN=$UPSTASH_REDIS_REST_TOKEN
           EMAIL_FROM=$EMAIL_FROM
           E2E_TEST=true
           E2E_FULL_PIPELINE=true
@@ -271,9 +263,6 @@ jobs:
           # Miniflare, so wrangler skips the remote-proxy auth check.
           BETTER_AUTH_URL: http://localhost:3001
           VITE_R2_PUBLIC_ASSETS_DOMAIN: ${{ vars.VITE_R2_PUBLIC_ASSETS_DOMAIN }}
-          # Redis - preview environment
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
           # Auth - preview environment
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}

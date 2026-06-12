@@ -10,7 +10,7 @@ import type { ProviderPreferences } from '@tanstack/ai-openrouter';
 import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
 import { aiDebugLogger } from './ai-debug-logger';
-import { createAdapter } from './create-adapter';
+import { createAdapter, type LlmKeyInfo } from './create-adapter';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -29,12 +29,6 @@ export type StreamChunk<T = never> =
        */
       parsed: T | undefined;
     };
-
-export type ProgressCallback = (progress: {
-  type: 'chunk' | 'complete';
-  text: string;
-  parsed?: unknown;
-}) => void;
 
 export type LLMRequestParams<T = unknown> = {
   model: TextModel;
@@ -59,7 +53,8 @@ export type LLMRequestParams<T = unknown> = {
   /** Session id for Langfuse trace grouping (typically sequenceId) */
   sessionId?: string;
   responseSchema?: z.ZodType<T>;
-  apiKey?: string;
+  /** Resolved LLM key info — `via` decides endpoint routing + auth scheme. */
+  apiKey?: LlmKeyInfo;
   /**
    * Enable OpenRouter's web-search server tool for this request. The model
    * decides when to search; OpenRouter runs the search server-side inside the
@@ -114,7 +109,7 @@ const STRUCTURED_OUTPUT_MODELS = new Set([
   'openai/gpt-5.4-nano',
 ]);
 
-export function modelSupportsStructuredOutputs(model: string): boolean {
+function modelSupportsStructuredOutputs(model: string): boolean {
   return STRUCTURED_OUTPUT_MODELS.has(model);
 }
 
@@ -406,9 +401,7 @@ export function extractRunError(event: unknown): RunErrorDetail | null {
  * Returns a compact `provider=… <message>` string, or `undefined` when there's
  * no usable detail. Read defensively: `rawEvent` is an arbitrary provider frame.
  */
-export function extractProviderErrorDetail(
-  rawEvent: unknown
-): string | undefined {
+function extractProviderErrorDetail(rawEvent: unknown): string | undefined {
   if (!rawEvent || typeof rawEvent !== 'object') return undefined;
   const meta =
     'metadata' in rawEvent &&
