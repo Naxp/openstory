@@ -23,7 +23,10 @@ import { getEnv } from '#env';
 import { teamMembers, teams } from '@/lib/db/schema';
 import { sendOtpEmail } from '@/lib/services/email-service';
 import { DEV_OTP_CODE } from '@/lib/auth/dev-otp';
-import { isLocalRequestHost } from '@/lib/utils/environment';
+import {
+  isGoogleAuthConfigured,
+  isLocalRequestHost,
+} from '@/lib/utils/environment';
 import { apiKey } from '@better-auth/api-key';
 import { passkey as passkeyPlugin } from '@better-auth/passkey';
 
@@ -55,7 +58,7 @@ const betterAuthLogger = getLogger(['openstory', 'auth', 'better-auth']);
  * a random code per sign-in, delivered via the SEND_EMAIL binding (simulated
  * locally — the code lands in the dev console — unless the binding is flipped
  * to `"remote": true` in wrangler.jsonc). The login form asks the server
- * which mode is active (getDevFixedOtpStatusFn) to show a dev note and skip
+ * which mode is active (getAuthOptionsFn) to show a dev note and skip
  * the auto-sign-in when the real flow is on.
  */
 export function isDevFixedOtpActive(request: Request | undefined): boolean {
@@ -142,17 +145,20 @@ function createAuth() {
       },
     },
 
-    // Social providers
-    // Google OAuth enabled on all environments via oAuthProxy plugin
-    // Preview branches proxy OAuth requests to production
-    socialProviders: {
-      google: {
-        clientId: runtimeEnv.GOOGLE_CLIENT_ID,
-        clientSecret: runtimeEnv.GOOGLE_CLIENT_SECRET,
-        enabled: true,
-        overrideUserInfoOnSignIn: true,
-      },
-    },
+    // Social providers — Google only when its secrets are configured
+    // (isGoogleAuthConfigured is also what hides the login form's Google
+    // button, via getAuthOptionsFn). Unconfigured environments (local
+    // dev by default, PR previews) don't register the provider at all.
+    socialProviders: isGoogleAuthConfigured()
+      ? {
+          google: {
+            clientId: runtimeEnv.GOOGLE_CLIENT_ID,
+            clientSecret: runtimeEnv.GOOGLE_CLIENT_SECRET,
+            enabled: true,
+            overrideUserInfoOnSignIn: true,
+          },
+        }
+      : {},
 
     // Configure plugins
     plugins: [

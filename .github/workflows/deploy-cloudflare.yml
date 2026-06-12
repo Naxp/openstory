@@ -195,8 +195,9 @@ jobs:
           SECRET_BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
           SECRET_EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           SECRET_FAL_KEY: ${{ secrets.FAL_KEY }}
-          SECRET_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          SECRET_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          # GOOGLE_CLIENT_ID/SECRET deliberately not pushed: preview hosts
+          # have no registered OAuth redirect URIs, and absence of the
+          # secrets is what hides Google sign-in (isGoogleAuthConfigured).
           SECRET_LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
           SECRET_LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           SECRET_LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}

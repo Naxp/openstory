@@ -14,11 +14,10 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { getDevFixedOtpStatusFn } from '@/functions/dev-auth';
+import type { AuthOptions } from '@/functions/auth-options';
 import { authClient } from '@/lib/auth/client';
 import { DEV_OTP_CODE } from '@/lib/auth/dev-otp';
 import { usePostHog } from '@posthog/react';
-import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
@@ -29,13 +28,18 @@ const logger = getLogger(['openstory', 'ui', 'auth', 'auth-form']);
 type AuthFormProps = {
   emailEntered?: string;
   redirectTo?: string;
-  isPreview?: boolean;
+  /**
+   * Server-reported sign-in options (getAuthOptionsFn) — resolved in the
+   * /_auth route's beforeLoad (or the auth-gate dialog's query) so the form
+   * renders the right options on first paint. Defaults to everything off.
+   */
+  authOptions?: AuthOptions;
 };
 
 export function AuthForm({
   emailEntered,
   redirectTo = '/sequences/new',
-  isPreview = false,
+  authOptions,
 }: AuthFormProps) {
   const navigate = useNavigate();
   const posthog = usePostHog();
@@ -43,18 +47,12 @@ export function AuthForm({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dev only: is the server stamping the fixed OTP (no EMAIL_FROM set)?
-  // Drives the zero-friction note below and skips the auto-sign-in attempt
-  // when the real email flow is active. Disabled (and DCE'd where referenced)
-  // in production builds.
-  const { data: devOtpStatus } = useQuery({
-    queryKey: ['dev-fixed-otp-status'],
-    queryFn: () => getDevFixedOtpStatusFn(),
-    enabled: import.meta.env.DEV,
-    staleTime: Infinity,
-  });
+  const googleAuthEnabled = authOptions?.googleAuthEnabled ?? false;
+  // Dev only: the server stamps the fixed OTP (no EMAIL_FROM set), so the
+  // form signs straight in and shows the zero-friction note. The
+  // `import.meta.env.DEV` guard DCE's the branch from production builds.
   const devFixedOtpActive =
-    import.meta.env.DEV && devOtpStatus?.fixedOtp === true;
+    import.meta.env.DEV && (authOptions?.devFixedOtp ?? false);
 
   // Preload passkeys for conditional UI (browser autofill)
   useEffect(() => {
@@ -108,11 +106,9 @@ export function AuthForm({
       // Local dev: the server stamps a fixed OTP (see devFixedOtp in
       // src/lib/auth/config.ts), so sign in straight away and skip the verify
       // page — no code typed at all. Eliminated from production builds
-      // (`import.meta.env.DEV` define-replaced with false). Skipped when the
-      // server reports the real email-OTP flow is on (EMAIL_FROM set); only
-      // an unresolved status query falls back to attempting the fixed code,
-      // and either way a failed attempt falls through to the verify page.
-      if (import.meta.env.DEV && devOtpStatus?.fixedOtp !== false) {
+      // (`import.meta.env.DEV` in devFixedOtpActive define-replaced with
+      // false). A failed attempt falls through to the verify page.
+      if (devFixedOtpActive) {
         const signIn = await authClient.signIn.emailOtp({
           email,
           otp: DEV_OTP_CODE,
@@ -122,6 +118,9 @@ export function AuthForm({
           await navigate({ to: redirectTo });
           return;
         }
+        logger.warn('Dev fixed-OTP sign-in failed; falling back to verify', {
+          error: signIn.error,
+        });
       }
 
       // Navigate to verify page with email in search params
@@ -169,8 +168,8 @@ export function AuthForm({
           </Alert>
         )}
 
-        {/* Google OAuth - hidden on preview branches (OAuth redirect URIs not configured) */}
-        {!isPreview && (
+        {/* Google OAuth — only where the server has the secrets configured */}
+        {googleAuthEnabled && (
           <>
             <Button
               type="button"
