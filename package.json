@@ -216,6 +216,9 @@
       "API_KEY_ENCRYPTION_KEY": {
         "description": "Encrypts AI keys that teams add in-app (bring-your-own-key). Generate with `openssl rand -hex 32`."
       },
+      "EMAIL_FROM": {
+        "description": "Sender address for sign-in code emails, e.g. `noreply@yourdomain.com`. Required for sign-in: authentication is passwordless (emailed one-time codes), so without it nobody can create an account on this deployment. The domain must be onboarded in [Email Service > Email Sending](https://dash.cloudflare.com/?to=/:account/email-service/sending) — onboarding sets up SPF/DKIM/DMARC for you."
+      },
       "DB": {
         "description": "D1 database for app data. Created automatically — the deploy command applies migrations on every deploy, and starter templates seed themselves on first request."
       },

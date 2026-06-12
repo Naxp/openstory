@@ -22,7 +22,7 @@ export const Route = createFileRoute('/_auth/login')({
 
 function LoginPage() {
   const search = Route.useSearch();
-  const { isPreview } = Route.useRouteContext();
+  const { authOptions } = Route.useRouteContext();
   const redirectTo = getRedirectFromParams(search);
   const email = search.email || '';
 
@@ -41,7 +41,7 @@ function LoginPage() {
           <AuthForm
             emailEntered={email}
             redirectTo={redirectTo}
-            isPreview={isPreview}
+            authOptions={authOptions}
           />
         </div>
       </div>
