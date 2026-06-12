@@ -124,6 +124,29 @@ export function toCdnUrl(url: string): string | null {
   return `https://${getEnv().R2_PUBLIC_STORAGE_DOMAIN}/${key}`;
 }
 
+/**
+ * Absolute, externally-shareable URL for a stored media URL — for the few
+ * egress points that hand a URL to something off the current origin (public
+ * API responses, the "copy share link" action). Stored rows are
+ * origin-relative (#894), which only resolve in-page; this absolutizes them:
+ *
+ *  - our `/r2/<key>` URLs → the CDN domain when configured, else the given
+ *    `origin` (the worker's own `/r2/$` route serves/redirects them, and it
+ *    is public — no auth — so the result is genuinely shareable);
+ *  - already-absolute URLs (external sources, legacy CDN-domain rows) pass
+ *    through unchanged.
+ *
+ * `origin` is the scheme+host the request arrived on (e.g.
+ * `new URL(request.url).origin` server-side, `window.location.origin` in the
+ * browser).
+ */
+export function toShareableUrl(url: string, origin: string): string {
+  const cdnUrl = toCdnUrl(url);
+  if (cdnUrl) return cdnUrl;
+  if (url.startsWith('/')) return `${origin.replace(/\/$/, '')}${url}`;
+  return url;
+}
+
 export function getPathFromUrl(url: string, bucket: StorageBucket): string {
   const key = r2KeyFromUrl(url);
   const bucketPrefix = `${bucket}/`;

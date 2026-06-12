@@ -13,6 +13,7 @@ const {
   isLocalStorageServing,
   r2KeyFromUrl,
   toCdnUrl,
+  toShareableUrl,
 } = await import('./buckets');
 
 function setEnv(values: Record<string, string | undefined>) {
@@ -86,6 +87,38 @@ describe('toCdnUrl', () => {
   it('returns null for URLs that are not ours', () => {
     setEnv({ R2_PUBLIC_STORAGE_DOMAIN: 'storage.example.com' });
     expect(toCdnUrl('https://v3.fal.media/files/b/abc/out.png')).toBeNull();
+  });
+});
+
+describe('toShareableUrl', () => {
+  const origin = 'https://app.example.com';
+
+  it('prefers the CDN domain for stored URLs when configured', () => {
+    setEnv({ R2_PUBLIC_STORAGE_DOMAIN: 'storage.example.com' });
+    expect(toShareableUrl('/r2/videos/team/v.mp4', origin)).toBe(
+      'https://storage.example.com/videos/team/v.mp4'
+    );
+  });
+
+  it('absolutizes relative URLs against the origin when no CDN (local serving)', () => {
+    setEnv({});
+    expect(toShareableUrl('/r2/videos/team/v.mp4', origin)).toBe(
+      'https://app.example.com/r2/videos/team/v.mp4'
+    );
+    // Trailing slash on the origin is tolerated.
+    expect(toShareableUrl('/r2/videos/v.mp4', 'https://app.example.com/')).toBe(
+      'https://app.example.com/r2/videos/v.mp4'
+    );
+  });
+
+  it('passes through already-absolute external and legacy URLs', () => {
+    setEnv({});
+    expect(
+      toShareableUrl('https://v3.fal.media/files/b/abc/out.mp4', origin)
+    ).toBe('https://v3.fal.media/files/b/abc/out.mp4');
+    expect(
+      toShareableUrl('https://storage.openstory.so/old/poster.png', origin)
+    ).toBe('https://storage.openstory.so/old/poster.png');
   });
 });
 
