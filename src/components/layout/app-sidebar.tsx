@@ -24,7 +24,7 @@ import { Route as sequencesNewRoute } from '@/routes/_app/sequences/new';
 import { Route as talentRoute } from '@/routes/_app/talent/index';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { LifeBuoy, MapPin, Plus, Users, Video } from 'lucide-react';
+import { GitFork, LifeBuoy, MapPin, Plus, Users, Video } from 'lucide-react';
 import { CreditBalancePill } from './credit-balance-pill';
 import { UserSidebarFooter } from './user-sidebar-footer';
 
@@ -108,6 +108,14 @@ export function AppSidebar() {
                 <GitHubIcon className="size-4" />
                 <span>GitHub</span>
               </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Fork & deploy">
+              <Link to="/fork">
+                <GitFork />
+                <span>Fork &amp; deploy</span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

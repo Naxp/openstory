@@ -29,6 +29,7 @@ import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as ApiRealtimeRouteImport } from './routes/api/realtime'
 import { Route as MarketingTermsRouteImport } from './routes/_marketing/terms'
 import { Route as MarketingPrivacyRouteImport } from './routes/_marketing/privacy'
+import { Route as MarketingForkRouteImport } from './routes/_marketing/fork'
 import { Route as AuthVerifyRouteImport } from './routes/_auth/verify'
 import { Route as AuthLoginRouteImport } from './routes/_auth/login'
 import { Route as AppCreditsRouteImport } from './routes/_app/credits'
@@ -55,6 +56,7 @@ import { Route as ApiTestCharacterRouteImport } from './routes/api/test/characte
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
 import { Route as ApiStorageMultipartRouteImport } from './routes/api/storage/multipart'
 import { Route as ApiOpenrouterCallbackRouteImport } from './routes/api/openrouter/callback'
+import { Route as ApiForkStatusRouteImport } from './routes/api/fork/status'
 import { Route as ApiDevMemoryRouteImport } from './routes/api/dev/memory'
 import { Route as ApiBillingWebhookRouteImport } from './routes/api/billing/webhook'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -68,6 +70,10 @@ import { Route as AppAdminUsageRouteImport } from './routes/_app/admin/usage'
 import { Route as AppSequencesIdRouteRouteImport } from './routes/_app/sequences/$id/route'
 import { Route as ApiV1SequencesIdRouteImport } from './routes/api/v1/sequences.$id'
 import { Route as ApiV1ScriptsEnhanceRouteImport } from './routes/api/v1/scripts.enhance'
+import { Route as ApiForkGithubStartRouteImport } from './routes/api/fork/github/start'
+import { Route as ApiForkGithubCallbackRouteImport } from './routes/api/fork/github/callback'
+import { Route as ApiForkCloudflareStartRouteImport } from './routes/api/fork/cloudflare/start'
+import { Route as ApiForkCloudflareCallbackRouteImport } from './routes/api/fork/cloudflare/callback'
 import { Route as AppSequencesIdTheatreRouteImport } from './routes/_app/sequences/$id/theatre'
 import { Route as AppSequencesIdScriptRouteImport } from './routes/_app/sequences/$id/script'
 import { Route as AppSequencesIdScenesRouteImport } from './routes/_app/sequences/$id/scenes'
@@ -173,6 +179,11 @@ const MarketingTermsRoute = MarketingTermsRouteImport.update({
 const MarketingPrivacyRoute = MarketingPrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => MarketingRoute,
+} as any)
+const MarketingForkRoute = MarketingForkRouteImport.update({
+  id: '/fork',
+  path: '/fork',
   getParentRoute: () => MarketingRoute,
 } as any)
 const AuthVerifyRoute = AuthVerifyRouteImport.update({
@@ -305,6 +316,11 @@ const ApiOpenrouterCallbackRoute = ApiOpenrouterCallbackRouteImport.update({
   path: '/api/openrouter/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiForkStatusRoute = ApiForkStatusRouteImport.update({
+  id: '/api/fork/status',
+  path: '/api/fork/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDevMemoryRoute = ApiDevMemoryRouteImport.update({
   id: '/api/dev/memory',
   path: '/api/dev/memory',
@@ -370,6 +386,27 @@ const ApiV1ScriptsEnhanceRoute = ApiV1ScriptsEnhanceRouteImport.update({
   path: '/api/v1/scripts/enhance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiForkGithubStartRoute = ApiForkGithubStartRouteImport.update({
+  id: '/api/fork/github/start',
+  path: '/api/fork/github/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiForkGithubCallbackRoute = ApiForkGithubCallbackRouteImport.update({
+  id: '/api/fork/github/callback',
+  path: '/api/fork/github/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiForkCloudflareStartRoute = ApiForkCloudflareStartRouteImport.update({
+  id: '/api/fork/cloudflare/start',
+  path: '/api/fork/cloudflare/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiForkCloudflareCallbackRoute =
+  ApiForkCloudflareCallbackRouteImport.update({
+    id: '/api/fork/cloudflare/callback',
+    path: '/api/fork/cloudflare/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppSequencesIdTheatreRoute = AppSequencesIdTheatreRouteImport.update({
   id: '/theatre',
   path: '/theatre',
@@ -431,6 +468,7 @@ export interface FileRoutesByFullPath {
   '/credits': typeof AppCreditsRoute
   '/login': typeof AuthLoginRoute
   '/verify': typeof AuthVerifyRoute
+  '/fork': typeof MarketingForkRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
   '/api/realtime': typeof ApiRealtimeRoute
@@ -454,6 +492,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
+  '/api/fork/status': typeof ApiForkStatusRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
   '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -479,6 +518,10 @@ export interface FileRoutesByFullPath {
   '/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
   '/sequences/$id/script': typeof AppSequencesIdScriptRoute
   '/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
+  '/api/fork/cloudflare/callback': typeof ApiForkCloudflareCallbackRoute
+  '/api/fork/cloudflare/start': typeof ApiForkCloudflareStartRoute
+  '/api/fork/github/callback': typeof ApiForkGithubCallbackRoute
+  '/api/fork/github/start': typeof ApiForkGithubStartRoute
   '/api/v1/scripts/enhance': typeof ApiV1ScriptsEnhanceRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
   '/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
@@ -496,6 +539,7 @@ export interface FileRoutesByTo {
   '/credits': typeof AppCreditsRoute
   '/login': typeof AuthLoginRoute
   '/verify': typeof AuthVerifyRoute
+  '/fork': typeof MarketingForkRoute
   '/privacy': typeof MarketingPrivacyRoute
   '/terms': typeof MarketingTermsRoute
   '/api/realtime': typeof ApiRealtimeRoute
@@ -519,6 +563,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
+  '/api/fork/status': typeof ApiForkStatusRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
   '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -544,6 +589,10 @@ export interface FileRoutesByTo {
   '/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
   '/sequences/$id/script': typeof AppSequencesIdScriptRoute
   '/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
+  '/api/fork/cloudflare/callback': typeof ApiForkCloudflareCallbackRoute
+  '/api/fork/cloudflare/start': typeof ApiForkCloudflareStartRoute
+  '/api/fork/github/callback': typeof ApiForkGithubCallbackRoute
+  '/api/fork/github/start': typeof ApiForkGithubStartRoute
   '/api/v1/scripts/enhance': typeof ApiV1ScriptsEnhanceRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
   '/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
@@ -566,6 +615,7 @@ export interface FileRoutesById {
   '/_app/credits': typeof AppCreditsRoute
   '/_auth/login': typeof AuthLoginRoute
   '/_auth/verify': typeof AuthVerifyRoute
+  '/_marketing/fork': typeof MarketingForkRoute
   '/_marketing/privacy': typeof MarketingPrivacyRoute
   '/_marketing/terms': typeof MarketingTermsRoute
   '/api/realtime': typeof ApiRealtimeRoute
@@ -590,6 +640,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/billing/webhook': typeof ApiBillingWebhookRoute
   '/api/dev/memory': typeof ApiDevMemoryRoute
+  '/api/fork/status': typeof ApiForkStatusRoute
   '/api/openrouter/callback': typeof ApiOpenrouterCallbackRoute
   '/api/storage/multipart': typeof ApiStorageMultipartRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -615,6 +666,10 @@ export interface FileRoutesById {
   '/_app/sequences/$id/scenes': typeof AppSequencesIdScenesRoute
   '/_app/sequences/$id/script': typeof AppSequencesIdScriptRoute
   '/_app/sequences/$id/theatre': typeof AppSequencesIdTheatreRoute
+  '/api/fork/cloudflare/callback': typeof ApiForkCloudflareCallbackRoute
+  '/api/fork/cloudflare/start': typeof ApiForkCloudflareStartRoute
+  '/api/fork/github/callback': typeof ApiForkGithubCallbackRoute
+  '/api/fork/github/start': typeof ApiForkGithubStartRoute
   '/api/v1/scripts/enhance': typeof ApiV1ScriptsEnhanceRoute
   '/api/v1/sequences/$id': typeof ApiV1SequencesIdRoute
   '/_app/sequences/$id/cast/$characterId': typeof AppSequencesIdCastCharacterIdRoute
@@ -636,6 +691,7 @@ export interface FileRouteTypes {
     | '/credits'
     | '/login'
     | '/verify'
+    | '/fork'
     | '/privacy'
     | '/terms'
     | '/api/realtime'
@@ -659,6 +715,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/dev/memory'
+    | '/api/fork/status'
     | '/api/openrouter/callback'
     | '/api/storage/multipart'
     | '/api/storage/upload'
@@ -684,6 +741,10 @@ export interface FileRouteTypes {
     | '/sequences/$id/scenes'
     | '/sequences/$id/script'
     | '/sequences/$id/theatre'
+    | '/api/fork/cloudflare/callback'
+    | '/api/fork/cloudflare/start'
+    | '/api/fork/github/callback'
+    | '/api/fork/github/start'
     | '/api/v1/scripts/enhance'
     | '/api/v1/sequences/$id'
     | '/sequences/$id/cast/$characterId'
@@ -701,6 +762,7 @@ export interface FileRouteTypes {
     | '/credits'
     | '/login'
     | '/verify'
+    | '/fork'
     | '/privacy'
     | '/terms'
     | '/api/realtime'
@@ -724,6 +786,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/dev/memory'
+    | '/api/fork/status'
     | '/api/openrouter/callback'
     | '/api/storage/multipart'
     | '/api/storage/upload'
@@ -749,6 +812,10 @@ export interface FileRouteTypes {
     | '/sequences/$id/scenes'
     | '/sequences/$id/script'
     | '/sequences/$id/theatre'
+    | '/api/fork/cloudflare/callback'
+    | '/api/fork/cloudflare/start'
+    | '/api/fork/github/callback'
+    | '/api/fork/github/start'
     | '/api/v1/scripts/enhance'
     | '/api/v1/sequences/$id'
     | '/sequences/$id/cast/$characterId'
@@ -770,6 +837,7 @@ export interface FileRouteTypes {
     | '/_app/credits'
     | '/_auth/login'
     | '/_auth/verify'
+    | '/_marketing/fork'
     | '/_marketing/privacy'
     | '/_marketing/terms'
     | '/api/realtime'
@@ -794,6 +862,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/billing/webhook'
     | '/api/dev/memory'
+    | '/api/fork/status'
     | '/api/openrouter/callback'
     | '/api/storage/multipart'
     | '/api/storage/upload'
@@ -819,6 +888,10 @@ export interface FileRouteTypes {
     | '/_app/sequences/$id/scenes'
     | '/_app/sequences/$id/script'
     | '/_app/sequences/$id/theatre'
+    | '/api/fork/cloudflare/callback'
+    | '/api/fork/cloudflare/start'
+    | '/api/fork/github/callback'
+    | '/api/fork/github/start'
     | '/api/v1/scripts/enhance'
     | '/api/v1/sequences/$id'
     | '/_app/sequences/$id/cast/$characterId'
@@ -845,12 +918,17 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiBillingWebhookRoute: typeof ApiBillingWebhookRoute
   ApiDevMemoryRoute: typeof ApiDevMemoryRoute
+  ApiForkStatusRoute: typeof ApiForkStatusRoute
   ApiOpenrouterCallbackRoute: typeof ApiOpenrouterCallbackRoute
   ApiStorageMultipartRoute: typeof ApiStorageMultipartRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiV1OpenapiDotjsonRoute: typeof ApiV1OpenapiDotjsonRoute
   ApiV1SequencesRoute: typeof ApiV1SequencesRouteWithChildren
   ApiV1IndexRoute: typeof ApiV1IndexRoute
+  ApiForkCloudflareCallbackRoute: typeof ApiForkCloudflareCallbackRoute
+  ApiForkCloudflareStartRoute: typeof ApiForkCloudflareStartRoute
+  ApiForkGithubCallbackRoute: typeof ApiForkGithubCallbackRoute
+  ApiForkGithubStartRoute: typeof ApiForkGithubStartRoute
   ApiV1ScriptsEnhanceRoute: typeof ApiV1ScriptsEnhanceRoute
 }
 
@@ -994,6 +1072,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof MarketingPrivacyRouteImport
+      parentRoute: typeof MarketingRoute
+    }
+    '/_marketing/fork': {
+      id: '/_marketing/fork'
+      path: '/fork'
+      fullPath: '/fork'
+      preLoaderRoute: typeof MarketingForkRouteImport
       parentRoute: typeof MarketingRoute
     }
     '/_auth/verify': {
@@ -1178,6 +1263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOpenrouterCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/fork/status': {
+      id: '/api/fork/status'
+      path: '/api/fork/status'
+      fullPath: '/api/fork/status'
+      preLoaderRoute: typeof ApiForkStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/dev/memory': {
       id: '/api/dev/memory'
       path: '/api/dev/memory'
@@ -1267,6 +1359,34 @@ declare module '@tanstack/react-router' {
       path: '/api/v1/scripts/enhance'
       fullPath: '/api/v1/scripts/enhance'
       preLoaderRoute: typeof ApiV1ScriptsEnhanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/fork/github/start': {
+      id: '/api/fork/github/start'
+      path: '/api/fork/github/start'
+      fullPath: '/api/fork/github/start'
+      preLoaderRoute: typeof ApiForkGithubStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/fork/github/callback': {
+      id: '/api/fork/github/callback'
+      path: '/api/fork/github/callback'
+      fullPath: '/api/fork/github/callback'
+      preLoaderRoute: typeof ApiForkGithubCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/fork/cloudflare/start': {
+      id: '/api/fork/cloudflare/start'
+      path: '/api/fork/cloudflare/start'
+      fullPath: '/api/fork/cloudflare/start'
+      preLoaderRoute: typeof ApiForkCloudflareStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/fork/cloudflare/callback': {
+      id: '/api/fork/cloudflare/callback'
+      path: '/api/fork/cloudflare/callback'
+      fullPath: '/api/fork/cloudflare/callback'
+      preLoaderRoute: typeof ApiForkCloudflareCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/sequences/$id/theatre': {
@@ -1437,12 +1557,14 @@ const AuthRouteRouteWithChildren = AuthRouteRoute._addFileChildren(
 )
 
 interface MarketingRouteChildren {
+  MarketingForkRoute: typeof MarketingForkRoute
   MarketingPrivacyRoute: typeof MarketingPrivacyRoute
   MarketingTermsRoute: typeof MarketingTermsRoute
   MarketingIndexRoute: typeof MarketingIndexRoute
 }
 
 const MarketingRouteChildren: MarketingRouteChildren = {
+  MarketingForkRoute: MarketingForkRoute,
   MarketingPrivacyRoute: MarketingPrivacyRoute,
   MarketingTermsRoute: MarketingTermsRoute,
   MarketingIndexRoute: MarketingIndexRoute,
@@ -1528,12 +1650,17 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiBillingWebhookRoute: ApiBillingWebhookRoute,
   ApiDevMemoryRoute: ApiDevMemoryRoute,
+  ApiForkStatusRoute: ApiForkStatusRoute,
   ApiOpenrouterCallbackRoute: ApiOpenrouterCallbackRoute,
   ApiStorageMultipartRoute: ApiStorageMultipartRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiV1OpenapiDotjsonRoute: ApiV1OpenapiDotjsonRoute,
   ApiV1SequencesRoute: ApiV1SequencesRouteWithChildren,
   ApiV1IndexRoute: ApiV1IndexRoute,
+  ApiForkCloudflareCallbackRoute: ApiForkCloudflareCallbackRoute,
+  ApiForkCloudflareStartRoute: ApiForkCloudflareStartRoute,
+  ApiForkGithubCallbackRoute: ApiForkGithubCallbackRoute,
+  ApiForkGithubStartRoute: ApiForkGithubStartRoute,
   ApiV1ScriptsEnhanceRoute: ApiV1ScriptsEnhanceRoute,
 }
 export const routeTree = rootRouteImport

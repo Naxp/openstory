@@ -17,6 +17,38 @@ The created repo is an independent clone, not a fork — there's no upstream lin
 
 AI keys (`FAL_KEY`, `OPENROUTER_KEY`) are deliberately not part of the deploy prompts — every field in that dialog is mandatory, and a placeholder value would be worse than none. Add them after deploy, either per team in the app (Settings → API Keys) or server-wide with `wrangler secret put`.
 
+## One-Click Fork (`/fork`)
+
+The deploy button **clones** the repo into a standalone copy — there's no
+upstream link, so GitHub's "Sync fork" never works. The public `/fork` page is
+the alternative: it OAuths the visitor into GitHub to create a **real fork**,
+OAuths them into Cloudflare, then dispatches the fork's own
+[`fork-deploy.yml`](https://github.com/openstory-so/openstory/blob/main/.github/workflows/fork-deploy.yml)
+workflow, which provisions D1/R2 (`scripts/fork-provision.ts`) and deploys to
+the visitor's account. The page polls the run and links them to their
+`*.workers.dev` domain when it finishes.
+
+`/fork` is inert until the **operator** of a hosted instance registers two
+OAuth apps and supplies their credentials as Worker secrets (see the
+"Fork & deploy" block in `.env.example`):
+
+- A **GitHub OAuth App** with callback `<VITE_APP_URL>/api/fork/github/callback`
+  → `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`. Used to fork, write
+  Actions secrets, and dispatch the deploy workflow (scopes `repo workflow`).
+- A **Cloudflare [self-managed OAuth client](https://developers.cloudflare.com/changelog/post/2026-06-03-public-oauth-clients/)**
+  with redirect `<VITE_APP_URL>/api/fork/cloudflare/callback` →
+  `CLOUDFLARE_OAUTH_CLIENT_ID` (+ secret for confidential clients) and the
+  authorize/token URLs from its discovery doc
+  (`CLOUDFLARE_OAUTH_AUTHORIZE_URL` / `CLOUDFLARE_OAUTH_TOKEN_URL`). The
+  obtained token is written to the fork as `CLOUDFLARE_API_TOKEN` so its CI can
+  deploy.
+
+The flow never persists the Cloudflare token server-side — it lives only in the
+encrypted, HttpOnly flow cookie until it's handed to the fork's Actions secrets.
+The fork's CI generates `BETTER_AUTH_SECRET` / `API_KEY_ENCRYPTION_KEY` on first
+deploy; `FAL_KEY` / `OPENROUTER_KEY` are added by the new owner afterward (in
+app or via `wrangler secret put`), same as the button path.
+
 ## Guided Setup
 
 From your own clone, `bun setup --prod` walks through everything interactively: production env vars (`.env.production`), R2 domains + CORS, optional services, pushing secrets to Cloudflare and GitHub, and the first deploy. `bun setup --deploy` re-runs just the secrets-push + deploy phase, and `bun setup --pr-preview` pushes preview secrets to the GitHub `staging` environment used by PR preview deploys.

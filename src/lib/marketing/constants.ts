@@ -14,6 +14,8 @@ const APP_DOMAIN = (() => {
 export const CONTACT_EMAIL = `hello@${APP_DOMAIN}`;
 export const PRIVACY_EMAIL = `privacy@${APP_DOMAIN}`;
 
+const GITHUB_HREF = 'https://github.com/openstory-so/openstory';
+
 export const SITE_CONFIG = {
   name: APP_NAME,
   description:
@@ -24,7 +26,12 @@ export const SITE_CONFIG = {
   ogImage: `https://${VITE_R2_PUBLIC_ASSETS_DOMAIN}/images/marketing/og.jpg`,
   ctaText: 'Get Started',
   ctaHref: '/sequences/new',
-  githubHref: 'https://github.com/openstory-so/openstory',
+  githubHref: GITHUB_HREF,
+  // Cloudflare's "Deploy to Cloudflare" flow: connects the visitor's GitHub
+  // (OAuth) to clone/fork this repo, connects their Cloudflare account (OAuth),
+  // provisions the D1/R2/Workflows resources declared in wrangler.jsonc, and
+  // deploys to their own account — landing them on their own worker domain.
+  deployHref: `https://deploy.workers.cloudflare.com/?url=${GITHUB_HREF}`,
 };
 
 export const TOP_TIER_FEATURES = [
