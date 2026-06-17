@@ -175,7 +175,8 @@ export async function spawnAndAwaitChild<TInput, TOutput>(
     try {
       // `binding.create()` returns a WorkflowInstance RPC result on every child
       // spawn; dispose it (we don't need the handle here) or the runtime warns
-      // about the leaked result — the dominant source of the prod warning burst.
+      // about the leaked result — fires on every child spawn, a primary source
+      // of the #933 warning burst.
       const instance = await args.binding.create({
         id: childInstanceId,
         params: {
@@ -289,7 +290,7 @@ export async function notifyParent<TOutput>(
   await step.do('notify-parent', async () => {
     // `resolveParentInstance` (via `binding.get()`) returns a WorkflowInstance
     // RPC result; dispose it after the sendEvent so it doesn't leak. Fires on
-    // every child completion — a primary source of the prod warning burst.
+    // every child completion — a primary source of the #933 warning burst.
     const parent = await resolveParentInstance(env, hint);
     try {
       await sendEventFailFast(parent, {
