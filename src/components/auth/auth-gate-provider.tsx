@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useUser } from '@/hooks/use-user';
-import { getIsPreviewFn } from '@/lib/utils/environment';
+import { getAuthOptionsFn } from '@/functions/auth-options';
 import { useQuery } from '@tanstack/react-query';
 import { useRouterState } from '@tanstack/react-router';
 import {
@@ -100,11 +100,13 @@ export function AuthGateProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = !!user;
   const [open, setOpen] = useState(false);
 
-  // Canonical preview detection (same server-side check the login route
-  // uses) — previews hide OAuth, whose redirect URIs aren't configured there.
-  const { data: isPreview } = useQuery({
-    queryKey: ['is-preview'],
-    queryFn: () => getIsPreviewFn(),
+  // Same server-reported options the login route loads in beforeLoad —
+  // which sign-in methods to offer (Google only where configured, dev
+  // fixed-OTP only in local dev). Resolved at provider mount, long before
+  // the dialog can open.
+  const { data: authOptions } = useQuery({
+    queryKey: ['auth-options'],
+    queryFn: () => getAuthOptionsFn(),
     staleTime: Infinity,
   });
 
@@ -141,7 +143,7 @@ export function AuthGateProvider({ children }: { children: ReactNode }) {
           <DialogHeader className="sr-only">
             <DialogTitle>Sign in to continue</DialogTitle>
           </DialogHeader>
-          <AuthForm redirectTo={redirectTo} isPreview={isPreview ?? false} />
+          <AuthForm redirectTo={redirectTo} authOptions={authOptions} />
         </DialogContent>
       </Dialog>
     </AuthGateContext.Provider>

@@ -22,6 +22,11 @@ import { getDb } from '#db-client';
 import { getEnv } from '#env';
 import { teamMembers, teams } from '@/lib/db/schema';
 import { sendOtpEmail } from '@/lib/services/email-service';
+import { DEV_OTP_CODE } from '@/lib/auth/dev-otp';
+import {
+  isGoogleAuthConfigured,
+  isLocalRequestHost,
+} from '@/lib/utils/environment';
 import { apiKey } from '@better-auth/api-key';
 import { passkey as passkeyPlugin } from '@better-auth/passkey';
 
@@ -29,6 +34,45 @@ import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'auth', 'config']);
 const betterAuthLogger = getLogger(['openstory', 'auth', 'better-auth']);
+
+/**
+ * Fixed sign-in OTP for local development, so signing in doesn't require
+ * copying the code out of the simulated-email console log (the login form
+ * also auto-completes with it — see src/components/auth/auth-form.tsx).
+ *
+ * Gated belt-and-braces, same posture as `testOnlyGuard` on the /api/test
+ * routes — both gates must pass or the default random generator is used:
+ *
+ *  1. `import.meta.env.DEV` — build-time gate. Only `vite dev` (`bun dev`,
+ *     e2e webServer) sets it; every deployed artifact is a build, where Vite
+ *     define-replaces it with `false` and eliminates the branch entirely, so
+ *     the bypass cannot leak into a deployed Worker. (The runtime
+ *     `NODE_ENV` isn't declared in the worker env blocks, so it can't serve
+ *     as this gate.)
+ *  2. `isLocalRequestHost()` — runtime backstop that cannot be flipped by
+ *     env: the request must arrive on localhost or a bare IP. Fails closed
+ *     when there is no request context.
+ *
+ * Opt out by setting `EMAIL_FROM` in `.env.local` — that var exists solely to
+ * address OTP emails, so setting it means "I want the real email-OTP flow":
+ * a random code per sign-in, delivered via the SEND_EMAIL binding (simulated
+ * locally — the code lands in the dev console — unless the binding is flipped
+ * to `"remote": true` in wrangler.jsonc). The login form asks the server
+ * which mode is active (getAuthOptionsFn) to show a dev note and skip
+ * the auto-sign-in when the real flow is on.
+ */
+export function isDevFixedOtpActive(request: Request | undefined): boolean {
+  if (!import.meta.env.DEV) return false;
+  if (getEnv().EMAIL_FROM) return false;
+  if (!request || !isLocalRequestHost(request)) return false;
+  return true;
+}
+
+function devFixedOtp(request: Request | undefined): string | undefined {
+  if (!isDevFixedOtpActive(request)) return undefined;
+  logger.info(`[dev] Sign-in OTP is fixed to ${DEV_OTP_CODE}`);
+  return DEV_OTP_CODE;
+}
 
 // Singleton auth instance cache
 let _authInstance: ReturnType<typeof createAuth> | undefined;
@@ -101,17 +145,20 @@ function createAuth() {
       },
     },
 
-    // Social providers
-    // Google OAuth enabled on all environments via oAuthProxy plugin
-    // Preview branches proxy OAuth requests to production
-    socialProviders: {
-      google: {
-        clientId: runtimeEnv.GOOGLE_CLIENT_ID,
-        clientSecret: runtimeEnv.GOOGLE_CLIENT_SECRET,
-        enabled: true,
-        overrideUserInfoOnSignIn: true,
-      },
-    },
+    // Social providers — Google only when its secrets are configured
+    // (isGoogleAuthConfigured is also what hides the login form's Google
+    // button, via getAuthOptionsFn). Unconfigured environments (local
+    // dev by default, PR previews) don't register the provider at all.
+    socialProviders: isGoogleAuthConfigured()
+      ? {
+          google: {
+            clientId: runtimeEnv.GOOGLE_CLIENT_ID,
+            clientSecret: runtimeEnv.GOOGLE_CLIENT_SECRET,
+            enabled: true,
+            overrideUserInfoOnSignIn: true,
+          },
+        }
+      : {},
 
     // Configure plugins
     plugins: [
@@ -119,6 +166,9 @@ function createAuth() {
       emailOTP({
         otpLength: 6,
         expiresIn: 300, // 5 minutes
+        // Dev-only fixed code (see devFixedOtp above). Returning undefined
+        // falls back to better-auth's default random generator.
+        generateOTP: (_data, ctx) => devFixedOtp(ctx?.request),
         async sendVerificationOTP({ email, otp, type }) {
           if (type === 'sign-in') {
             logger.info('Sending sign-in OTP', { email });

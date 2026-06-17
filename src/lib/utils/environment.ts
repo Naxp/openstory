@@ -7,8 +7,6 @@
  */
 
 import { getEnv } from '#env';
-import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
 
 /**
  * Server-side application URL
@@ -94,12 +92,15 @@ export function isLocalRequestHost(request: Request): boolean {
 }
 
 /**
- * Server function to check if the current request is from a preview deployment.
- * Safe to call from client code (executes server-side via RPC).
+ * Is Google OAuth configured (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET set)?
+ * Single source of truth for Google sign-in availability: gates both the
+ * better-auth socialProviders registration (src/lib/auth/config.ts) and the
+ * login form's Google button (via getAuthOptionsFn). Environments
+ * without the secrets — local dev by default, PR previews (whose hosts have
+ * no registered OAuth redirect URIs, so the deploy workflow doesn't push
+ * them) — simply don't offer Google.
  */
-export const getIsPreviewFn = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    const request = getRequest();
-    return isPreviewDeployment(request);
-  }
-);
+export function isGoogleAuthConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}

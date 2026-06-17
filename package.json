@@ -43,7 +43,8 @@
     "styles:sample-videos:seed:d1": "bun scripts/seed-style-sample-videos.ts --d1",
     "upload:prompts": "bun scripts/upload-all-prompts.ts",
     "agent-harness": "bunx github:tombeckenham/agent-harness",
-    "dev": "bun scripts/ensure-env.ts && bun run --parallel dev:app stripe:dev",
+    "dev": "bun scripts/ensure-env.ts && bun run dev:app",
+    "dev:all": "bun scripts/ensure-env.ts && bun run --parallel dev:app stripe:dev",
     "dev:app": "bun --sequential db:migrate:local db:seed:local dev:vite",
     "dev:vite": "bun scripts/build-content-collections.ts && vite dev",
     "stripe:dev": "source .env.local 2>/dev/null; [ -z \"${STRIPE_SECRET_KEY}\" ] && echo 'Skipping Stripe (no STRIPE_SECRET_KEY)' && exit 0; stripe listen --forward-to localhost:3000/api/billing/webhook --api-key=${STRIPE_SECRET_KEY}",
@@ -70,6 +71,7 @@
     "db:migrate:local": "bun scripts/migrate-local-d1.ts",
     "db:migrate:test": "bun scripts/migrate-local-d1.ts --test",
     "db:migrate:prd": "bun scripts/flatten-migrations.ts && wrangler d1 migrations apply DB --env=production --remote",
+    "explorer": "open http://localhost:3000/cdn-cgi/explorer/",
     "db:studio:local": "bun drizzle-kit studio --config=drizzle.config.local.ts",
     "db:studio:d1": "bun drizzle-kit studio --config=drizzle.config.d1.ts",
     "db:seed:local": "bun scripts/seed.ts --local",
@@ -230,6 +232,9 @@
       },
       "API_KEY_ENCRYPTION_KEY": {
         "description": "Encrypts AI keys that teams add in-app (bring-your-own-key). Generate with `openssl rand -hex 32`."
+      },
+      "EMAIL_FROM": {
+        "description": "Sender address for sign-in code emails, e.g. `noreply@yourdomain.com`. Required for sign-in: authentication is passwordless (emailed one-time codes), so without it nobody can create an account on this deployment. The domain must be onboarded in [Email Service > Email Sending](https://dash.cloudflare.com/?to=/:account/email-service/sending) — onboarding sets up SPF/DKIM/DMARC for you."
       },
       "DB": {
         "description": "D1 database for app data. Created automatically — the deploy command applies migrations on every deploy, and starter templates seed themselves on first request."

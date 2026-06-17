@@ -14,7 +14,9 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { AuthOptions } from '@/functions/auth-options';
 import { authClient } from '@/lib/auth/client';
+import { DEV_OTP_CODE } from '@/lib/auth/dev-otp';
 import { usePostHog } from '@posthog/react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -26,19 +28,31 @@ const logger = getLogger(['openstory', 'ui', 'auth', 'auth-form']);
 type AuthFormProps = {
   emailEntered?: string;
   redirectTo?: string;
-  isPreview?: boolean;
+  /**
+   * Server-reported sign-in options (getAuthOptionsFn) — resolved in the
+   * /_auth route's beforeLoad (or the auth-gate dialog's query) so the form
+   * renders the right options on first paint. Defaults to everything off.
+   */
+  authOptions?: AuthOptions;
 };
 
 export function AuthForm({
   emailEntered,
   redirectTo = '/sequences/new',
-  isPreview = false,
+  authOptions,
 }: AuthFormProps) {
   const navigate = useNavigate();
   const posthog = usePostHog();
   const [email, setEmail] = useState(emailEntered || '');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const googleAuthEnabled = authOptions?.googleAuthEnabled ?? false;
+  // Dev only: the server stamps the fixed OTP (no EMAIL_FROM set), so the
+  // form signs straight in and shows the zero-friction note. The
+  // `import.meta.env.DEV` guard DCE's the branch from production builds.
+  const devFixedOtpActive =
+    import.meta.env.DEV && (authOptions?.devFixedOtp ?? false);
 
   // Preload passkeys for conditional UI (browser autofill)
   useEffect(() => {
@@ -89,6 +103,26 @@ export function AuthForm({
         return;
       }
 
+      // Local dev: the server stamps a fixed OTP (see devFixedOtp in
+      // src/lib/auth/config.ts), so sign in straight away and skip the verify
+      // page — no code typed at all. Eliminated from production builds
+      // (`import.meta.env.DEV` in devFixedOtpActive define-replaced with
+      // false). A failed attempt falls through to the verify page.
+      if (devFixedOtpActive) {
+        const signIn = await authClient.signIn.emailOtp({
+          email,
+          otp: DEV_OTP_CODE,
+        });
+        if (!signIn.error) {
+          posthog.capture('user_signed_in', { method: 'email_otp_dev' });
+          await navigate({ to: redirectTo });
+          return;
+        }
+        logger.warn('Dev fixed-OTP sign-in failed; falling back to verify', {
+          error: signIn.error,
+        });
+      }
+
       // Navigate to verify page with email in search params
       await navigate({
         to: '/verify',
@@ -134,8 +168,8 @@ export function AuthForm({
           </Alert>
         )}
 
-        {/* Google OAuth - hidden on preview branches (OAuth redirect URIs not configured) */}
-        {!isPreview && (
+        {/* Google OAuth — only where the server has the secrets configured */}
+        {googleAuthEnabled && (
           <>
             <Button
               type="button"
@@ -215,9 +249,17 @@ export function AuthForm({
           </Button>
         </form>
 
-        <p className="text-center text-xs text-muted-foreground">
-          No password needed — we'll send you a code.
-        </p>
+        {devFixedOtpActive ? (
+          <p className="text-center text-xs text-muted-foreground">
+            Dev mode: no email OTP necessary — submitting an email signs you
+            straight in. Set <code>EMAIL_FROM</code> in <code>.env.local</code>{' '}
+            to use the real email flow.
+          </p>
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">
+            No password needed — we'll send you a code.
+          </p>
+        )}
 
         <p className="text-center text-xs text-muted-foreground">
           By signing in, you agree to our{' '}
