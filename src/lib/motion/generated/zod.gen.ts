@@ -355,27 +355,25 @@ export const zKlingVideoV3ProImageToVideoInput = z.object({
 });
 
 /**
- * ProImageToVideoHailuo02Input
+ * ProImageToVideoHailuo23Input
  */
-export const zMinimaxHailuo02ProImageToVideoInput = z.object({
-    prompt: z.string().max(2000),
+export const zMinimaxHailuo23ProImageToVideoInput = z.object({
+    prompt: z.string().min(1).max(2000).register(z.globalRegistry, {
+        description: 'Text prompt for video generation'
+    }),
     image_url: z.union([
         z.string(),
         z.string()
     ]),
     prompt_optimizer: z.boolean().register(z.globalRegistry, {
         description: 'Whether to use the model\'s prompt optimizer'
-    }).optional().default(true),
-    end_image_url: z.union([
-        z.string(),
-        z.unknown()
-    ]).optional()
+    }).optional().default(true)
 });
 
 /**
- * ImageToVideoHailuo02Output
+ * ProImageToVideoHailuo23Output
  */
-export const zMinimaxHailuo02ProImageToVideoOutput = z.object({
+export const zMinimaxHailuo23ProImageToVideoOutput = z.object({
     video: zFile
 });
 
@@ -663,13 +661,13 @@ export const zGetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdPath = z.obj
  */
 export const zGetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdResponse = zKlingVideoV3ProImageToVideoOutput;
 
-export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusPath = z.object({
+export const zGetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusPath = z.object({
     request_id: z.string().register(z.globalRegistry, {
         description: 'Request ID'
     })
 });
 
-export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusQuery = z.object({
+export const zGetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusQuery = z.object({
     logs: z.number().register(z.globalRegistry, {
         description: 'Whether to include logs (`1`) in the response or not (`0`).'
     }).optional()
@@ -678,9 +676,9 @@ export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusQue
 /**
  * The request status.
  */
-export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusResponse = zQueueStatus;
+export const zGetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusResponse = zQueueStatus;
 
-export const zPutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelPath = z.object({
+export const zPutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelPath = z.object({
     request_id: z.string().register(z.globalRegistry, {
         description: 'Request ID'
     })
@@ -689,7 +687,7 @@ export const zPutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelPat
 /**
  * The request was cancelled.
  */
-export const zPutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelResponse = z.object({
+export const zPutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelResponse = z.object({
     success: z.boolean().register(z.globalRegistry, {
         description: 'Whether the request was cancelled successfully.'
     }).optional()
@@ -697,14 +695,14 @@ export const zPutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelRes
     description: 'The request was cancelled.'
 });
 
-export const zPostFalAiMinimaxHailuo02ProImageToVideoBody = zMinimaxHailuo02ProImageToVideoInput;
+export const zPostFalAiMinimaxHailuo23ProImageToVideoBody = zMinimaxHailuo23ProImageToVideoInput;
 
 /**
  * The request status.
  */
-export const zPostFalAiMinimaxHailuo02ProImageToVideoResponse = zQueueStatus;
+export const zPostFalAiMinimaxHailuo23ProImageToVideoResponse = zQueueStatus;
 
-export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdPath = z.object({
+export const zGetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdPath = z.object({
     request_id: z.string().register(z.globalRegistry, {
         description: 'Request ID'
     })
@@ -713,7 +711,7 @@ export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdPath = z.
 /**
  * Result of the request.
  */
-export const zGetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdResponse = zMinimaxHailuo02ProImageToVideoOutput;
+export const zGetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdResponse = zMinimaxHailuo23ProImageToVideoOutput;
 
 export const zGetBytedanceSeedance20EnterpriseV2ImageToVideoRequestsByRequestIdStatusPath = z.object({
     request_id: z.string().register(z.globalRegistry, {

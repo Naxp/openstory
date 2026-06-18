@@ -4,8 +4,13 @@
  */
 
 import type { TextModel } from '@/lib/ai/models';
+import {
+  usdToMicros,
+  ZERO_MICROS,
+  type Microdollars,
+} from '@/lib/billing/money';
 import type { ChatMessage } from '@/lib/prompts';
-import { chat, type DebugOption } from '@tanstack/ai';
+import { chat, type DebugOption, type TokenUsage } from '@tanstack/ai';
 import type { ProviderPreferences } from '@tanstack/ai-openrouter';
 import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
@@ -15,6 +20,30 @@ import { createAdapter, type LlmKeyInfo } from './create-adapter';
 import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'ai', 'llm-client']);
+
+/**
+ * Convert a completed LLM call's usage into a charge. OpenRouter reports an
+ * authoritative per-request `cost` (USD) on every response; we charge that raw
+ * cost (markup is applied downstream in `deductCredits`). Logs and charges
+ * nothing when no cost was reported, surfacing the gap rather than guessing.
+ */
+export function llmCostFromUsage(
+  usage: TokenUsage | undefined,
+  modelId: string
+): Microdollars {
+  if (
+    !usage ||
+    typeof usage.cost !== 'number' ||
+    !Number.isFinite(usage.cost)
+  ) {
+    logger.error(
+      `No usage cost reported for LLM call (${modelId}) — charging nothing`,
+      { usage }
+    );
+    return ZERO_MICROS;
+  }
+  return usdToMicros(usage.cost);
+}
 
 export type StreamChunk<T = never> =
   | { done: false; delta: string; accumulated: string }
@@ -28,6 +57,12 @@ export type StreamChunk<T = never> =
        * (undefined when the stream ended without a `structured-output.complete` event).
        */
       parsed: T | undefined;
+      /**
+       * Provider-reported usage for the call (OpenRouter carries `cost`).
+       * `undefined` when the adapter reported none. Pass to `llmCostFromUsage`
+       * to bill the call.
+       */
+      usage: TokenUsage | undefined;
     };
 
 export type LLMRequestParams<T = unknown> = {
@@ -97,11 +132,11 @@ const STRUCTURED_OUTPUT_MODELS = new Set([
   'x-ai/grok-4.3',
   'anthropic/claude-sonnet-4.6',
   'x-ai/grok-4.20',
-  'anthropic/claude-opus-4.6',
+  'anthropic/claude-opus-4.8',
   'deepseek/deepseek-v3.2',
-  'z-ai/glm-5',
+  'z-ai/glm-5.2',
   'google/gemini-3.1-pro-preview',
-  'openai/gpt-5.4',
+  'openai/gpt-5.5',
   'google/gemini-3-flash-preview',
   'mistralai/mistral-small-2603',
   'openai/gpt-5.4-mini',
@@ -482,6 +517,7 @@ export async function* callLLMStream<T>(
 ): AsyncGenerator<StreamChunk<T>> {
   let accumulated = '';
   let parsed: T | undefined;
+  let usage: TokenUsage | undefined;
 
   const baseOptions = {
     ...baseChatOptions(params),
@@ -490,6 +526,15 @@ export async function* callLLMStream<T>(
       ...buildModelOptions(params),
       streamOptions: { includeUsage: true },
     },
+    // Capture the terminal usage (carries OpenRouter's `cost`) so callers can
+    // bill the call via `llmCostFromUsage`.
+    middleware: [
+      {
+        onFinish: (_ctx: unknown, info: { usage?: TokenUsage }) => {
+          usage = info.usage;
+        },
+      },
+    ],
     stream: true as const,
   };
 
@@ -534,5 +579,5 @@ export async function* callLLMStream<T>(
     }
   }
 
-  yield { delta: '', accumulated, done: true, parsed };
+  yield { delta: '', accumulated, done: true, parsed, usage };
 }

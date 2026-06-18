@@ -1,3 +1,5 @@
+import { usdToMicros, ZERO_MICROS } from '@/lib/billing/money';
+import type { TokenUsage } from '@tanstack/ai';
 import { convertWebSearchToolToAdapterFormat } from '@tanstack/ai-openrouter/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -30,7 +32,15 @@ vi.doMock('./create-adapter', () => ({
 // Dynamic import so vi.doMock above is in effect when llm-client (and its
 // `./create-adapter` import) resolves. Static imports are hoisted above
 // vi.doMock and would bypass the mocks.
-const { callLLM, callLLMStream } = await import('./llm-client');
+const { callLLM, callLLMStream, llmCostFromUsage } =
+  await import('./llm-client');
+
+const usage = (cost?: number): TokenUsage => ({
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  cost,
+});
 
 describe('llm-client', () => {
   beforeEach(() => {
@@ -268,7 +278,7 @@ describe('llm-client', () => {
     describe('with responseSchema', () => {
       const schema = z.object({ greeting: z.string() });
       // A non-Anthropic structured-output model → native `outputSchema` path.
-      const nativeModel = 'openai/gpt-5.4';
+      const nativeModel = 'openai/gpt-5.5';
 
       it('yields parsed object on terminal chunk when structured-output.complete fires', async () => {
         mockChat.mockReturnValue(
@@ -576,7 +586,7 @@ describe('llm-client', () => {
       );
 
       const result = await callLLM({
-        model: 'openai/gpt-5.4',
+        model: 'openai/gpt-5.5',
         messages: [{ role: 'user', content: 'test' }],
         responseSchema: schema,
       });
@@ -594,11 +604,29 @@ describe('llm-client', () => {
 
       return expect(
         callLLM({
-          model: 'openai/gpt-5.4',
+          model: 'openai/gpt-5.5',
           messages: [{ role: 'user', content: 'test' }],
           responseSchema: schema,
         })
       ).rejects.toThrow(/no validated object/);
+    });
+  });
+
+  describe('llmCostFromUsage', () => {
+    it('charges the provider-reported cost (USD → micros)', () => {
+      expect(llmCostFromUsage(usage(0.0123), 'model')).toBe(
+        usdToMicros(0.0123)
+      );
+    });
+
+    it('charges nothing when usage or cost is missing / non-finite', () => {
+      expect(llmCostFromUsage(undefined, 'model')).toBe(ZERO_MICROS);
+      expect(llmCostFromUsage(usage(undefined), 'model')).toBe(ZERO_MICROS);
+      expect(llmCostFromUsage(usage(Number.NaN), 'model')).toBe(ZERO_MICROS);
+    });
+
+    it('treats explicit zero cost as zero', () => {
+      expect(llmCostFromUsage(usage(0), 'model')).toBe(ZERO_MICROS);
     });
   });
 });

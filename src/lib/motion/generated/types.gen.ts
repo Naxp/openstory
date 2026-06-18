@@ -426,15 +426,19 @@ export type KlingV3MultiPromptElement = {
 };
 
 /**
- * ProImageToVideoHailuo02Input
+ * ProImageToVideoHailuo23Input
  */
-export type MinimaxHailuo02ProImageToVideoInput = {
+export type MinimaxHailuo23ProImageToVideoInput = {
     /**
      * Prompt
+     *
+     * Text prompt for video generation
      */
     prompt: string;
     /**
      * Image Url
+     *
+     * URL of the image to use as the first frame
      */
     image_url: string | Blob | File;
     /**
@@ -443,18 +447,12 @@ export type MinimaxHailuo02ProImageToVideoInput = {
      * Whether to use the model's prompt optimizer
      */
     prompt_optimizer?: boolean;
-    /**
-     * End Image Url
-     *
-     * Optional URL of the image to use as the last frame of the video
-     */
-    end_image_url?: string | unknown;
 };
 
 /**
- * ImageToVideoHailuo02Output
+ * ProImageToVideoHailuo23Output
  */
-export type MinimaxHailuo02ProImageToVideoOutput = {
+export type MinimaxHailuo23ProImageToVideoOutput = {
     video: File;
 };
 
@@ -893,7 +891,7 @@ export type GetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdResponses = {
 
 export type GetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdResponse = GetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdResponses[keyof GetFalAiKlingVideoV3ProImageToVideoRequestsByRequestIdResponses];
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusData = {
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusData = {
     body?: never;
     path: {
         /**
@@ -907,19 +905,19 @@ export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusData 
          */
         logs?: number;
     };
-    url: '/fal-ai/minimax/hailuo-02/pro/image-to-video/requests/{request_id}/status';
+    url: '/fal-ai/minimax/hailuo-2.3/pro/image-to-video/requests/{request_id}/status';
 };
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusResponses = {
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusResponses = {
     /**
      * The request status.
      */
     200: QueueStatus;
 };
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusResponse = GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusResponses[keyof GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdStatusResponses];
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusResponse = GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusResponses[keyof GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdStatusResponses];
 
-export type PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelData = {
+export type PutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelData = {
     body?: never;
     path: {
         /**
@@ -928,10 +926,10 @@ export type PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelData 
         request_id: string;
     };
     query?: never;
-    url: '/fal-ai/minimax/hailuo-02/pro/image-to-video/requests/{request_id}/cancel';
+    url: '/fal-ai/minimax/hailuo-2.3/pro/image-to-video/requests/{request_id}/cancel';
 };
 
-export type PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelResponses = {
+export type PutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelResponses = {
     /**
      * The request was cancelled.
      */
@@ -943,25 +941,25 @@ export type PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelRespo
     };
 };
 
-export type PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelResponse = PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelResponses[keyof PutFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdCancelResponses];
+export type PutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelResponse = PutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelResponses[keyof PutFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdCancelResponses];
 
-export type PostFalAiMinimaxHailuo02ProImageToVideoData = {
-    body: MinimaxHailuo02ProImageToVideoInput;
+export type PostFalAiMinimaxHailuo23ProImageToVideoData = {
+    body: MinimaxHailuo23ProImageToVideoInput;
     path?: never;
     query?: never;
-    url: '/fal-ai/minimax/hailuo-02/pro/image-to-video';
+    url: '/fal-ai/minimax/hailuo-2.3/pro/image-to-video';
 };
 
-export type PostFalAiMinimaxHailuo02ProImageToVideoResponses = {
+export type PostFalAiMinimaxHailuo23ProImageToVideoResponses = {
     /**
      * The request status.
      */
     200: QueueStatus;
 };
 
-export type PostFalAiMinimaxHailuo02ProImageToVideoResponse = PostFalAiMinimaxHailuo02ProImageToVideoResponses[keyof PostFalAiMinimaxHailuo02ProImageToVideoResponses];
+export type PostFalAiMinimaxHailuo23ProImageToVideoResponse = PostFalAiMinimaxHailuo23ProImageToVideoResponses[keyof PostFalAiMinimaxHailuo23ProImageToVideoResponses];
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdData = {
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdData = {
     body?: never;
     path: {
         /**
@@ -970,17 +968,17 @@ export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdData = {
         request_id: string;
     };
     query?: never;
-    url: '/fal-ai/minimax/hailuo-02/pro/image-to-video/requests/{request_id}';
+    url: '/fal-ai/minimax/hailuo-2.3/pro/image-to-video/requests/{request_id}';
 };
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdResponses = {
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdResponses = {
     /**
      * Result of the request.
      */
-    200: MinimaxHailuo02ProImageToVideoOutput;
+    200: MinimaxHailuo23ProImageToVideoOutput;
 };
 
-export type GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdResponse = GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdResponses[keyof GetFalAiMinimaxHailuo02ProImageToVideoRequestsByRequestIdResponses];
+export type GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdResponse = GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdResponses[keyof GetFalAiMinimaxHailuo23ProImageToVideoRequestsByRequestIdResponses];
 
 export type GetBytedanceSeedance20EnterpriseV2ImageToVideoRequestsByRequestIdStatusData = {
     body?: never;

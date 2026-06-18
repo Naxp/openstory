@@ -12,12 +12,17 @@ import { createAdapter, getPlatformLlmKey } from '@/lib/ai/create-adapter';
 import {
   extractRunError,
   formatRunErrorMessage,
+  llmCostFromUsage,
   PROMPT_REASONING,
 } from '@/lib/ai/llm-client';
 import type { TextModel } from '@/lib/ai/models';
-import { getContextWindow } from '@/lib/ai/models.config';
+import {
+  analysisModelSupportsVision,
+  getContextWindow,
+  resolveVisionModel,
+} from '@/lib/ai/models.config';
 import { extractStreamingStringField } from '@/lib/ai/stream-extract';
-import { ZERO_MICROS } from '@/lib/billing/money';
+import type { Microdollars } from '@/lib/billing/money';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { getLogger } from '@/lib/observability/logger';
@@ -28,7 +33,7 @@ import {
 } from '@/lib/prompts';
 import { getFramePromptChannel } from '@/lib/realtime';
 import { toVisionImageSource } from '@/lib/storage/external-url';
-import { chat } from '@tanstack/ai';
+import { chat, type TokenUsage } from '@tanstack/ai';
 import type { WorkflowStep } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
 import type { z } from 'zod';
@@ -201,7 +206,13 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
   config: DurableLLMCallConfig<TSchema>,
   callContext: DurableLLMCallContext
 ): Promise<z.infer<TSchema>> {
-  const { name, phase, modelId } = config;
+  const { name, phase } = config;
+  // Image-bearing calls on a text-only model transparently route to
+  // DEFAULT_VISION_MODEL (e.g. GLM-5.2 → Claude Sonnet, #944); everything else
+  // runs as chosen. The effective model drives the adapter, context window, and
+  // cost; callers keep storing/hashing the requested model.
+  const hasImageInput = (config.visionImageUrls?.length ?? 0) > 0;
+  const modelId = resolveVisionModel(config.modelId, hasImageInput);
   const logName = `phase-${phase.number}-${name}`;
   const logTags = [name, `phase-${phase.number}`, 'analysis'];
   const logMetadata = {
@@ -224,74 +235,99 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
   const llmKeyInfo = await resolveCallKey(callContext);
 
   // Step 2: Durable LLM call. JSON-stringifies the parsed object so CF's
-  // Rpc.Serializable<T> check passes regardless of the Zod-inferred shape.
-  const jsonText = await step.do(name, async (): Promise<string> => {
-    const adapter = createAdapter(modelId, llmKeyInfo);
+  // Rpc.Serializable<T> check passes regardless of the Zod-inferred shape, and
+  // carries the provider-reported cost across the step boundary for deduction.
+  const { jsonText, costMicros } = await step.do(
+    name,
+    async (): Promise<{ jsonText: string; costMicros: Microdollars }> => {
+      const adapter = createAdapter(modelId, llmKeyInfo);
 
-    // Refetch prompt inside the LLM step — promptReference can't cross the
-    // step boundary (not Rpc.Serializable).
-    const { prompt: promptReference } = await getChatPrompt(
-      config.promptName,
-      config.promptVariables
-    );
+      // Refetch prompt inside the LLM step — promptReference can't cross the
+      // step boundary (not Rpc.Serializable).
+      const { prompt: promptReference } = await getChatPrompt(
+        config.promptName,
+        config.promptVariables
+      );
 
-    logger.info(`[LLM:${logName}:cf] Starting call`, {
-      model: modelId,
-      keySource: llmKeyInfo.source,
-      keyVia: llmKeyInfo.via,
-      messageCount: messages.length,
-    });
-
-    const visionImageSources = await resolveVisionImageSources(
-      config.visionImageUrls
-    );
-    const { systemPrompts, chatMessages } = buildChatMessages(
-      messages,
-      visionImageSources
-    );
-
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 300_000);
-
-    try {
-      const text = await chat({
-        adapter,
-        messages: chatMessages,
-        systemPrompts: systemPrompts,
-        stream: false,
-        abortController,
-        modelOptions: {
-          ...reasoningModelOptions(config.reasoning),
-          maxCompletionTokens: Math.floor(
-            getContextWindow(config.modelId) * 0.5
-          ),
-        },
-        metadata: {
-          observationName: logName,
-          prompt: promptReference,
-          tags: logTags,
-          metadata: logMetadata,
-          sessionId: callContext.sequenceId,
-          userId: callContext.userId,
-        },
-        outputSchema: config.responseSchema,
-        debug: false,
+      logger.info(`[LLM:${logName}:cf] Starting call`, {
+        model: modelId,
+        requestedModel: config.modelId,
+        keySource: llmKeyInfo.source,
+        keyVia: llmKeyInfo.via,
+        messageCount: messages.length,
       });
-      logger.info(`[LLM:${logName}:cf] Call succeeded`);
-      // Return as JSON string — round-trips through step.do without hitting
-      // CF's Rpc.Serializable constraint on the Zod-inferred shape.
-      return JSON.stringify(text);
-    } finally {
-      clearTimeout(timeout);
+
+      // Only attach the still when the effective model accepts image input.
+      // resolveVisionModel routes text-only models to DEFAULT_VISION_MODEL, so
+      // reaching here with an image but no vision support means that default is
+      // misconfigured to a text-only model. Warn and drop the image (don't fail
+      // — text-only is a supported mode) rather than send it to a text model.
+      const effectiveSupportsVision = analysisModelSupportsVision(modelId);
+      if (hasImageInput && !effectiveSupportsVision) {
+        logger.warn(
+          `[LLM:${logName}:cf] Dropping vision image(s): effective model ${modelId} (requested ${config.modelId}) is text-only; DEFAULT_VISION_MODEL may be misconfigured — running text-only`
+        );
+      }
+      const visionImageSources = effectiveSupportsVision
+        ? await resolveVisionImageSources(config.visionImageUrls)
+        : undefined;
+      const { systemPrompts, chatMessages } = buildChatMessages(
+        messages,
+        visionImageSources
+      );
+
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 300_000);
+
+      let capturedUsage: TokenUsage | undefined;
+      try {
+        const text = await chat({
+          adapter,
+          messages: chatMessages,
+          systemPrompts: systemPrompts,
+          stream: false,
+          abortController,
+          modelOptions: {
+            ...reasoningModelOptions(config.reasoning),
+            maxCompletionTokens: Math.floor(getContextWindow(modelId) * 0.5),
+          },
+          metadata: {
+            observationName: logName,
+            prompt: promptReference,
+            tags: logTags,
+            metadata: logMetadata,
+            sessionId: callContext.sequenceId,
+            userId: callContext.userId,
+          },
+          outputSchema: config.responseSchema,
+          middleware: [
+            {
+              onFinish: (_ctx, info) => {
+                capturedUsage = info.usage;
+              },
+            },
+          ],
+          debug: false,
+        });
+        logger.info(`[LLM:${logName}:cf] Call succeeded`);
+        // Return as JSON string — round-trips through step.do without hitting
+        // CF's Rpc.Serializable constraint on the Zod-inferred shape.
+        return {
+          jsonText: JSON.stringify(text),
+          costMicros: llmCostFromUsage(capturedUsage, modelId),
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
     }
-  });
+  );
 
   if (callContext.scopedDb) {
     const scopedDb = callContext.scopedDb;
     await step.do(`deduct-llm-credits-${name}`, async () => {
       await deductWorkflowCredits({
         scopedDb,
-        costMicros: ZERO_MICROS,
+        costMicros,
         usedOwnKey: llmKeyInfo.source === 'team',
         description: `LLM analysis (${modelId})`,
         idempotencyKey: `${callContext.workflowRunId}:llm-${name}`,
@@ -301,6 +337,7 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
           phaseName: phase.name,
           stepName: name,
           sequenceId: callContext.sequenceId,
+          costMicros,
         },
       });
     });
@@ -324,7 +361,11 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
     return durableLLMCallCf(step, config, callContext);
   }
 
-  const { name, phase, modelId } = config;
+  const { name, phase } = config;
+  // See durableLLMCallCf: image-bearing calls on a text-only model route to
+  // DEFAULT_VISION_MODEL; the effective model drives adapter/window/cost.
+  const hasImageInput = (config.visionImageUrls?.length ?? 0) > 0;
+  const modelId = resolveVisionModel(config.modelId, hasImageInput);
   const {
     frameId,
     promptType,
@@ -348,9 +389,9 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
 
   const llmKeyInfo = await resolveCallKey(callContext);
 
-  const jsonText = await step.do(
+  const { jsonText, costMicros } = await step.do(
     `${name}-stream`,
-    async (): Promise<string> => {
+    async (): Promise<{ jsonText: string; costMicros: Microdollars }> => {
       const adapter = createAdapter(modelId, llmKeyInfo);
       const { prompt: promptReference } = await getChatPrompt(
         config.promptName,
@@ -359,6 +400,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
 
       logger.info(`[LLM:${logName}:cf] Starting streaming call`, {
         model: modelId,
+        requestedModel: config.modelId,
         keySource: llmKeyInfo.source,
         keyVia: llmKeyInfo.via,
         messageCount: messages.length,
@@ -366,9 +408,17 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
         promptType,
       });
 
-      const visionImageSources = await resolveVisionImageSources(
-        config.visionImageUrls
-      );
+      // Only attach the still when the effective model accepts image input;
+      // warn (don't fail) when an image is dropped — see durableLLMCallCf.
+      const effectiveSupportsVision = analysisModelSupportsVision(modelId);
+      if (hasImageInput && !effectiveSupportsVision) {
+        logger.warn(
+          `[LLM:${logName}:cf] Dropping vision image(s): effective model ${modelId} (requested ${config.modelId}) is text-only with no vision companion; running text-only`
+        );
+      }
+      const visionImageSources = effectiveSupportsVision
+        ? await resolveVisionImageSources(config.visionImageUrls)
+        : undefined;
       const { systemPrompts, chatMessages } = buildChatMessages(
         messages,
         visionImageSources
@@ -382,6 +432,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
       let lastExtracted = '';
       let pendingDelta = '';
       let lastEmitAt = 0;
+      let capturedUsage: TokenUsage | undefined;
 
       const flushDelta = async () => {
         if (!pendingDelta) return;
@@ -400,9 +451,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
           abortController,
           modelOptions: {
             ...reasoningModelOptions(config.reasoning),
-            maxCompletionTokens: Math.floor(
-              getContextWindow(config.modelId) * 0.5
-            ),
+            maxCompletionTokens: Math.floor(getContextWindow(modelId) * 0.5),
           },
           metadata: {
             observationName: logName,
@@ -413,6 +462,13 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
             userId: callContext.userId,
           },
           outputSchema: config.responseSchema,
+          middleware: [
+            {
+              onFinish: (_ctx, info) => {
+                capturedUsage = info.usage;
+              },
+            },
+          ],
           debug: false,
         })) {
           if (
@@ -440,7 +496,10 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
         }
         await flushDelta();
         logger.info(`[LLM:${logName}:cf] Streaming call succeeded`);
-        return accumulated;
+        return {
+          jsonText: accumulated,
+          costMicros: llmCostFromUsage(capturedUsage, modelId),
+        };
       } finally {
         clearTimeout(timeout);
       }
@@ -452,7 +511,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
     await step.do(`deduct-llm-credits-${name}`, async () => {
       await deductWorkflowCredits({
         scopedDb,
-        costMicros: ZERO_MICROS,
+        costMicros,
         usedOwnKey: llmKeyInfo.source === 'team',
         description: `LLM analysis (${modelId})`,
         idempotencyKey: `${callContext.workflowRunId}:llm-${name}`,
@@ -462,6 +521,7 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
           phaseName: phase.name,
           stepName: name,
           sequenceId: callContext.sequenceId,
+          costMicros,
         },
       });
     });

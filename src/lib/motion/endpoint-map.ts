@@ -9,7 +9,7 @@ import {
   zGrokImagineVideoV15ImageToVideoInput,
   zKlingVideoV3ProImageToVideoInput,
   zLtx23ImageToVideoInput,
-  zMinimaxHailuo02ProImageToVideoInput,
+  zMinimaxHailuo23ProImageToVideoInput,
   zSeedance20EnterpriseV2ImageToVideoInput,
   zVeo31ImageToVideoInput,
 } from './generated/zod.gen';
@@ -18,7 +18,7 @@ import {
   GrokImagineVideoV15ImageToVideoInputSchema,
   KlingVideoV3ProImageToVideoInputSchema,
   Ltx23ImageToVideoInputSchema,
-  MinimaxHailuo02ProImageToVideoInputSchema,
+  MinimaxHailuo23ProImageToVideoInputSchema,
   Seedance20EnterpriseV2ImageToVideoInputSchema,
   Veo31ImageToVideoInputSchema,
 } from './generated/schemas.gen';
@@ -27,7 +27,7 @@ export type MotionJSONSchema =
   | typeof GrokImagineVideoV15ImageToVideoInputSchema
   | typeof KlingVideoV3ProImageToVideoInputSchema
   | typeof Ltx23ImageToVideoInputSchema
-  | typeof MinimaxHailuo02ProImageToVideoInputSchema
+  | typeof MinimaxHailuo23ProImageToVideoInputSchema
   | typeof Seedance20EnterpriseV2ImageToVideoInputSchema
   | typeof Veo31ImageToVideoInputSchema;
 
@@ -36,8 +36,8 @@ export const MOTION_INPUT_SCHEMAS = {
     zSeedance20EnterpriseV2ImageToVideoInput,
   'fal-ai/kling-video/v3/pro/image-to-video': zKlingVideoV3ProImageToVideoInput,
   'fal-ai/ltx-2.3/image-to-video': zLtx23ImageToVideoInput,
-  'fal-ai/minimax/hailuo-02/pro/image-to-video':
-    zMinimaxHailuo02ProImageToVideoInput,
+  'fal-ai/minimax/hailuo-2.3/pro/image-to-video':
+    zMinimaxHailuo23ProImageToVideoInput,
   'fal-ai/veo3.1/image-to-video': zVeo31ImageToVideoInput,
   'xai/grok-imagine-video/v1.5/image-to-video':
     zGrokImagineVideoV15ImageToVideoInput,
@@ -60,8 +60,8 @@ export const MOTION_JSON_SCHEMAS = {
   'fal-ai/kling-video/v3/pro/image-to-video':
     KlingVideoV3ProImageToVideoInputSchema,
   'fal-ai/ltx-2.3/image-to-video': Ltx23ImageToVideoInputSchema,
-  'fal-ai/minimax/hailuo-02/pro/image-to-video':
-    MinimaxHailuo02ProImageToVideoInputSchema,
+  'fal-ai/minimax/hailuo-2.3/pro/image-to-video':
+    MinimaxHailuo23ProImageToVideoInputSchema,
   'fal-ai/veo3.1/image-to-video': Veo31ImageToVideoInputSchema,
   'xai/grok-imagine-video/v1.5/image-to-video':
     GrokImagineVideoV15ImageToVideoInputSchema,
@@ -80,9 +80,9 @@ export const MOTION_TRANSFORMS = {
     zLtx23ImageToVideoInput,
     Ltx23ImageToVideoInputSchema
   ),
-  'fal-ai/minimax/hailuo-02/pro/image-to-video': motionTransform(
-    zMinimaxHailuo02ProImageToVideoInput,
-    MinimaxHailuo02ProImageToVideoInputSchema
+  'fal-ai/minimax/hailuo-2.3/pro/image-to-video': motionTransform(
+    zMinimaxHailuo23ProImageToVideoInput,
+    MinimaxHailuo23ProImageToVideoInputSchema
   ),
   'fal-ai/veo3.1/image-to-video': motionTransform(
     zVeo31ImageToVideoInput,

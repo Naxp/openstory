@@ -39,8 +39,8 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'Lowest hallucination rate, flagship agentic model',
   },
   {
-    id: 'anthropic/claude-opus-4.6',
-    name: 'Claude Opus 4.6',
+    id: 'anthropic/claude-opus-4.8',
+    name: 'Claude Opus 4.8',
     provider: 'Anthropic',
     license: 'proprietary' as const,
     qualityRank: 4,
@@ -70,16 +70,19 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'MIT license, MMLU 94.2, GPT-5 class reasoning',
   },
   {
-    id: 'z-ai/glm-5',
-    name: 'GLM-5',
+    id: 'z-ai/glm-5.2',
+    name: 'GLM-5.2',
     provider: 'Z.ai',
     license: 'open-source' as const,
     qualityRank: 7,
-    contextWindow: 202_752,
-    // Treated as text-only for the vision-conditioned motion path (#929)
-    // until confirmed to accept image input.
+    contextWindow: 1_048_576,
+    // GLM-5.2 is text-only. Image-bearing calls (the vision-conditioned motion
+    // path, #929) transparently route to `DEFAULT_VISION_MODEL` — see
+    // `resolveVisionModel`. GLM's own vision sibling GLM-4.6V was tried (#942)
+    // but can't do strict structured outputs, which the motion-prompt call
+    // requires, so it failed; we fall back to the default vision model (#944).
     vision: false,
-    description: 'MIT license, 744B MoE, SWE-bench 77.8',
+    description: 'Large-scale reasoning model, 1M context, long-horizon agents',
   },
   {
     id: 'google/gemini-3.1-pro-preview',
@@ -92,8 +95,8 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'Frontier multimodal reasoning with 1M context',
   },
   {
-    id: 'openai/gpt-5.4',
-    name: 'GPT-5.4',
+    id: 'openai/gpt-5.5',
+    name: 'GPT-5.5',
     provider: 'OpenAI',
     license: 'proprietary' as const,
     qualityRank: 9,
@@ -193,6 +196,32 @@ export function getContextWindow(modelId: string): number {
  */
 export function analysisModelSupportsVision(modelId: string): boolean {
   return getAnalysisModelById(modelId)?.vision ?? false;
+}
+
+/**
+ * Vision-capable model that image-bearing calls fall back to when the chosen
+ * analysis model is text-only (#944). The motion-prompt pass conditions on the
+ * rendered still (#929), so a text model selected for analysis still needs a
+ * multimodal model for that one call. Sonnet is the default: it does vision +
+ * strict structured outputs + reasoning, which the motion-prompt call requires
+ * (GLM's vision siblings can't do strict structured outputs — see #942/#944).
+ */
+export const DEFAULT_VISION_MODEL: AnalysisModelId =
+  'anthropic/claude-sonnet-4.6';
+
+/**
+ * Resolve which model should actually run a call given whether it carries image
+ * input. A text-only model with image input is swapped to `DEFAULT_VISION_MODEL`
+ * so the image can be used; everything else runs as chosen. The effective model
+ * drives the adapter, context window, and cost; callers keep storing/hashing the
+ * requested model.
+ */
+export function resolveVisionModel(
+  modelId: AnalysisModelId,
+  hasImageInput: boolean
+): AnalysisModelId {
+  if (!hasImageInput || analysisModelSupportsVision(modelId)) return modelId;
+  return DEFAULT_VISION_MODEL;
 }
 /**
  * Default model to use when none is specified

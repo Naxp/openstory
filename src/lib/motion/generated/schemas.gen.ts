@@ -985,7 +985,7 @@ export const KlingV3MultiPromptElementSchema = {
     type: 'object'
 } as const;
 
-export const MinimaxHailuo02ProImageToVideoInputSchema = {
+export const MinimaxHailuo23ProImageToVideoInputSchema = {
     required: [
         'prompt',
         'image_url'
@@ -993,10 +993,12 @@ export const MinimaxHailuo02ProImageToVideoInputSchema = {
     type: 'object',
     properties: {
         prompt: {
+            minLength: 1,
             maxLength: 2000,
+            description: 'Text prompt for video generation',
             type: 'string',
             examples: [
-                'Man walked into winter cave with polar bear'
+                'The camera follows the mountain biker as they navigate a technical forest trail at high speed, wheels bouncing over roots and rocks. The rider approaches a jump, launching into the air with the bike, both rider and machine perfectly synchronized. They land smoothly and continue through tight turns, splashing through a stream crossing. Mud and water spray as the bike powers through challenging terrain. The atmosphere is wild and adventurous. Audio: Tires gripping dirt, gears shifting, heavy breathing, branches whipping past, and water splashing.'
             ],
             title: 'Prompt'
         },
@@ -1011,9 +1013,11 @@ export const MinimaxHailuo02ProImageToVideoInputSchema = {
                 }
             ],
             'x-fal-file-input': true,
+            description: 'URL of the image to use as the first frame',
             examples: [
-                'https://storage.googleapis.com/falserverless/model_tests/minimax/1749891352437225630-389852416840474630_1749891352.png'
+                'https://storage.googleapis.com/falserverless/example_inputs/hailuo23/pro_i2v_in.jpg'
             ],
+            _fal_ui_field: 'image',
             title: 'Image Url'
         },
         prompt_optimizer: {
@@ -1021,33 +1025,17 @@ export const MinimaxHailuo02ProImageToVideoInputSchema = {
             type: 'boolean',
             default: true,
             title: 'Prompt Optimizer'
-        },
-        end_image_url: {
-            description: 'Optional URL of the image to use as the last frame of the video',
-            anyOf: [
-                {
-                    ui: {
-                        field: 'image'
-                    },
-                    type: 'string'
-                },
-                {
-                    type: 'null'
-                }
-            ],
-            title: 'End Image Url'
         }
     },
     'x-fal-order-properties': [
         'prompt',
-        'image_url',
         'prompt_optimizer',
-        'end_image_url'
+        'image_url'
     ],
-    title: 'ProImageToVideoHailuo02Input'
+    title: 'ProImageToVideoHailuo23Input'
 } as const;
 
-export const MinimaxHailuo02ProImageToVideoOutputSchema = {
+export const MinimaxHailuo23ProImageToVideoOutputSchema = {
     required: [
         'video'
     ],
@@ -1057,7 +1045,7 @@ export const MinimaxHailuo02ProImageToVideoOutputSchema = {
             description: 'The generated video',
             examples: [
                 {
-                    url: 'https://v3.fal.media/files/monkey/xF9OsLwGjjNURyAxD8RM1_output.mp4'
+                    url: 'https://storage.googleapis.com/falserverless/example_outputs/hailuo23/pro_i2v_out.mp4'
                 }
             ],
             $ref: '#/components/schemas/File'
@@ -1066,7 +1054,7 @@ export const MinimaxHailuo02ProImageToVideoOutputSchema = {
     'x-fal-order-properties': [
         'video'
     ],
-    title: 'ImageToVideoHailuo02Output'
+    title: 'ProImageToVideoHailuo23Output'
 } as const;
 
 export const Seedance20EnterpriseV2ImageToVideoInputSchema = {

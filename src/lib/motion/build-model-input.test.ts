@@ -86,7 +86,7 @@ describe('buildModelInput', () => {
     });
   });
 
-  describe('MiniMax Hailuo 02', () => {
+  describe('MiniMax Hailuo 2.3', () => {
     it('uses image_url', () => {
       const result = build('minimax_hailuo_02');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);

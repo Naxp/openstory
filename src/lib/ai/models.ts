@@ -70,8 +70,8 @@ export const IMAGE_TO_VIDEO_MODELS = {
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
   },
   minimax_hailuo_02: {
-    id: 'fal-ai/minimax/hailuo-02/pro/image-to-video',
-    name: 'MiniMax Hailuo 02',
+    id: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
+    name: 'MiniMax Hailuo 2.3',
     provider: 'MiniMax',
     license: 'proprietary' as const,
     qualityRank: 5,
