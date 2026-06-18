@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildEditPrompt,
   decideBatchOutcome,
-  type FrameResult,
+  type ShotResult,
   rejectionReasonMessage,
   settledToResult,
   shouldDowngradeVisionOnFailure,
@@ -54,7 +54,7 @@ describe('decideBatchOutcome', () => {
   });
 
   it('throws-via-fail-kind when every attempted frame failed', () => {
-    const results: FrameResult[] = [
+    const results: ShotResult[] = [
       { shotId: 'f1', success: false, error: 'edit timeout' },
       { shotId: 'f2', success: false, error: 'no imageUrl' },
     ];
@@ -67,7 +67,7 @@ describe('decideBatchOutcome', () => {
   });
 
   it('returns complete with mixed counts when some succeeded and some failed', () => {
-    const results: FrameResult[] = [
+    const results: ShotResult[] = [
       { shotId: 'f1', success: true, imageUrl: 'https://r2/a.png' },
       { shotId: 'f2', success: false, error: 'edit failed' },
       { shotId: 'f3', success: true, imageUrl: 'https://r2/c.png' },
@@ -131,7 +131,7 @@ describe('rejectionReasonMessage', () => {
 
 describe('settledToResult', () => {
   it('passes fulfilled results through unchanged', () => {
-    const fulfilled: PromiseSettledResult<FrameResult> = {
+    const fulfilled: PromiseSettledResult<ShotResult> = {
       status: 'fulfilled',
       value: { shotId: 'f1', success: true, imageUrl: 'https://r2/a.png' },
     };
@@ -143,7 +143,7 @@ describe('settledToResult', () => {
   });
 
   it('converts Error rejection to a failure result with the message', () => {
-    const rejected: PromiseSettledResult<FrameResult> = {
+    const rejected: PromiseSettledResult<ShotResult> = {
       status: 'rejected',
       reason: new Error('invoke failed'),
     };
@@ -155,7 +155,7 @@ describe('settledToResult', () => {
   });
 
   it('uses `unknown` shotId when the index lookup returns undefined', () => {
-    const rejected: PromiseSettledResult<FrameResult> = {
+    const rejected: PromiseSettledResult<ShotResult> = {
       status: 'rejected',
       reason: new Error('boom'),
     };

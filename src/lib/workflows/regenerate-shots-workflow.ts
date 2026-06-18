@@ -51,7 +51,7 @@ import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'workflow', 'regenerate-shots']);
 
-type FrameResult =
+type ShotResult =
   | { shotId: string; success: true; imageUrl: string }
   | { shotId: string; success: false; error: string };
 
@@ -133,11 +133,11 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     // PHASE: Per-frame image regeneration — fan out via Pattern 3.
     // Use Promise.allSettled so a single child timeout / failure does not
     // kill the parent — each sibling resolves independently, and per-frame
-    // failures become `FrameResult` entries that the reconcile pass below
+    // failures become `ShotResult` entries that the reconcile pass below
     // handles individually.
     // ============================================================
     const settled = await Promise.allSettled(
-      snapshots.map((snapshot, frameIndex): Promise<FrameResult> => {
+      snapshots.map((snapshot, shotIndex): Promise<ShotResult> => {
         if (!snapshot.imagePrompt) {
           // Per-frame failure — peer frames in the batch should still run.
           return Promise.resolve({
@@ -170,13 +170,13 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
           parentInstanceId,
           childId: `image:${sequenceId}:${snapshot.shotId}`,
           childPayload,
-          spawnStepName: `spawn-image-${frameIndex}`,
-          awaitStepName: `await-image-${frameIndex}`,
+          spawnStepName: `spawn-image-${shotIndex}`,
+          awaitStepName: `await-image-${shotIndex}`,
         }).then(
-          (body): FrameResult => {
+          (body): ShotResult => {
             if (!body.imageUrl) {
               logger.error(
-                `[RegenerateFramesWorkflow:cf] Image generation failed frame=${snapshot.shotId} reason=no imageUrl`
+                `[RegenerateFramesWorkflow:cf] Image generation failed shot=${snapshot.shotId} reason=no imageUrl`
               );
               return {
                 shotId: snapshot.shotId,
@@ -190,10 +190,10 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
               imageUrl: body.imageUrl,
             };
           },
-          (err: unknown): FrameResult => {
+          (err: unknown): ShotResult => {
             const reason = err instanceof Error ? err.message : String(err);
             logger.error(
-              `[RegenerateFramesWorkflow:cf] Image generation failed frame=${snapshot.shotId} reason=${reason}`
+              `[RegenerateFramesWorkflow:cf] Image generation failed shot=${snapshot.shotId} reason=${reason}`
             );
             return {
               shotId: snapshot.shotId,
@@ -206,9 +206,9 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     );
 
     // Promise.allSettled with onfulfilled/onrejected mappers above means every
-    // entry is a resolved FrameResult. Collect them into the same shape the
+    // entry is a resolved ShotResult. Collect them into the same shape the
     // QStash original produced.
-    const imageResults: FrameResult[] = settled.map((outcome, i) => {
+    const imageResults: ShotResult[] = settled.map((outcome, i) => {
       if (outcome.status === 'fulfilled') return outcome.value;
       const snapshot = snapshots[i];
       const reason =
@@ -444,7 +444,7 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     await step.do('trigger-variant-regen', async () => {
       const convergentFrameIdSet = new Set(convergentFrameIds);
       const convergent = imageResults.filter(
-        (r): r is Extract<FrameResult, { success: true }> =>
+        (r): r is Extract<ShotResult, { success: true }> =>
           r.success && convergentFrameIdSet.has(r.shotId)
       );
 
