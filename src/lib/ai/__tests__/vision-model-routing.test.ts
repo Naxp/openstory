@@ -3,6 +3,7 @@ import {
   analysisModelSupportsVision,
   getVisionCompanionModelId,
   resolveVisionModel,
+  SCRIPT_ANALYSIS_MODELS,
 } from '../models.config';
 
 // GLM-5.2 is text-only but declares GLM-4.6V as its vision companion (#942):
@@ -17,6 +18,16 @@ describe('vision-model routing', () => {
   it('swaps a text-only model to its companion only when an image is present', () => {
     expect(resolveVisionModel('z-ai/glm-5.2', true)).toBe('z-ai/glm-4.6v');
     expect(resolveVisionModel('z-ai/glm-5.2', false)).toBe('z-ai/glm-5.2');
+  });
+
+  // The type system catches a typo'd companion id, but not a companion that
+  // points at a real-yet-text-only model — assert the semantic invariant.
+  it('every declared vision companion is itself a vision-capable model', () => {
+    for (const model of SCRIPT_ANALYSIS_MODELS) {
+      if ('visionCompanion' in model) {
+        expect(analysisModelSupportsVision(model.visionCompanion)).toBe(true);
+      }
+    }
   });
 
   it('leaves vision-capable models and companionless text models unchanged', () => {

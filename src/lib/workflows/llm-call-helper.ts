@@ -257,9 +257,18 @@ export async function durableLLMCallCf<TSchema extends z.ZodType>(
         messageCount: messages.length,
       });
 
-      // Only attach the still when the effective model accepts image input —
-      // otherwise drop it and let the text-only path handle the call.
-      const visionImageSources = analysisModelSupportsVision(modelId)
+      // Only attach the still when the effective model accepts image input.
+      // Warn (don't fail — the text-only path is a supported mode) when an
+      // image was supplied but is being dropped: that means a text-only model
+      // with no vision companion is wired into a vision-conditioned call, which
+      // would otherwise be invisible in the logs.
+      const effectiveSupportsVision = analysisModelSupportsVision(modelId);
+      if (hasImageInput && !effectiveSupportsVision) {
+        logger.warn(
+          `[LLM:${logName}:cf] Dropping vision image(s): effective model ${modelId} (requested ${config.modelId}) is text-only with no vision companion; running text-only`
+        );
+      }
+      const visionImageSources = effectiveSupportsVision
         ? await resolveVisionImageSources(config.visionImageUrls)
         : undefined;
       const { systemPrompts, chatMessages } = buildChatMessages(
@@ -399,8 +408,15 @@ export async function durableStreamingLLMCallCf<TSchema extends z.ZodType>(
         promptType,
       });
 
-      // Only attach the still when the effective model accepts image input.
-      const visionImageSources = analysisModelSupportsVision(modelId)
+      // Only attach the still when the effective model accepts image input;
+      // warn (don't fail) when an image is dropped — see durableLLMCallCf.
+      const effectiveSupportsVision = analysisModelSupportsVision(modelId);
+      if (hasImageInput && !effectiveSupportsVision) {
+        logger.warn(
+          `[LLM:${logName}:cf] Dropping vision image(s): effective model ${modelId} (requested ${config.modelId}) is text-only with no vision companion; running text-only`
+        );
+      }
+      const visionImageSources = effectiveSupportsVision
         ? await resolveVisionImageSources(config.visionImageUrls)
         : undefined;
       const { systemPrompts, chatMessages } = buildChatMessages(
