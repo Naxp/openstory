@@ -29,8 +29,8 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     unit: 'per_image',
   },
   'fal-ai/flux-2': {
-    basePrice: micros(12_000),
-    unit: 'per_megapixel',
+    basePrice: micros(1_670),
+    unit: 'per_compute_second',
     pricingNotes:
       '- **Price**: $0.012 per megapixels\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
@@ -43,8 +43,8 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     unit: 'per_image',
   },
   'fal-ai/flux-2/edit': {
-    basePrice: micros(12_000),
-    unit: 'per_image',
+    basePrice: micros(1_670),
+    unit: 'per_compute_second',
   },
   'fal-ai/flux-2/turbo': {
     basePrice: micros(8_000),
@@ -53,8 +53,8 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
       '- **Price**: $0.008 per megapixels\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
   'fal-ai/flux-2/turbo/edit': {
-    basePrice: micros(8_000),
-    unit: 'per_image',
+    basePrice: micros(1_670),
+    unit: 'per_compute_second',
   },
   'fal-ai/hidream-i1-full': {
     basePrice: micros(50_000),
@@ -148,11 +148,11 @@ export const IMAGE_PRICING: Record<string, ImagePricing> = {
     basePrice: micros(1_000_000),
     unit: 'per_image',
   },
-  'xai/grok-imagine-image/quality/text-to-image': {
+  'xai/grok-imagine-image/quality/edit': {
     basePrice: micros(170),
     unit: 'per_compute_second',
   },
-  'xai/grok-imagine-image/quality/edit': {
+  'xai/grok-imagine-image/quality/text-to-image': {
     basePrice: micros(170),
     unit: 'per_compute_second',
   },
@@ -183,7 +183,15 @@ type VideoPricingPerToken = VideoPricingBase & {
   pricePerMillionTokens: Microdollars;
 };
 
-export type VideoPricing = VideoPricingPerSecond | VideoPricingPerToken;
+type VideoPricingFlat = VideoPricingBase & {
+  mode: 'flat';
+  basePrice: Microdollars;
+};
+
+export type VideoPricing =
+  | VideoPricingPerSecond
+  | VideoPricingPerToken
+  | VideoPricingFlat;
 
 export const VIDEO_PRICING: Record<string, VideoPricing> = {
   'bytedance/seedance-2.0/enterprise/v2/image-to-video': {
@@ -203,11 +211,13 @@ export const VIDEO_PRICING: Record<string, VideoPricing> = {
   },
   'fal-ai/ltx-2.3/image-to-video': {
     mode: 'per_second',
-    basePrice: micros(60_000),
-  },
-  'fal-ai/minimax/hailuo-02/pro/image-to-video': {
-    mode: 'per_second',
     basePrice: micros(80_000),
+  },
+  'fal-ai/minimax/hailuo-2.3/pro/image-to-video': {
+    mode: 'flat',
+    basePrice: micros(490_000),
+    pricingNotes:
+      'Your request will cost **$0.49** per video generation (flat fee, independent of duration).\n\nFor more details, see [fal.ai pricing](https://fal.ai/pricing).',
   },
   'fal-ai/veo3.1/image-to-video': {
     mode: 'per_second',
@@ -231,7 +241,7 @@ export const VIDEO_PRICING: Record<string, VideoPricing> = {
   },
   'xai/grok-imagine-video/v1.5/image-to-video': {
     mode: 'per_second',
-    basePrice: micros(80_000),
+    basePrice: micros(10_000),
     resolutionPricing: {
       '480p': micros(80_000),
       '720p': micros(140_000),
@@ -279,4 +289,4 @@ export const AUDIO_PRICING: Record<string, AudioPricing> = {
   },
 };
 
-export const PRICING_LAST_UPDATED = '2026-05-07T00:04:14.149Z';
+export const PRICING_LAST_UPDATED = '2026-06-18T00:37:23.432Z';

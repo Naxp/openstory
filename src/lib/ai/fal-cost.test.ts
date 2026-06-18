@@ -19,16 +19,16 @@ describe('calculateImageCost', () => {
     expect(cost).toBe(micros(1_020));
   });
 
-  test('per_megapixel model (flux-2)', () => {
+  test('per_megapixel model (flux-2-max)', () => {
     const cost = calculateImageCost({
-      endpointId: 'fal-ai/flux-2',
+      endpointId: 'fal-ai/flux-2-max',
       numImages: 1,
       widthPx: 1024,
       heightPx: 1024,
     });
     const megapixels = (1024 * 1024) / 1_000_000;
-    // 12_000 micros * megapixels
-    expect(cost).toBe(micros(Math.round(12_000 * megapixels)));
+    // 70_000 micros * megapixels
+    expect(cost).toBe(micros(Math.round(70_000 * megapixels)));
   });
 
   test('per_compute_second model (hunyuan-image instruct/edit)', () => {
@@ -178,22 +178,27 @@ describe('calculateVideoCost', () => {
     expect(cost).toBe(micros(980_000));
   });
 
-  test('LTX 2.3 simple per_second pricing ($0.06/s)', () => {
+  test('LTX 2.3 simple per_second pricing ($0.08/s)', () => {
     const cost = calculateVideoCost({
       endpointId: 'fal-ai/ltx-2.3/image-to-video',
       durationSeconds: 5,
     });
-    // 60_000 * 5 = 300_000
-    expect(cost).toBe(micros(300_000));
-  });
-
-  test('Minimax Hailuo-02 Pro simple per_second pricing ($0.08/s)', () => {
-    const cost = calculateVideoCost({
-      endpointId: 'fal-ai/minimax/hailuo-02/pro/image-to-video',
-      durationSeconds: 5,
-    });
     // 80_000 * 5 = 400_000
     expect(cost).toBe(micros(400_000));
+  });
+
+  test('Minimax Hailuo 2.3 Pro flat per-video pricing ($0.49, duration-independent)', () => {
+    const cost5s = calculateVideoCost({
+      endpointId: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
+      durationSeconds: 5,
+    });
+    const cost10s = calculateVideoCost({
+      endpointId: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
+      durationSeconds: 10,
+    });
+    // Flat fee — same cost regardless of requested duration
+    expect(cost5s).toBe(micros(490_000));
+    expect(cost10s).toBe(micros(490_000));
   });
 
   test('Grok Video 1.5 480p ($0.08/s + $0.01)', () => {

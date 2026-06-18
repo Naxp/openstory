@@ -118,6 +118,12 @@ export function calculateVideoCost(params: VideoCostParams): Microdollars {
     return calculateTokenBasedVideoCost(pricing, params);
   }
 
+  // Flat per-video fee (e.g. MiniMax Hailuo 2.3): one price regardless of
+  // requested duration.
+  if (pricing.mode === 'flat') {
+    return pricing.basePrice;
+  }
+
   return calculateSecondBasedVideoCost(pricing, params);
 }
 
