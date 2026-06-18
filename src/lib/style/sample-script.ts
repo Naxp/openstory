@@ -3,7 +3,7 @@
  *
  * Mirrors the app's real "enhance" path headlessly:
  *   1. `getPrompt('script/enhance')` (the bundled local prompt registry)
- *      + `createUserPrompt(brief, { styleConfig, aspectRatio, targetDuration })`
+ *      + `createUserPrompt(brief, { style, aspectRatio, targetDuration })`
  *      → the same style-aware enhance the UI uses (`enhanceScriptStreamFn`).
  *   2. A structured scene split turns the enhanced prose into render-ready beats.
  *
@@ -11,10 +11,11 @@
  * Only the render script imports this; the seed + unit tests stay light.
  */
 import { getEnv } from '#env';
+import type { LlmKeyInfo } from '@/lib/ai/create-adapter';
 import { callLLM, RECOMMENDED_MODELS } from '@/lib/ai/llm-client';
+import type { EnhanceStyle } from '@/lib/ai/enhance-inputs';
 import { createUserPrompt } from '@/lib/ai/script-enhancer';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
-import type { StyleConfig } from '@/lib/db/schema/libraries';
 import { getPrompt } from '@/lib/prompts';
 import {
   CANONICAL_TARGET_SECONDS,
@@ -51,22 +52,22 @@ function extractJson(text: string): string {
   return candidate.slice(start, end + 1);
 }
 
-function openRouterKey(): string {
+function openRouterKeyInfo(): LlmKeyInfo {
   const key = getEnv().OPENROUTER_KEY;
   if (!key)
     throw new Error('OPENROUTER_KEY is required to enhance sample scripts');
-  return key;
+  return { key, via: 'openrouter' };
 }
 
 /** Run the brief through the app's `script/enhance` prompt → enhanced script prose. */
 async function enhanceBrief(args: {
   brief: string;
-  styleConfig: StyleConfig;
+  style: EnhanceStyle;
   aspectRatio: AspectRatio;
 }): Promise<string> {
   const { compiled } = await getPrompt('script/enhance');
   const userPrompt = createUserPrompt(args.brief, {
-    styleConfig: args.styleConfig,
+    style: args.style,
     aspectRatio: args.aspectRatio,
     targetDuration: CANONICAL_TARGET_SECONDS,
   });
@@ -82,7 +83,7 @@ async function enhanceBrief(args: {
     max_tokens: 4000,
     temperature: 0.7,
     observationName: 'sample-script-enhance',
-    apiKey: openRouterKey(),
+    apiKey: openRouterKeyInfo(),
   });
 }
 
@@ -122,7 +123,7 @@ async function splitIntoBeats(args: {
     max_tokens: 1500,
     temperature: 0.4,
     observationName: 'sample-script-split',
-    apiKey: openRouterKey(),
+    apiKey: openRouterKeyInfo(),
   });
 
   const result = sceneSplitSchema.parse(JSON.parse(extractJson(reply)));
@@ -136,7 +137,7 @@ async function splitIntoBeats(args: {
 /** Full canonical script for a style: brief → enhance → scene split → beats. */
 export async function generateCanonicalScript(args: {
   brief: string;
-  styleConfig: StyleConfig;
+  style: EnhanceStyle;
   aspectRatio: AspectRatio;
 }): Promise<{ enhancedScript: string; beats: SampleBeat[] }> {
   const enhancedScript = await enhanceBrief(args);

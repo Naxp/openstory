@@ -17,9 +17,14 @@
 import { computeVisualPromptInputHash } from '@/lib/ai/input-hash';
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODELS } from '@/lib/ai/models';
 import { loadNarrowFramePromptContext } from '@/lib/ai/prompt-context';
-import { ZERO_MICROS, microsToUsd } from '@/lib/billing/money';
+import { ZERO_MICROS } from '@/lib/billing/money';
+import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import { DEFAULT_IMAGE_SIZE } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
+import {
+  CONTENT_REJECTION_EVENT,
+  isContentRejectionError,
+} from '@/lib/ai/content-rejection';
 import {
   generateImageWithProvider,
   type ImageGenerationParams,
@@ -214,10 +219,36 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
       };
     }
 
-    const imageResult = await step.do('generate-image', async () => {
+    // Generate the image. CF's default per-step retry handles content-flag and
+    // transient errors (#881): a stochastic rejection clears on a fresh
+    // same-model call; a deterministic content-checker hit exhausts the retries
+    // and fails with its real message — recorded on the frame by onFailure and
+    // surfaced in the failure banner.
+    const imageResult = await step.do('generate-image', async (ctx) => {
       logger.info(
-        `[ImageWorkflow:cf] Generating image ${input.frameId} with model ${generationParams.model}`
+        `[ImageWorkflow:cf] Generating image ${input.frameId} with model ${generationParams.model} (attempt ${ctx.attempt})`
       );
+      // `ctx.attempt` is 1 on the first run and increments on each CF retry —
+      // surface that as in-flight retry state so the scenes UI shows
+      // "Retrying…" instead of an indistinguishable hung spinner (#882). No
+      // fixed denominator: this leans on CF's default retry budget (above), so
+      // `maxAttempts` reflects the resolved config when present, else is omitted.
+      if (ctx.attempt > 1 && input.frameId && input.sequenceId) {
+        await getGenerationChannel(input.sequenceId).emit(
+          'generation.image:progress',
+          {
+            frameId: input.frameId,
+            status: 'generating',
+            phase: 'retrying',
+            attempt: ctx.attempt,
+            ...(ctx.config.retries?.limit !== undefined && {
+              maxAttempts: ctx.config.retries.limit + 1,
+            }),
+            model: generationParams.model,
+            variantOnly: input.variantOnly,
+          }
+        );
+      }
       return generateImageWithProvider(generationParams, { scopedDb });
     });
 
@@ -225,19 +256,18 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
     const { teamId, frameId, sequenceId } = input;
     if (imageCostMicros > 0 && teamId && !imageResult.metadata.usedOwnKey) {
       await step.do('deduct-credits', async () => {
-        if (!(await scopedDb.billing.hasEnoughCredits(imageCostMicros))) {
-          logger.warn(
-            `[ImageWorkflow:cf] Insufficient credits for team ${teamId} (cost: $${microsToUsd(imageCostMicros).toFixed(4)}), skipping deduction`
-          );
-          return;
-        }
-        await scopedDb.billing.deductCredits(imageCostMicros, {
+        await deductWorkflowCredits({
+          scopedDb,
+          costMicros: imageCostMicros,
+          usedOwnKey: imageResult.metadata.usedOwnKey,
           description: `Image generation (${generationParams.model})`,
+          idempotencyKey: `${event.instanceId}:image`,
           metadata: {
             model: generationParams.model,
             frameId: input.frameId,
             sequenceId: input.sequenceId,
           },
+          workflowName: 'ImageWorkflow:cf',
         });
       });
     }
@@ -371,6 +401,11 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
             frameId: input.frameId,
             status: 'failed',
             model,
+            // Carry the reason so the cache updater writes `thumbnailError`
+            // live — otherwise the FailureSummaryBanner shows "Unknown error"
+            // until a full refetch (#881). Skip for variant-only (the primary
+            // row isn't touched).
+            ...(input.variantOnly ? {} : { error }),
             // Variant-only (#547): a failed alternate must not flip the primary
             // thumbnail to "failed" in cache (the DB write above is already
             // guarded on variantOnly).
@@ -385,6 +420,20 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
           }
         );
       }
+    }
+
+    if (isContentRejectionError(error)) {
+      logger.warn(
+        `[ImageWorkflow:cf] frame ${input.frameId} failed a content checker`,
+        {
+          event: CONTENT_REJECTION_EVENT,
+          kind: 'image',
+          model,
+          frameId: input.frameId,
+          sequenceId: input.sequenceId,
+          error,
+        }
+      );
     }
 
     logger.error(

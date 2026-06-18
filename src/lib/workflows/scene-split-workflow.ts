@@ -21,7 +21,11 @@
  *     JSON-stringify around the step boundary (same pattern as
  *     `visual-prompt-scene-workflow.ts`). */
 
-import { callLLMStream } from '@/lib/ai/llm-client';
+import {
+  callLLMStream,
+  llmCostFromUsage,
+  PROMPT_REASONING,
+} from '@/lib/ai/llm-client';
 import { PREVIEW_IMAGE_MODEL } from '@/lib/ai/models';
 import { getContextWindow } from '@/lib/ai/models.config';
 import {
@@ -32,7 +36,8 @@ import {
   createStreamingSceneParser,
   type SceneSplittingScene,
 } from '@/lib/ai/streaming-scene-parser';
-import { ZERO_MICROS } from '@/lib/billing/money';
+import type { Microdollars } from '@/lib/billing/money';
+import type { TokenUsage } from '@tanstack/ai';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { NewFrame } from '@/lib/db/schema';
@@ -40,13 +45,12 @@ import type { ScopedDb } from '@/lib/db/scoped';
 import { getChatPrompt } from '@/lib/prompts';
 import { buildPreviewPrompt } from '@/lib/prompts/poster-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
+import { previewImageDedupId } from '@/lib/workflow/dedup-ids';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { triggerWorkflow } from '@/lib/workflow/client';
 import { buildWorkflowLabel } from '@/lib/workflow/labels';
-import {
-  isOpenRouterAuthError,
-  sanitizeFailResponse,
-} from '@/lib/workflow/sanitize-fail-response';
+import { handleLlmAuthFailure } from '@/lib/workflow/llm-auth-failure';
+import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import type {
   ImageWorkflowInput,
   SceneSplitWorkflowInput,
@@ -77,6 +81,8 @@ type StreamResult = {
   characterBible: SceneSplittingResult['characterBible'];
   locationBible: SceneSplittingResult['locationBible'];
   elementBible: SceneSplittingResult['elementBible'];
+  /** Provider-reported cost for the LLM call, billed after reconciliation. */
+  llmCostMicros: Microdollars;
 };
 
 export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWorkflowInput> {
@@ -129,14 +135,14 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           elements: elementsBlock,
         });
 
-        const openRouterApiKeyInfo =
-          await scopedDb.apiKeys.resolveKey('openrouter');
+        const llmKeyInfo = await scopedDb.apiKeys.resolveLlmKey();
 
         logger.info(
           `[SceneSplitWorkflow:cf] [LLM:${LOG_NAME}] Starting streaming call`,
           {
             model: modelId,
-            keySource: openRouterApiKeyInfo.source,
+            keySource: llmKeyInfo.source,
+            keyVia: llmKeyInfo.via,
             messageCount: messages.length,
           }
         );
@@ -148,21 +154,24 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         let prevScene: SceneSplittingScene | undefined = undefined;
         let prevFrameId: string | undefined = undefined;
         let parsedResult: SceneSplittingResult | undefined;
+        let capturedUsage: TokenUsage | undefined;
 
         for await (const chunk of callLLMStream<SceneSplittingResult>({
           model: modelId,
           messages,
           max_tokens: Math.floor(getContextWindow(modelId) * 0.65),
           responseSchema: sceneSplittingResultSchema,
-          apiKey: openRouterApiKeyInfo.key,
+          apiKey: llmKeyInfo,
+          reasoning: PROMPT_REASONING,
           observationName: LOG_NAME,
           tags: LOG_TAGS,
           metadata: LOG_METADATA,
           userId: input.userId,
           sessionId: input.sequenceId,
         })) {
-          if (chunk.done && chunk.parsed !== undefined) {
-            parsedResult = chunk.parsed;
+          if (chunk.done) {
+            if (chunk.parsed !== undefined) parsedResult = chunk.parsed;
+            capturedUsage = chunk.usage;
           }
           chunkCount++;
           finalText = chunk.accumulated;
@@ -300,7 +309,8 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                   // Fire-and-forget preview-image trigger for the previous
                   // scene. Routed through `triggerWorkflow` so the engine
                   // registry picks whichever engine is configured for
-                  // `/image` at runtime.
+                  // `/image` at runtime. The deduplicationId makes a replay
+                  // of this mega-step idempotent (see dedup-ids.ts).
                   await triggerWorkflow(
                     '/image',
                     {
@@ -316,6 +326,10 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                     } satisfies ImageWorkflowInput,
                     {
                       label: buildWorkflowLabel(sequenceId),
+                      deduplicationId: previewImageDedupId(
+                        event.instanceId,
+                        prevFrameId
+                      ),
                     }
                   );
                 }
@@ -352,6 +366,10 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
             } satisfies ImageWorkflowInput,
             {
               label: buildWorkflowLabel(sequenceId),
+              deduplicationId: previewImageDedupId(
+                event.instanceId,
+                prevFrameId
+              ),
             }
           );
         }
@@ -380,6 +398,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           characterBible: parsed.characterBible,
           locationBible: parsed.locationBible,
           elementBible: parsed.elementBible,
+          llmCostMicros: llmCostFromUsage(capturedUsage, modelId),
         };
         return JSON.stringify(streamResult);
       }
@@ -510,19 +529,21 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
     }
 
     // Step 5: Deduct credits.
-    const openRouterKeyInfo = await scopedDb.apiKeys.resolveKey('openrouter');
+    const llmCreditKeyInfo = await scopedDb.apiKeys.resolveLlmKey();
     await step.do('deduct-llm-credits-scene-splitting', async () => {
       await deductWorkflowCredits({
         scopedDb,
-        costMicros: ZERO_MICROS,
-        usedOwnKey: openRouterKeyInfo.source === 'team',
+        costMicros: streamResult.llmCostMicros,
+        usedOwnKey: llmCreditKeyInfo.source === 'team',
         description: `LLM analysis (${modelId})`,
+        idempotencyKey: `${event.instanceId}:llm-${STEP_NAME}`,
         metadata: {
           model: modelId,
           phase: PHASE.number,
           phaseName: PHASE.name,
           stepName: STEP_NAME,
           sequenceId,
+          costMicros: streamResult.llmCostMicros,
         },
       });
     });
@@ -544,18 +565,9 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
       err: error,
     });
 
-    let userMessage = 'Scene splitting failed';
-    if (
-      isOpenRouterAuthError(error) &&
-      (await scopedDb.apiKeys.hasKey('openrouter'))
-    ) {
-      await scopedDb.apiKeys.markKeyInvalid(
-        'openrouter',
-        sanitizeFailResponse(error)
-      );
-      userMessage =
-        'Your OpenRouter API key is invalid — update it in Settings.';
-    }
+    const userMessage =
+      (await handleLlmAuthFailure(scopedDb, sanitizeFailResponse(error))) ??
+      'Scene splitting failed';
 
     if (sequenceId) {
       try {

@@ -68,8 +68,7 @@ export default {
   ignoreBinaries: [
     // CLI tools / shell builtins invoked from package.json scripts.
     'stripe',
-    'open',
-    'doppler',
     'printf',
+    'open', // macOS URL/file opener (bun explorer)
   ],
 } satisfies KnipConfig;

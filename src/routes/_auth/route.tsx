@@ -5,7 +5,7 @@
 
 import { RouteErrorFallback } from '@/components/error/route-error-fallback';
 import { sessionQueryOptions } from '@/lib/auth/session-query';
-import { getIsPreviewFn } from '@/lib/utils/environment';
+import { getAuthOptionsFn } from '@/functions/auth-options';
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_auth')({
@@ -18,8 +18,8 @@ export const Route = createFileRoute('/_auth')({
       throw redirect({ to: '/' });
     }
 
-    const isPreview = await getIsPreviewFn();
-    return { isPreview };
+    const authOptions = await getAuthOptionsFn();
+    return { authOptions };
   },
   component: AuthLayout,
 });

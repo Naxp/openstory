@@ -31,14 +31,13 @@ import { resolveVideoModels } from '@/lib/ai/resolve-video-models';
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { assembleMotionPrompt } from '@/lib/motion/assemble-motion-prompt';
+import { buildCastCharacterBible } from '@/lib/prompts/character-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
-import {
-  isOpenRouterAuthError,
-  sanitizeFailResponse,
-} from '@/lib/workflow/sanitize-fail-response';
+import { handleLlmAuthFailure } from '@/lib/workflow/llm-auth-failure';
+import { sanitizeFailResponse } from '@/lib/workflow/sanitize-fail-response';
 import type {
   AnalyzeScriptWorkflowInput,
   BatchMotionMusicWorkflowInput,
@@ -60,13 +59,9 @@ import type {
 } from '@/lib/workflow/types';
 import { findMissingElementEntries } from '@/lib/workflows/element-sheet-workflow';
 import {
-  matchCharactersToScene,
-  matchElementsToScene,
-  matchLocationsToScene,
-} from '@/lib/workflows/scene-matching';
-import {
   computeFrameImagesHashFromDto,
   type FrameImageSceneSnapshot,
+  resolveSceneFrameImageReferences,
 } from '@/lib/workflows/sheet-snapshots';
 import { waitForElementVision } from '@/lib/workflows/wait-for-sheets';
 import type {
@@ -206,6 +201,10 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       },
       spawnStepName: 'spawn-scene-split',
       awaitStepName: 'await-scene-split',
+      // LLM-only child, but under a many-sequence burst the engine's notify
+      // delivery alone has been observed to lag >25 minutes — every await in
+      // this workflow carries explicit burst headroom.
+      timeout: '45 minutes',
     });
 
     const {
@@ -238,6 +237,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         },
         spawnStepName: 'spawn-talent-matching',
         awaitStepName: 'await-talent-matching',
+        timeout: '45 minutes',
       }),
       spawnAndAwaitChild<
         LocationMatchingWorkflowInput,
@@ -257,21 +257,35 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         },
         spawnStepName: 'spawn-location-matching',
         awaitStepName: 'await-location-matching',
+        timeout: '45 minutes',
       }),
     ]);
 
     if (talentSettled.status === 'rejected') {
       throw new Error(
-        `Character sheet generation failed: ${String(talentSettled.reason)}`
+        `Talent matching failed: ${String(talentSettled.reason)}`
       );
     }
     if (locationMatchSettled.status === 'rejected') {
       throw new Error(
-        `Location sheet generation failed: ${String(locationMatchSettled.reason)}`
+        `Location matching failed: ${String(locationMatchSettled.reason)}`
       );
     }
     const { matches: talentCharacterMatches } = talentSettled.value;
     const { matches: libraryLocationMatches } = locationMatchSettled.value;
+
+    // Apply casting to the bible NOW, before prompt generation. Talent matching
+    // (above) has resolved, so casting is known. Feeding the cast bible into the
+    // visual/motion prompt children means those prompts are generated from — and
+    // hashed against — the exact values the character-bible workflow persists, so
+    // staleness verification (which reads the cast DB row) matches by
+    // construction. Unmatched characters pass through unchanged. The character-
+    // bible child still receives the raw bible + matches (its sheet-generation
+    // path is unchanged). See #867.
+    const castCharacterBible = buildCastCharacterBible(
+      characterBible,
+      talentCharacterMatches
+    );
 
     // ----------------------------------------------------------------------
     // PHASE 3: character bible + location bible + visual prompts in parallel
@@ -339,6 +353,11 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
             },
             spawnStepName: 'spawn-character-bible',
             awaitStepName: 'await-character-bible',
+            // Must exceed the child's own await budget: the bible awaits each
+            // sheet grandchild for 30 minutes, plus notify lag under a burst
+            // (the June 7 run lost a sequence to the 30-minute default here
+            // when a finished child's notify took >25 minutes to deliver).
+            timeout: '60 minutes',
           }
         ),
         spawnAndAwaitChild<
@@ -355,11 +374,16 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
             teamId: input.teamId,
             locationBible,
             libraryLocationMatches,
+            // Use the sequence's image model for location sheets, mirroring
+            // the character-bible payload above — omitting it silently fell
+            // back to DEFAULT_IMAGE_MODEL for every location reference.
             imageModel,
             styleConfig,
           },
           spawnStepName: 'spawn-location-bible',
           awaitStepName: 'await-location-bible',
+          // See await-character-bible — same grandchild budget + notify lag.
+          timeout: '60 minutes',
         }),
         spawnAndAwaitChild<VisualPromptWorkflowInput, Scene[]>(step, {
           binding: this.env.VISUAL_PROMPT_WORKFLOW,
@@ -372,7 +396,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
             sequenceId,
             scenes,
             aspectRatio,
-            characterBible,
+            characterBible: castCharacterBible,
             locationBible,
             elementBible,
             styleConfig,
@@ -381,6 +405,8 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           },
           spawnStepName: 'spawn-visual-prompts',
           awaitStepName: 'await-visual-prompts',
+          // See await-character-bible — same grandchild budget + notify lag.
+          timeout: '60 minutes',
         }),
         runElementSheets(),
       ]);
@@ -422,38 +448,24 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       });
     });
 
-    // Build per-scene snapshots for frame-images divergence detection.
+    // Build per-scene snapshots for frame-images divergence detection. Resolve
+    // references through the SAME helper the image-gen stamp and staleness
+    // verify use (`resolveSceneFrameImageReferences`) so the three sites can't
+    // drift on matcher choice or hash-filtering — that drift was the #867 bug.
     const sceneSnapshots: FrameImageSceneSnapshot[] =
       scenesWithVisualPrompts.map((scene) => {
-        const characters = matchCharactersToScene(
-          charactersWithSheets,
-          scene.continuity?.characterTags ?? []
-        );
-        const locations = matchLocationsToScene(
-          locationsWithSheets,
-          scene.continuity?.environmentTag ?? '',
-          scene.metadata?.location ?? ''
-        );
-        const elementsMatched = matchElementsToScene(
-          allElements,
-          scene.continuity?.elementTags ?? [],
-          scene.originalScript.extract
-        );
+        const refs = resolveSceneFrameImageReferences({
+          scene,
+          characters: charactersWithSheets,
+          locations: locationsWithSheets,
+          elements: allElements,
+        });
         return {
           sceneId: scene.sceneId,
           visualPrompt: scene.prompts?.visual?.fullPrompt ?? '',
-          characterSheetHashes: characters
-            .map((c) => c.sheetInputHash)
-            .filter((h): h is string => typeof h === 'string')
-            .sort(),
-          locationSheetHashes: locations
-            .map((l) => l.referenceInputHash)
-            .filter((h): h is string => typeof h === 'string')
-            .sort(),
-          elementReferenceHashes: elementsMatched
-            .map((e) => e.imageUrl)
-            .filter((u) => u.length > 0)
-            .sort(),
+          characterSheetHashes: refs.characterSheetHashes,
+          locationSheetHashes: refs.locationSheetHashes,
+          elementReferenceHashes: refs.elementReferenceHashes,
         };
       });
 
@@ -476,7 +488,18 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       sceneSnapshots,
     });
 
-    const [frameImagesSettled, motionMusicSettled] = await Promise.allSettled([
+    // Render frame images FIRST, then run motion/music prompts — the prior
+    // parallel fan-out is now sequential (#929). The motion-prompt pass is
+    // conditioned on the ACTUAL rendered starting frame (vision input), which
+    // only exists once images have rendered. We capture each scene's primary
+    // still here and thread it down as an INPUT — the motion children must
+    // never look it up mid-run (a concurrent re-render could swap it). Music
+    // has no image dependency but rides along with motion in the same child,
+    // so it inherits the wait — an accepted latency cost on the non-critical
+    // music artifact in exchange for image-grounded motion. Each child is
+    // wrapped in `Promise.allSettled` so a rejection is captured (not thrown)
+    // and surfaced together below after recording the analysis duration.
+    const [frameImagesSettled] = await Promise.allSettled([
       spawnAndAwaitChild<FrameImagesWorkflowInput, FrameImagesWorkflowResult>(
         step,
         {
@@ -487,8 +510,30 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           childPayload: frameImagesPayload,
           spawnStepName: 'spawn-frame-images',
           awaitStepName: 'await-frame-images',
+          // Must exceed the child's own budget — under a many-sequence burst
+          // the image queue alone can outlast the 30-minute default.
+          timeout: '90 minutes',
         }
       ),
+    ]);
+
+    // Snapshot the rendered primary still per scene. `imageUrls` is aligned to
+    // `scenesWithVisualPrompts` order (frame-images preserves slots, null for a
+    // failed scene); a rejected batch → empty map → motion falls back to
+    // text-only (and the rejection is raised below regardless).
+    const frameImageUrls =
+      frameImagesSettled.status === 'fulfilled'
+        ? frameImagesSettled.value.imageUrls
+        : [];
+    const startingFrameImageUrls: Record<string, string | null> =
+      Object.fromEntries(
+        scenesWithVisualPrompts.map((scene, i) => [
+          scene.sceneId,
+          frameImageUrls[i] ?? null,
+        ])
+      );
+
+    const [motionMusicSettled] = await Promise.allSettled([
       spawnAndAwaitChild<
         MotionMusicPromptsWorkflowInput,
         MotionMusicPromptsWorkflowResult
@@ -504,16 +549,20 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           scenesWithVisualPrompts,
           frameMapping,
           aspectRatio,
-          characterBible,
+          characterBible: castCharacterBible,
           locationBible,
           elementBible,
           styleConfig,
           analysisModelId,
           videoModel,
           videoModels,
+          startingFrameImageUrls,
         },
         spawnStepName: 'spawn-motion-music-prompts',
         awaitStepName: 'await-motion-music-prompts',
+        // Must exceed the child's own await budget: motion-prompt scene
+        // children get 30 minutes each, plus notify lag under a burst.
+        timeout: '60 minutes',
       }),
     ]);
 
@@ -545,7 +594,9 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
     // PHASE 5: motion (+ optional music + merge) batch — single child
     // ----------------------------------------------------------------------
     const shouldGenerateMotion =
-      autoGenerateMotion && primaryVideoModel && imageUrls.length > 0;
+      autoGenerateMotion &&
+      primaryVideoModel &&
+      imageUrls.some((url) => url !== null);
     const shouldGenerateMusic = Boolean(
       autoGenerateMusic &&
       sequenceId &&
@@ -560,7 +611,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         totalDuration += scene.metadata?.durationSeconds || 5;
       }
 
-      const batchFrames = completeScenes.map((scene, index) => {
+      const batchFrames = completeScenes.flatMap((scene, index) => {
         const motionPromptData = scene.prompts?.motion;
         if (!motionPromptData?.fullPrompt) {
           throw new WorkflowValidationError(
@@ -568,16 +619,23 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           );
         }
 
+        // `imageUrls` is aligned to scene order; a null slot means that
+        // scene's image generation failed (the frame is already marked
+        // failed by the image workflow). Skip its motion rather than failing
+        // the whole sequence — the remaining frames' clips still render.
         const imageUrl = imageUrls[index];
         if (!imageUrl) {
-          throw new WorkflowValidationError(
-            `Scene ${scene.sceneId} has no generated image URL at index ${index}`
+          logger.warn(
+            `[AnalyzeScriptWorkflow:cf] Scene ${scene.sceneId} has no generated image (index ${index}); skipping its motion`
           );
+          return [];
         }
 
         const matchedFrame = frameMapping.find(
           (f) => f.sceneId === scene.sceneId
         );
+
+        const characterTags = scene.continuity?.characterTags;
 
         return {
           frameId: matchedFrame?.frameId ?? '',
@@ -587,9 +645,11 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           prompt: assembleMotionPrompt({
             motionPrompt: motionPromptData,
             model: primaryVideoModel,
+            characterTags,
           }),
           model: primaryVideoModel,
           motionPrompt: motionPromptData,
+          characterTags,
           duration: scene.metadata?.durationSeconds || 3,
           aspectRatio,
         };
@@ -628,6 +688,10 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         },
         spawnStepName: 'spawn-motion-batch',
         awaitStepName: 'await-motion-batch',
+        // Must exceed the child's own await budget: motion-batch waits up to
+        // 45 minutes per motion/music grandchild (in parallel) plus queue
+        // backlog under a many-sequence burst.
+        timeout: '90 minutes',
       });
     }
 
@@ -651,15 +715,8 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       sanitized,
     });
 
-    let userMessage = sanitized;
-    if (
-      isOpenRouterAuthError(sanitized) &&
-      (await scopedDb.apiKeys.hasKey('openrouter'))
-    ) {
-      await scopedDb.apiKeys.markKeyInvalid('openrouter', sanitized);
-      userMessage =
-        'Your OpenRouter API key is invalid — update it in Settings.';
-    }
+    const userMessage =
+      (await handleLlmAuthFailure(scopedDb, sanitized)) ?? sanitized;
 
     await scopedDb.sequence(sequenceId).updateStatus('failed', userMessage);
     await getGenerationChannel(sequenceId).emit('generation.failed', {

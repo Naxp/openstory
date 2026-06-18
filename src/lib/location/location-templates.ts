@@ -1,8 +1,5 @@
 import type { LibraryLocation } from '@/lib/db/schema';
-
-function getPublicAssetsDomain(): string {
-  return import.meta.env.VITE_R2_PUBLIC_ASSETS_DOMAIN ?? '';
-}
+import { getPublicAssetsDomain } from '@/lib/storage/public-assets';
 
 function sanitizeName(name: string): string {
   return name
@@ -14,7 +11,7 @@ function sanitizeName(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-export function getLocationPreviewUrl(name: string): string {
+function getLocationPreviewUrl(name: string): string {
   return `https://${getPublicAssetsDomain()}/locations/${sanitizeName(name)}/thumbnail.webp`;
 }
 

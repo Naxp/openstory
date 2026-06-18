@@ -59,6 +59,11 @@ type ScenePlayerProps = {
    */
   modelMismatchLabel?: string | null;
   progressMessage?: string;
+  /**
+   * In-flight retry state for the selected frame (#882) — rendered as
+   * "Retrying (N/M)…" (or "Retrying…") in the player overlay.
+   */
+  retry?: { attempt: number; maxAttempts?: number };
   posterUrl?: string;
   onTimeUpdate?: (currentTime: number) => void;
   onEnded?: () => void;
@@ -76,6 +81,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   badgeMessage,
   modelMismatchLabel,
   progressMessage,
+  retry,
   posterUrl,
   onTimeUpdate,
   onEnded,
@@ -110,7 +116,14 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   const handleCopyImageUrl = useCallback(async () => {
     if (!currentFrame?.thumbnailUrl) return;
     try {
-      await navigator.clipboard.writeText(currentFrame.thumbnailUrl);
+      // Stored media URLs are origin-relative (#894) — absolutize against the
+      // current origin so the copied link is usable when pasted elsewhere. The
+      // worker's public /r2 route serves it (redirecting to the CDN in prod).
+      const absoluteUrl = new URL(
+        currentFrame.thumbnailUrl,
+        window.location.origin
+      ).href;
+      await navigator.clipboard.writeText(absoluteUrl);
       toast.success('Image URL copied');
     } catch {
       toast.error('Failed to copy URL');
@@ -120,7 +133,9 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
   const handleCopyVideoUrl = useCallback(async () => {
     if (!currentFrame?.videoUrl) return;
     try {
-      await navigator.clipboard.writeText(currentFrame.videoUrl);
+      const absoluteUrl = new URL(currentFrame.videoUrl, window.location.origin)
+        .href;
+      await navigator.clipboard.writeText(absoluteUrl);
       toast.success('Video URL copied');
     } catch {
       toast.error('Failed to copy URL');
@@ -428,6 +443,7 @@ export const ScenePlayer: React.FC<ScenePlayerProps> = ({
                 : (currentFrame.videoStatus ?? null)
             }
             progressMessage={progressMessage}
+            retry={retry}
           />
           {badgeMessage && (
             <span className="absolute top-2 left-2 z-10 rounded bg-primary/80 px-2 py-1 text-xs font-medium text-primary-foreground backdrop-blur-sm">

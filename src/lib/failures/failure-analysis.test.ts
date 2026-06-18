@@ -79,6 +79,7 @@ function makeSequence(overrides: Partial<Sequence> = {}): Sequence {
     musicPrompt: 'Epic cinematic music',
     musicTags: 'epic,cinematic',
     musicPromptInputHash: null,
+    includeMusic: true,
     statusError: null,
     workflowRunId: null,
     posterUrl: null,

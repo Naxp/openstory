@@ -11,10 +11,8 @@ const APP_DOMAIN = (() => {
   }
 })();
 
-export const CONTACT_EMAIL =
-  import.meta.env.VITE_CONTACT_EMAIL || `hello@${APP_DOMAIN}`;
-export const PRIVACY_EMAIL =
-  import.meta.env.VITE_PRIVACY_EMAIL || `privacy@${APP_DOMAIN}`;
+export const CONTACT_EMAIL = `hello@${APP_DOMAIN}`;
+export const PRIVACY_EMAIL = `privacy@${APP_DOMAIN}`;
 
 export const SITE_CONFIG = {
   name: APP_NAME,

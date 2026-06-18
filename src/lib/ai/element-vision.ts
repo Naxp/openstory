@@ -9,7 +9,7 @@ import type { ChatMessage, ChatMessageImagePart } from '@/lib/prompts';
 import { toVisionImageSource } from '@/lib/storage/external-url';
 import { chat } from '@tanstack/ai';
 import { z } from 'zod';
-import { createAdapter } from './create-adapter';
+import { createAdapter, type LlmKeyInfo } from './create-adapter';
 
 const VISION_MODEL = 'anthropic/claude-sonnet-4.6';
 
@@ -24,15 +24,15 @@ export type ElementDescription = z.infer<typeof responseSchema>;
 export type DescribeElementInput = {
   imageUrl: string;
   filename: string;
-  /** Override OpenRouter API key (team-provided) */
-  openRouterApiKey?: string;
+  /** Resolved LLM key (team OpenRouter, team fal, or platform) */
+  llmKey?: LlmKeyInfo;
 };
 
 /**
  * Normalize a vision-suggested token to canonical UPPERCASE_SNAKE_CASE.
  * Drops everything outside `[A-Z0-9]`, collapses runs to `_`, caps length.
  */
-export function normalizeSuggestedToken(raw: string): string {
+function normalizeSuggestedToken(raw: string): string {
   const cleaned = raw
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
@@ -45,7 +45,7 @@ export function normalizeSuggestedToken(raw: string): string {
  * Build the multimodal chat messages for the vision LLM.
  * Exported for testing.
  */
-export function buildVisionMessages(
+function buildVisionMessages(
   filename: string,
   imageSource: ChatMessageImagePart['source']
 ): ChatMessage[] {
@@ -96,14 +96,14 @@ export async function describeElementImage(
     }
   }
 
-  const adapter = createAdapter(VISION_MODEL, input.openRouterApiKey);
+  const adapter = createAdapter(VISION_MODEL, input.llmKey);
 
   const result = await chat({
     adapter,
     systemPrompts,
     messages: chatMessages,
     stream: false,
-    temperature: 0.3,
+    modelOptions: { temperature: 0.3 },
     outputSchema: responseSchema,
     debug: false,
   });

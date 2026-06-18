@@ -26,8 +26,10 @@ vi.doMock('@tanstack/react-start', () => ({
   createServerOnlyFn: <T>(fn: T) => fn,
 }));
 
-// The enricher/formatter ignore ctx, so an inert stub is sufficient.
-const middlewareCtx: ChatMiddlewareContext = {
+// The enricher/formatter ignore ctx, so an inert partial stub is sufficient —
+// the capability accessors (`get`/`provide`/`capabilities`/etc.) the code under
+// test never touches are omitted via the cast (same pattern as other tests).
+const middlewareCtx = {
   requestId: 'req-1',
   streamId: 'stream-1',
   runId: 'run-1',
@@ -48,8 +50,8 @@ const middlewareCtx: ChatMiddlewareContext = {
   currentMessageId: null,
   accumulatedContent: '',
   messages: [],
-  createId: (prefix) => `${prefix}-1`,
-};
+  createId: (prefix: string) => `${prefix}-1`,
+} as unknown as ChatMiddlewareContext;
 const chatSpanInfo = (): OtelSpanInfo => ({ kind: 'chat', ctx: middlewareCtx });
 const iterationSpanInfo = (iteration: number): OtelSpanInfo => ({
   kind: 'iteration',

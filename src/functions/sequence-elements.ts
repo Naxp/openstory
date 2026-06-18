@@ -1,3 +1,4 @@
+import { mediaUrlSchema } from '@/lib/schemas/media-url.schemas';
 import { getSignedUploadUrl } from '#storage';
 import { describeElementImage } from '@/lib/ai/element-vision';
 import { generateId } from '@/lib/db/id';
@@ -126,18 +127,17 @@ export const analyzeDraftElementFn = createServerFn({ method: 'POST' })
   .inputValidator(
     zodValidator(
       z.object({
-        publicUrl: z.string().url(),
+        publicUrl: mediaUrlSchema,
         filename: z.string().min(1),
       })
     )
   )
   .handler(async ({ context, data }) => {
-    const openRouterApiKeyInfo =
-      await context.scopedDb.apiKeys.resolveKey('openrouter');
+    const llmKeyInfo = await context.scopedDb.apiKeys.resolveLlmKey();
     const result = await describeElementImage({
       imageUrl: data.publicUrl,
       filename: data.filename,
-      openRouterApiKey: openRouterApiKeyInfo.key,
+      llmKey: llmKeyInfo,
     });
     return {
       description: result.description,
@@ -156,7 +156,7 @@ export const finalizeElementUploadFn = createServerFn({ method: 'POST' })
     zodValidator(
       z.object({
         sequenceId: ulidSchema,
-        publicUrl: z.string().url(),
+        publicUrl: mediaUrlSchema,
         path: z.string().min(1),
         filename: z.string().min(1),
       })
@@ -328,7 +328,7 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
       z.object({
         sequenceId: ulidSchema,
         elementId: ulidSchema,
-        publicUrl: z.string().url(),
+        publicUrl: mediaUrlSchema,
         path: z.string().min(1),
         filename: z.string().min(1),
       })

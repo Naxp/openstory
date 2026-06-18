@@ -1,3 +1,4 @@
+import { mediaUrlSchema } from '@/lib/schemas/media-url.schemas';
 import {
   AUDIO_MODELS,
   DEFAULT_IMAGE_MODEL,
@@ -135,7 +136,7 @@ export const createSequenceSchema = createInsertSchema(sequences, {
       .array(
         z.object({
           tempPath: z.string().min(1),
-          tempPublicUrl: z.string().url(),
+          tempPublicUrl: mediaUrlSchema,
           filename: z.string().min(1),
           token: z.string().min(1).max(100),
           description: z.string().nullable().optional(),
@@ -186,4 +187,3 @@ export const updateSequenceSchema = createUpdateSchema(sequences, {
 });
 
 export type CreateSequenceInput = z.infer<typeof createSequenceSchema>;
-export type UpdateSequenceInput = z.infer<typeof updateSequenceSchema>;

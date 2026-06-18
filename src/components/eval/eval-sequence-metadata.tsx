@@ -1,6 +1,7 @@
 import type React from 'react';
 import { AspectRatioIcon } from '@/components/icons/aspect-ratio-icon';
 import { ModelBadge } from '@/components/model/model-badge';
+import { StyleBadge } from '@/components/style/style-badge';
 import type { SequenceWithFrames } from '@/hooks/use-sequences-with-frames';
 import { getImageModelById } from '@/lib/ai/models';
 import { getAspectRatioData } from '@/lib/constants/aspect-ratios';
@@ -46,7 +47,10 @@ export const EvalSequenceMetadata: React.FC<EvalSequenceMetadataProps> = ({
 
       <CreatorIdentity sequence={sequence} />
 
-      <ModelBadge model={sequence.analysisModel} />
+      <div className="flex flex-wrap items-center gap-1">
+        <ModelBadge model={sequence.analysisModel} />
+        <StyleBadge styleId={sequence.styleId} />
+      </div>
 
       {imageModel && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground">

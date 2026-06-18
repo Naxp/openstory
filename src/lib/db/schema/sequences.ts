@@ -3,7 +3,7 @@
  * Core content creation entities for video sequences
  */
 
-import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL } from '@/lib/ai/models';
+import { DEFAULT_IMAGE_MODEL } from '@/lib/ai/models';
 import {
   type AspectRatio,
   DEFAULT_ASPECT_RATIO,
@@ -82,7 +82,17 @@ export const sequences = snakeCase.table(
       .notNull(),
     analysisDurationMs: integer().default(0).notNull(),
     imageModel: text({ length: 100 }).default(DEFAULT_IMAGE_MODEL).notNull(),
-    videoModel: text({ length: 100 }).default(DEFAULT_VIDEO_MODEL).notNull(),
+    // SQL default is pinned to 'kling_v3_pro' to match every deployed DB's
+    // column default (#801 changed DEFAULT_VIDEO_MODEL to grok WITHOUT a
+    // migration; SQLite can't ALTER a column default without a full table
+    // rebuild, which CASCADE-deletes child rows on D1 — see CLAUDE.md). So
+    // db:generate stays clean. The app must NOT rely on this default: the
+    // scoped create (db/scoped/sequences.ts) substitutes DEFAULT_VIDEO_MODEL
+    // for an omitted videoModel, and create-sequences always passes the
+    // user's resolved selection. drizzle inlines `.default()` and ignores
+    // `$defaultFn` when both are set, so an app-level grok default can't live
+    // here.
+    videoModel: text({ length: 100 }).default('kling_v3_pro').notNull(),
     workflow: text({ length: 100 }),
 
     // Music track fields (sequence-level background music)
@@ -100,6 +110,11 @@ export const sequences = snakeCase.table(
     // prompt (musicDesign + analysis model). Null when no AI prompt has been
     // generated yet, or when the most recent variant was a user-edit.
     musicPromptInputHash: text(),
+    // Whether the sequence's background music is included in theatre playback
+    // and MP4 export. Default on (mirrors the old #687 "Include music in merged
+    // video" checkbox). Toggling it off mutes only the music track — scene and
+    // dialogue audio are unaffected (#834).
+    includeMusic: integer({ mode: 'boolean' }).default(true).notNull(),
 
     // Poster image (sequence-level preview from script, ephemeral CDN URL)
     posterUrl: text(),

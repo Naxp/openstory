@@ -115,12 +115,24 @@ export const realtimeSchema = {
       thumbnailUrl: z.string().optional(),
       previewThumbnailUrl: z.string().optional(),
       model: z.string().optional(),
+      // In-flight retry state (#882). Emitted before a retry attempt while
+      // `status` stays `generating`, so the player overlay can show
+      // "Retrying (attempt/maxAttempts)…" instead of an indistinguishable
+      // hung spinner. Absent on the first attempt and on terminal events.
+      phase: z.enum(['generating', 'retrying']).optional(),
+      attempt: z.number().int().positive().optional(),
+      maxAttempts: z.number().int().positive().optional(),
       // Variant-only (#547): this update belongs to an added (alternate) model,
       // not the live primary. The cache updater must NOT write it onto the
       // primary `thumbnailUrl`/`thumbnailStatus` — it only refreshes the
       // per-model variant/model-list queries so the new model surfaces in the
       // dropdown without clobbering the displayed primary thumbnail.
       variantOnly: z.boolean().optional(),
+      // Failure reason (e.g. content-filter rejection). Carried on `failed`
+      // so the cache updater can write `frames.thumbnailError` live — without
+      // it the FailureSummaryBanner only ever shows "Unknown error" until a
+      // full refetch (#881).
+      error: z.string().optional(),
     }),
 
     // Fast preview frames replaced by AI-analyzed frames
@@ -140,6 +152,11 @@ export const realtimeSchema = {
       frameId: z.string(),
       status: z.enum(['pending', 'generating', 'completed', 'failed']),
       videoUrl: z.string().optional(),
+      // In-flight retry state (#882) — see `image:progress` above. Emitted
+      // before a retry attempt with `status` still `generating`.
+      phase: z.enum(['generating', 'retrying']).optional(),
+      attempt: z.number().int().positive().optional(),
+      maxAttempts: z.number().int().positive().optional(),
       // Which video model produced this update. Optional for backward compat
       // with emitters that predate multi-model video (#545); the model-aware
       // cache invalidation and scenes-view variant switcher key off it.
@@ -150,6 +167,9 @@ export const realtimeSchema = {
       // variant/model-list queries so the new model surfaces in the dropdown
       // without clobbering the displayed primary video.
       variantOnly: z.boolean().optional(),
+      // Failure reason — carried on `failed` so the cache updater writes
+      // `frames.videoError` live (see image:progress.error above). (#881)
+      error: z.string().optional(),
     }),
 
     // Audio/music generation progress (frameId optional for sequence-level music)
@@ -500,9 +520,4 @@ export function getFramePromptChannel(frameId?: string): RealtimeChannelApi {
   return frameId
     ? realtimeChannel(`frame-prompt:${frameId}`)
     : noopChannel('frame-prompt');
-}
-
-/** Build the channel id for a frame's prompt-regen events. */
-export function framePromptChannelId(frameId: string): string {
-  return `frame-prompt:${frameId}`;
 }

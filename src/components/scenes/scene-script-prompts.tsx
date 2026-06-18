@@ -2,6 +2,7 @@ import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
 import { ImageModelSelector } from '@/components/model/image-model-selector';
 import { MotionModelSelector } from '@/components/model/motion-model-selector';
 import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
+import { ThinkingBar } from '@/components/ai/thinking-bar';
 import { PromptHistorySheet } from '@/components/prompts/prompt-history-sheet';
 import { DivergentAlternateBanner } from '@/components/staleness/divergent-alternate-banner';
 import { StalenessIndicator } from '@/components/staleness/staleness-indicator';
@@ -16,7 +17,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { buildMentionItems } from '@/components/scenes/prompt-mention/mention-items';
+import { MarkdownEditor } from '@/components/text-editor/markdown-editor';
+import { useSequenceCharacters } from '@/hooks/use-sequence-characters';
+import { useSequenceElements } from '@/hooks/use-sequence-elements';
+import { useSequenceLocations } from '@/hooks/use-sequence-locations';
 import { shortenPromptFn } from '@/functions/ai';
 import { updateFrameFn } from '@/functions/frames';
 import { generateFrameImageFn } from '@/functions/frame-image';
@@ -261,6 +266,21 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     sequenceId,
     frameId: frame?.id,
   });
+
+  // Sequence-scoped lists power the @-mention autocomplete in both prompt
+  // editors. Same canonical tag the #683 server-side parser recognises.
+  const { data: mentionElements } = useSequenceElements(sequenceId);
+  const { data: mentionCharacters } = useSequenceCharacters(sequenceId);
+  const { data: mentionLocations } = useSequenceLocations(sequenceId);
+  const mentionItems = useMemo(
+    () =>
+      buildMentionItems({
+        characters: mentionCharacters ?? [],
+        elements: mentionElements ?? [],
+        locations: mentionLocations ?? [],
+      }),
+    [mentionCharacters, mentionElements, mentionLocations]
+  );
   // The realtime hook owns the per-prompt-type stream status — `'pending'`
   // covers the window between a successful enqueue and the first delta, so
   // the button stays in its busy state without a sibling useState to sync.
@@ -996,11 +1016,16 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
           onSave={(payload) => saveScriptMutation.mutate(payload)}
           isCopied={copiedTab === 'script'}
           onCopy={(text) => void handleCopy(text, 'script')}
+          mentionItems={mentionItems}
         />
       </TabsContent>
 
       <TabsContent value="image-prompt">
         <div className="space-y-4">
+          {/* Thinking bar while the model reasons, before the regenerated
+              prompt starts streaming back ('pending' → first delta). */}
+          <ThinkingBar active={framePromptStream.visual.status === 'pending'} />
+
           {/* Error/Success Messages */}
           {shortenStatus.error && (
             <Alert variant="destructive">
@@ -1027,23 +1052,24 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 {(editedImagePrompt || imagePrompt || '').length} characters
               </span>
             </div>
-            <Textarea
+            <MarkdownEditor
               id="image-prompt-input"
               value={
                 isStreamingVisualPrompt
                   ? framePromptStream.visual.text
                   : editedImagePrompt || imagePrompt || ''
               }
-              onChange={(e) => setEditedImagePrompt(e.target.value)}
+              onValueChange={(value) => setEditedImagePrompt(value)}
               placeholder={
                 isStreamingVisualPrompt
                   ? 'Streaming prompt…'
                   : isGenerating
                     ? 'Prompt is being generated…'
-                    : 'Enter image prompt…'
+                    : 'Enter image prompt… (type @ to insert elements, cast, locations)'
               }
-              className="min-h-[120px] resize-y"
+              className="min-h-[120px]"
               disabled={isGenerating || isStreamingVisualPrompt}
+              mentionItems={mentionItems}
             />
           </div>
 
@@ -1199,6 +1225,10 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
 
       <TabsContent value="motion-prompt">
         <div className="space-y-4">
+          {/* Thinking bar while the model reasons, before the regenerated
+              prompt starts streaming back ('pending' → first delta). */}
+          <ThinkingBar active={framePromptStream.motion.status === 'pending'} />
+
           {/* Editable raw motion prompt */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -1212,25 +1242,26 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
                 {(editedMotionPrompt || rawMotionPrompt).length} characters
               </span>
             </div>
-            <Textarea
+            <MarkdownEditor
               id="motion-prompt-input"
               value={
                 isStreamingMotionPrompt
                   ? framePromptStream.motion.text
                   : editedMotionPrompt || rawMotionPrompt
               }
-              onChange={(e) => setEditedMotionPrompt(e.target.value)}
+              onValueChange={(value) => setEditedMotionPrompt(value)}
               placeholder={
                 isStreamingMotionPrompt
                   ? 'Streaming prompt…'
                   : isGeneratingMotion
                     ? 'Prompt is being generated…'
-                    : 'Enter motion prompt…'
+                    : 'Enter motion prompt… (type @ to insert elements, cast, locations)'
               }
-              className="min-h-[120px] resize-y"
+              className="min-h-[120px]"
               disabled={
                 isGenerating || isGeneratingMotion || isStreamingMotionPrompt
               }
+              mentionItems={mentionItems}
             />
           </div>
 

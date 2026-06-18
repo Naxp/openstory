@@ -1,3 +1,5 @@
+import { usdToMicros, ZERO_MICROS } from '@/lib/billing/money';
+import type { TokenUsage } from '@tanstack/ai';
 import { convertWebSearchToolToAdapterFormat } from '@tanstack/ai-openrouter/tools';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -37,7 +39,15 @@ vi.doMock('@/lib/observability/ai-otel', () => ({
 // Dynamic import so vi.doMock above is in effect when llm-client (and its
 // `./create-adapter` import) resolves. Static imports are hoisted above
 // vi.doMock and would bypass the mocks.
-const { callLLM, callLLMStream } = await import('./llm-client');
+const { callLLM, callLLMStream, llmCostFromUsage } =
+  await import('./llm-client');
+
+const usage = (cost?: number): TokenUsage => ({
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  cost,
+});
 
 describe('llm-client', () => {
   beforeEach(() => {
@@ -130,8 +140,12 @@ describe('llm-client', () => {
       );
       const firstCall = mockChat.mock.calls[0];
       if (!firstCall) throw new Error('expected mockChat to have been called');
-      // The factory's middleware array is passed through to chat().
-      expect(firstCall[0].middleware).toEqual([]);
+      // chat() receives the billing usage-capture middleware (always present,
+      // feeds `llmCostFromUsage`) plus whatever aiObservabilityMiddleware
+      // contributes — mocked to [] here, so only the capture remains.
+      expect(firstCall[0].middleware).toEqual([
+        { onFinish: expect.any(Function) },
+      ]);
     });
 
     const drain = async (gen: AsyncIterable<unknown>) => {
@@ -279,7 +293,7 @@ describe('llm-client', () => {
     describe('with responseSchema', () => {
       const schema = z.object({ greeting: z.string() });
       // A non-Anthropic structured-output model → native `outputSchema` path.
-      const nativeModel = 'openai/gpt-5.4';
+      const nativeModel = 'openai/gpt-5.5';
 
       it('yields parsed object on terminal chunk when structured-output.complete fires', async () => {
         mockChat.mockReturnValue(
@@ -406,6 +420,77 @@ describe('llm-client', () => {
       });
     });
 
+    describe('reasoning', () => {
+      it('ignores REASONING_MESSAGE_CONTENT events (reasoning is not surfaced)', async () => {
+        // Reasoning is enabled for quality, but its tokens are scratch work —
+        // never accumulated into the answer or yielded to the caller.
+        mockChat.mockReturnValue(
+          (async function* () {
+            yield { type: 'REASONING_MESSAGE_CONTENT', delta: 'let me think' };
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: 'Hello' };
+            yield { type: 'REASONING_MESSAGE_CONTENT', delta: ' more' };
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: ' World' };
+          })()
+        );
+
+        const answer: string[] = [];
+        let finalAccumulated = '';
+        for await (const chunk of callLLMStream({
+          model: 'anthropic/claude-sonnet-4.6',
+          messages: [{ role: 'user', content: 'test' }],
+          reasoning: { enabled: true, effort: 'medium' },
+        })) {
+          if (chunk.delta) answer.push(chunk.delta);
+          finalAccumulated = chunk.accumulated;
+        }
+
+        expect(answer).toEqual(['Hello', ' World']);
+        expect(finalAccumulated).toBe('Hello World');
+      });
+
+      it('forwards the reasoning config to chat modelOptions', async () => {
+        mockChat.mockReturnValue(
+          (async function* () {
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: 'ok' };
+          })()
+        );
+
+        await drain(
+          callLLMStream({
+            model: 'anthropic/claude-sonnet-4.6',
+            messages: [{ role: 'user', content: 'test' }],
+            reasoning: { enabled: true, effort: 'medium' },
+          })
+        );
+
+        const callArgs = mockChat.mock.calls[0]?.[0];
+        if (!callArgs) throw new Error('expected mockChat to have been called');
+        expect(callArgs.modelOptions.reasoning).toEqual({
+          enabled: true,
+          effort: 'medium',
+        });
+      });
+
+      it('omits reasoning from modelOptions when not requested', async () => {
+        mockChat.mockReturnValue(
+          (async function* () {
+            yield { type: 'TEXT_MESSAGE_CONTENT', delta: 'ok' };
+          })()
+        );
+
+        await drain(
+          callLLMStream({
+            model: 'anthropic/claude-sonnet-4.6',
+            messages: [{ role: 'user', content: 'test' }],
+          })
+        );
+
+        const callArgs = mockChat.mock.calls[0]?.[0];
+        if (!callArgs) throw new Error('expected mockChat to have been called');
+        expect(callArgs.modelOptions.reasoning).toBeUndefined();
+      });
+    });
+
     describe('web search tool', () => {
       it('wires the OpenRouter web search server tool when webSearch is enabled', async () => {
         mockChat.mockReturnValue(
@@ -516,7 +601,7 @@ describe('llm-client', () => {
       );
 
       const result = await callLLM({
-        model: 'openai/gpt-5.4',
+        model: 'openai/gpt-5.5',
         messages: [{ role: 'user', content: 'test' }],
         responseSchema: schema,
       });
@@ -534,11 +619,29 @@ describe('llm-client', () => {
 
       return expect(
         callLLM({
-          model: 'openai/gpt-5.4',
+          model: 'openai/gpt-5.5',
           messages: [{ role: 'user', content: 'test' }],
           responseSchema: schema,
         })
       ).rejects.toThrow(/no validated object/);
+    });
+  });
+
+  describe('llmCostFromUsage', () => {
+    it('charges the provider-reported cost (USD → micros)', () => {
+      expect(llmCostFromUsage(usage(0.0123), 'model')).toBe(
+        usdToMicros(0.0123)
+      );
+    });
+
+    it('charges nothing when usage or cost is missing / non-finite', () => {
+      expect(llmCostFromUsage(undefined, 'model')).toBe(ZERO_MICROS);
+      expect(llmCostFromUsage(usage(undefined), 'model')).toBe(ZERO_MICROS);
+      expect(llmCostFromUsage(usage(Number.NaN), 'model')).toBe(ZERO_MICROS);
+    });
+
+    it('treats explicit zero cost as zero', () => {
+      expect(llmCostFromUsage(usage(0), 'model')).toBe(ZERO_MICROS);
     });
   });
 });

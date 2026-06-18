@@ -1,4 +1,4 @@
-import { calculateImageCost } from '@/lib/ai/fal-cost';
+import { falCostFromUnits } from '@/lib/ai/fal-cost';
 import { extractFalErrorMessage } from '@/lib/ai/fal-error';
 import {
   getEditEndpoint,
@@ -127,23 +127,28 @@ async function generateImageInternal(
   modelId: string,
   options?: ImageGenerationOptions
 ): Promise<ImageGenerationResult> {
+  // Get the fal API key - byok or global. Resolved BEFORE normalizing
+  // reference URLs: the fal-storage upload below authenticates with this key,
+  // so on a BYOK-only deployment (no platform FAL_KEY) the platform key would
+  // be empty and the upload would fail with "Authorization header is required"
+  // before we ever reach generation (#924).
+  const falApiKeyInfo = options?.scopedDb
+    ? await options.scopedDb.apiKeys.resolveKey('fal')
+    : { key: getEnv().FAL_KEY, source: 'platform' as const };
+
   // Locally-served /r2/ reference URLs aren't reachable by real fal — swap
   // them for fal-storage uploads first (no-op in prod and e2e replay).
   const params: ImageGenerationParams = rawParams.referenceImageUrls?.length
     ? {
         ...rawParams,
         referenceImageUrls: await ensureExternallyFetchableUrls(
-          rawParams.referenceImageUrls
+          rawParams.referenceImageUrls,
+          falApiKeyInfo.key
         ),
       }
     : rawParams;
   const prompt = truncatePromptForModel(params.prompt, params.model);
   const startTime = Date.now();
-
-  // Get the fal API key - byok or global
-  const falApiKeyInfo = options?.scopedDb
-    ? await options.scopedDb.apiKeys.resolveKey('fal')
-    : { key: getEnv().FAL_KEY, source: 'platform' as const };
 
   const modelOptions = buildFalModelOptions(params);
 
@@ -200,22 +205,9 @@ async function generateImageInternal(
 
   const processingTimeMs = Date.now() - startTime;
 
-  const imageSize = params.imageSize ?? DEFAULT_IMAGE_SIZE;
-  const dims = IMAGE_SIZE_DIMENSIONS[imageSize];
-  const sizeMap: Record<ImageSize, string> = {
-    square_hd: '1024x1024',
-    portrait_16_9: '1024x1536',
-    landscape_16_9: '1536x1024',
-  };
-  const cost = calculateImageCost({
-    endpointId: endpoint,
-    numImages: imageUrls.length,
-    widthPx: dims.width,
-    heightPx: dims.height,
-    resolution: params.resolution,
-    style: params.style,
-    imageSize: sizeMap[imageSize],
-  });
+  // Exact cost from fal's reported billed units (resolution/style premiums are
+  // already baked into the count by fal).
+  const cost = falCostFromUnits(endpoint, result.usage?.unitsBilled);
 
   return {
     imageUrls,
@@ -403,13 +395,3 @@ function buildFalModelOptions(
     }
   }
 }
-
-/** Pixel dimensions for megapixel-based cost calculation */
-const IMAGE_SIZE_DIMENSIONS: Record<
-  ImageSize,
-  { width: number; height: number }
-> = {
-  square_hd: { width: 1024, height: 1024 },
-  portrait_16_9: { width: 576, height: 1024 },
-  landscape_16_9: { width: 1344, height: 768 },
-};

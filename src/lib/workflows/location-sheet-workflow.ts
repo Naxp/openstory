@@ -143,6 +143,7 @@ export class LocationSheetWorkflow extends OpenStoryWorkflowEntrypoint<LocationS
         costMicros: extractImageCost(imageResult.metadata),
         usedOwnKey: imageResult.metadata.usedOwnKey,
         description: `Location sheet (${generationParams.model})`,
+        idempotencyKey: `${event.instanceId}:sheet`,
         metadata: {
           model: generationParams.model,
           locationName: input.locationName,

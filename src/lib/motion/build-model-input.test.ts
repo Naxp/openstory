@@ -51,10 +51,16 @@ describe('buildModelInput', () => {
     });
   });
 
-  describe('Grok Imagine Video', () => {
-    it('uses image_url', () => {
-      const result = build('grok_imagine_video');
+  describe('Grok Imagine Video 1.5 (default)', () => {
+    it('uses image_url and strips aspect_ratio (schema has none)', () => {
+      // v1.5's fal schema dropped aspect_ratio; the output ratio is driven by
+      // the input image instead. The transform must strip the aspect_ratio we
+      // pass so no unsupported param reaches the API.
+      const result = build('grok_imagine_video_1_5');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
+      expect(result).not.toHaveProperty('start_image_url');
+      expect(result).not.toHaveProperty('aspect_ratio');
+      expect(result.resolution).toBe('720p'); // schema default
     });
   });
 
@@ -80,7 +86,7 @@ describe('buildModelInput', () => {
     });
   });
 
-  describe('MiniMax Hailuo 02', () => {
+  describe('MiniMax Hailuo 2.3', () => {
     it('uses image_url', () => {
       const result = build('minimax_hailuo_02');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
@@ -104,19 +110,7 @@ describe('buildModelInput', () => {
     });
   });
 
-  describe('Seedance v1.5 Pro', () => {
-    it('uses image_url', () => {
-      const result = build('seedance_v1_5_pro');
-      expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
-    });
-
-    it('includes prompt', () => {
-      const result = build('seedance_v1_5_pro');
-      expect(result.prompt).toBe(baseOptions.prompt);
-    });
-  });
-
-  describe('Seedance v2', () => {
+  describe('Seedance 2.0', () => {
     it('uses image_url', () => {
       const result = build('seedance_v2');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
@@ -140,10 +134,11 @@ describe('buildModelInput', () => {
         '14',
         '15',
       ],
-      grok_imagine_video: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      grok_imagine_video_1_5: [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      ],
       veo3_1: ['4s', '6s', '8s'],
       ltx_2_3_pro: [6, 8, 10],
-      seedance_v1_5_pro: ['4', '5', '6', '7', '8', '9', '10', '11', '12'],
       seedance_v2: [
         '4',
         '5',
@@ -189,13 +184,13 @@ describe('buildModelInput', () => {
     });
 
     it('passes aspect_ratio from options', () => {
-      const result = build('seedance_v1_5_pro', { aspectRatio: '9:16' });
+      const result = build('seedance_v2', { aspectRatio: '9:16' });
       expect(result.aspect_ratio).toBe('9:16');
     });
 
-    it('omits aspect_ratio when not provided (API uses its own default)', () => {
-      const result = build('seedance_v1_5_pro', { aspectRatio: undefined });
-      expect(result.aspect_ratio).toBeUndefined();
+    it('falls back to the schema default for aspect_ratio when not provided', () => {
+      const result = build('seedance_v2', { aspectRatio: undefined });
+      expect(result.aspect_ratio).toBe('auto');
     });
   });
 });

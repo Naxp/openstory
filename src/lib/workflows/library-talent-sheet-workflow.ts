@@ -138,6 +138,7 @@ export class LibraryTalentSheetWorkflow extends OpenStoryWorkflowEntrypoint<Libr
         costMicros: extractImageCost(imageResult.metadata),
         usedOwnKey: imageResult.metadata.usedOwnKey,
         description: `Talent sheet (${input.imageModel ?? DEFAULT_IMAGE_MODEL})`,
+        idempotencyKey: `${event.instanceId}:sheet`,
         metadata: { talentId: input.talentId, type: 'sheet' },
         workflowName: 'LibraryTalentSheetWorkflow',
       });
@@ -334,6 +335,7 @@ export class LibraryTalentSheetWorkflow extends OpenStoryWorkflowEntrypoint<Libr
         costMicros: extractImageCost(headshotResult.metadata),
         usedOwnKey: headshotResult.metadata.usedOwnKey,
         description: `Talent headshot (${input.imageModel ?? DEFAULT_IMAGE_MODEL})`,
+        idempotencyKey: `${event.instanceId}:headshot`,
         metadata: { talentId: input.talentId, type: 'headshot' },
         workflowName: 'LibraryTalentSheetWorkflow',
       });

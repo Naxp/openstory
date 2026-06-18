@@ -11,6 +11,11 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 1,
     contextWindow: 1_048_576,
+    // Accepts image input — required so the motion-prompt pass can be
+    // conditioned on the rendered starting frame (#929). Conservative: only
+    // models known to accept image input are `true`; text-only models fall
+    // back to the text-only motion prompt path.
+    vision: true,
     description: 'Frontier xAI reasoning model with 1M context',
   },
   {
@@ -20,6 +25,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 2,
     contextWindow: 1_000_000,
+    vision: true,
     description: 'State-of-the-art coding and structured output',
   },
   {
@@ -29,15 +35,17 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 3,
     contextWindow: 2_000_000,
+    vision: true,
     description: 'Lowest hallucination rate, flagship agentic model',
   },
   {
-    id: 'anthropic/claude-opus-4.6',
-    name: 'Claude Opus 4.6',
+    id: 'anthropic/claude-opus-4.8',
+    name: 'Claude Opus 4.8',
     provider: 'Anthropic',
     license: 'proprietary' as const,
     qualityRank: 4,
     contextWindow: 1_000_000,
+    vision: true,
     description: 'Frontier reasoning and coding',
   },
   {
@@ -47,6 +55,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'open-source' as const,
     qualityRank: 5,
     contextWindow: 262_144,
+    vision: true,
     description: 'Apache 2.0, 119B MoE, multimodal + agentic coding',
   },
   {
@@ -56,16 +65,24 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'open-source' as const,
     qualityRank: 6,
     contextWindow: 163_840,
+    // Text-only.
+    vision: false,
     description: 'MIT license, MMLU 94.2, GPT-5 class reasoning',
   },
   {
-    id: 'z-ai/glm-5',
-    name: 'GLM-5',
+    id: 'z-ai/glm-5.2',
+    name: 'GLM-5.2',
     provider: 'Z.ai',
     license: 'open-source' as const,
     qualityRank: 7,
-    contextWindow: 202_752,
-    description: 'MIT license, 744B MoE, SWE-bench 77.8',
+    contextWindow: 1_048_576,
+    // GLM-5.2 is text-only. Image-bearing calls (the vision-conditioned motion
+    // path, #929) transparently route to `DEFAULT_VISION_MODEL` — see
+    // `resolveVisionModel`. GLM's own vision sibling GLM-4.6V was tried (#942)
+    // but can't do strict structured outputs, which the motion-prompt call
+    // requires, so it failed; we fall back to the default vision model (#944).
+    vision: false,
+    description: 'Large-scale reasoning model, 1M context, long-horizon agents',
   },
   {
     id: 'google/gemini-3.1-pro-preview',
@@ -74,15 +91,17 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 8,
     contextWindow: 1_048_576,
+    vision: true,
     description: 'Frontier multimodal reasoning with 1M context',
   },
   {
-    id: 'openai/gpt-5.4',
-    name: 'GPT-5.4',
+    id: 'openai/gpt-5.5',
+    name: 'GPT-5.5',
     provider: 'OpenAI',
     license: 'proprietary' as const,
     qualityRank: 9,
     contextWindow: 1_050_000,
+    vision: true,
     description: 'Latest GPT-5 series with 1M context',
   },
   {
@@ -92,6 +111,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 10,
     contextWindow: 1_048_576,
+    vision: true,
     description: 'Fast multimodal with 1M context',
   },
   {
@@ -101,6 +121,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 11,
     contextWindow: 400_000,
+    vision: true,
     description: 'Fast reasoning with configurable effort modes',
   },
   {
@@ -110,6 +131,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 12,
     contextWindow: 262_144,
+    vision: true,
     description: 'Fast multimodal with 4 reasoning effort modes',
   },
   {
@@ -119,6 +141,7 @@ export const SCRIPT_ANALYSIS_MODELS = [
     license: 'proprietary' as const,
     qualityRank: 13,
     contextWindow: 400_000,
+    vision: true,
     description: 'Fastest and most cost-efficient GPT-5.4 variant',
   },
 ] as const;
@@ -150,7 +173,7 @@ export function isValidAnalysisModelId(
 /**
  * Get all model IDs
  */
-export function getAllModelIds(): AnalysisModelId[] {
+function getAllModelIds(): AnalysisModelId[] {
   return SCRIPT_ANALYSIS_MODELS.map((model) => model.id);
 }
 
@@ -162,6 +185,43 @@ export const ANALYSIS_MODEL_IDS = getAllModelIds();
 export function getContextWindow(modelId: string): number {
   const model = SCRIPT_ANALYSIS_MODELS.find((m) => m.id === modelId);
   return model?.contextWindow ?? 128_000;
+}
+
+/**
+ * Whether an analysis model accepts image input. Used by the motion-prompt
+ * pass to decide whether to attach the rendered starting frame as a vision
+ * input (#929). Unknown models default to `false` so an image is never sent
+ * to a model that can't accept one — the motion prompt simply falls back to
+ * the text-only path.
+ */
+export function analysisModelSupportsVision(modelId: string): boolean {
+  return getAnalysisModelById(modelId)?.vision ?? false;
+}
+
+/**
+ * Vision-capable model that image-bearing calls fall back to when the chosen
+ * analysis model is text-only (#944). The motion-prompt pass conditions on the
+ * rendered still (#929), so a text model selected for analysis still needs a
+ * multimodal model for that one call. Sonnet is the default: it does vision +
+ * strict structured outputs + reasoning, which the motion-prompt call requires
+ * (GLM's vision siblings can't do strict structured outputs — see #942/#944).
+ */
+export const DEFAULT_VISION_MODEL: AnalysisModelId =
+  'anthropic/claude-sonnet-4.6';
+
+/**
+ * Resolve which model should actually run a call given whether it carries image
+ * input. A text-only model with image input is swapped to `DEFAULT_VISION_MODEL`
+ * so the image can be used; everything else runs as chosen. The effective model
+ * drives the adapter, context window, and cost; callers keep storing/hashing the
+ * requested model.
+ */
+export function resolveVisionModel(
+  modelId: AnalysisModelId,
+  hasImageInput: boolean
+): AnalysisModelId {
+  if (!hasImageInput || analysisModelSupportsVision(modelId)) return modelId;
+  return DEFAULT_VISION_MODEL;
 }
 /**
  * Default model to use when none is specified

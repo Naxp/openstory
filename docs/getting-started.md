@@ -11,9 +11,8 @@ OpenStory is an open-source AI video production platform. This guide walks you t
 
 - [Bun](https://bun.com/docs/installation) >= 1.3.0
 - [Git](https://git-scm.com)
-- [Docker](https://www.docker.com) — for the QStash workflow emulator ([OrbStack](https://orbstack.dev) recommended on macOS)
 
-No external database is required for local development — `bun setup` configures a local SQLite file (`local.db`) automatically.
+Nothing else. No Docker, no external database, no Cloudflare account — local dev runs the full stack (D1, R2, Workflows, Durable Objects, email) inside Workerd via Miniflare.
 
 ## Quick Start
 
@@ -22,27 +21,25 @@ No external database is required for local development — `bun setup` configure
 git clone https://github.com/openstory-so/openstory.git
 cd openstory
 
-# Install dependencies
+# Install and run
 bun install
-
-# Interactive setup — checks prerequisites, generates BETTER_AUTH_SECRET,
-# and configures local SQLite + QStash defaults in .env.local
-bun setup
-```
-
-## Running the Dev Server
-
-```bash
 bun dev
 ```
 
-This single command runs everything in parallel: database migration and seeding, the dev server, the QStash workflow emulator (Docker), and the Stripe listener.
+`bun dev` does everything: it generates `.env.local` (with auth/encryption secrets) on first run, migrates and seeds the local database, and starts the dev server.
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
 
+## AI Keys
+
+To use AI generation features you need two API keys — run `bun setup` to add them interactively, or paste them into `.env.local`:
+
+- `FAL_KEY` — [fal.ai](https://fal.ai/dashboard/keys) for image, video & audio generation
+- `OPENROUTER_KEY` — [OpenRouter](https://openrouter.ai/settings/keys) for LLM script analysis
+
 ## Environment Variables
 
-`bun setup` writes a working `.env.local` for you. See [`.env.example`](https://github.com/openstory-so/openstory/blob/main/.env.example) for the full list of available environment variables, including optional services like AI keys, storage, and OAuth providers.
+See [`.env.example`](https://github.com/openstory-so/openstory/blob/main/.env.example) for the full list of available environment variables, including optional services like Google OAuth, Stripe, PostHog, and remote R2 storage.
 
 ## Database
 

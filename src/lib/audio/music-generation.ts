@@ -1,7 +1,6 @@
 import { getEnv } from '#env';
-import { calculateAudioCost } from '@/lib/ai/fal-cost';
+import { falCostFromUnits } from '@/lib/ai/fal-cost';
 import {
-  AUDIO_MODEL_KEYS,
   AUDIO_MODELS,
   DEFAULT_MUSIC_MODEL,
   type AudioModel,
@@ -11,21 +10,10 @@ import { type Microdollars } from '@/lib/billing/money';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { generateAudio } from '@tanstack/ai';
 import { falAudio } from '@tanstack/ai-fal';
-import { z } from 'zod';
 
 import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'audio', 'music-generation']);
-
-export const generateMusicOptionsSchema = z.object({
-  prompt: z.string().min(1),
-  tags: z.string().optional(),
-  lyrics: z.string().optional(),
-  duration: z.number().min(1).max(240).optional(),
-  instrumental: z.boolean().optional().default(true),
-  model: z.enum(AUDIO_MODEL_KEYS).optional().default(DEFAULT_MUSIC_MODEL),
-  steps: z.number().optional(),
-});
 
 export type GenerateMusicOptions = {
   scopedDb?: ScopedDb;
@@ -183,10 +171,8 @@ async function callFalAudio(
     throw new Error('No audio URL returned from music generation');
   }
 
-  const cost = calculateAudioCost({
-    endpointId: modelConfig.id,
-    durationSeconds: billedDuration,
-  });
+  // Exact cost from fal's reported billed units.
+  const cost = falCostFromUnits(modelConfig.id, result.usage?.unitsBilled);
 
   return {
     success: true,

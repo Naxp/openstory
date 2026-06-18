@@ -90,7 +90,7 @@ type FrameImageHashFields = {
   elementReferenceHashes: readonly string[];
 };
 
-export type FrameImageHashKind = 'thumbnail' | 'variant-image';
+type FrameImageHashKind = 'thumbnail' | 'variant-image';
 
 export type FrameImageHashInput = FrameImageHashFields & {
   kind: FrameImageHashKind;
@@ -117,7 +117,7 @@ export function computeFrameImageInputHash(
  * artifact-hash chain (so a stale upstream image cascades); a `url` is used
  * when the source is an external asset with no hashable upstream.
  */
-export type FrameVideoSourceImage =
+type FrameVideoSourceImage =
   | { kind: 'variantHash'; hash: string }
   | { kind: 'url'; url: string };
 
@@ -318,27 +318,84 @@ export type PromptSceneContextHashInput = {
   aspectRatio: string;
   /** Analysis model id (e.g. `anthropic/claude-haiku-4.5`). */
   analysisModel: string;
+  /**
+   * URL of the rendered starting-frame image this prompt was conditioned on
+   * (`frames.thumbnailUrl`), or null when no image has been rendered yet. Only
+   * the MOTION prompt consumes this — motion is now generated with the actual
+   * still as a vision input (#929). The stored URL embeds a fresh id per
+   * render, so re-rendering the still changes it and re-stales the motion
+   * prompt. The visual prompt ignores it (the visual prompt produces the
+   * image — it can't depend on it).
+   */
+  startingFrameImageUrl?: string | null;
 };
 
 /**
- * Strip the LLM-output fields off a scene so the hash represents only the
- * pre-prompt input surface. `metadata.durationSeconds` is excluded too: it is
- * a video-generation parameter (passed directly to the motion API and hashed
- * by `computeFrameVideoInputHash`), not a prompt driver. Including it caused
- * issue #767 — `motion-music-prompts-workflow` snaps the duration mid-
- * pipeline, overwriting `frame.metadata` after the visual prompt hash was
- * already stored, so every fresh sequence's visual prompt reported as stale.
+ * Project a scene down to ONLY the fields that are genuine pre-prompt inputs.
+ *
+ * This is an allowlist, deliberately — a denylist (strip `prompts`/`continuity`/
+ * `durationSeconds`) lets any future downstream field that lands on the scene
+ * leak into the hash and falsely flag prompts stale. That class of bug is #767
+ * (`durationSeconds` snapped mid-pipeline) one field over: `musicDesign`,
+ * `audioDesign`, `sourceImageUrl` are all downstream output and must never be
+ * hashed here. `durationSeconds` is excluded for the same #767 reason — it is a
+ * video parameter (hashed by `computeFrameVideoInputHash`), not a prompt driver.
  */
 function sceneInputContext(scene: Scene) {
-  const {
-    prompts: _prompts,
-    continuity: _continuity,
-    metadata,
-    ...rest
-  } = scene;
-  if (!metadata) return rest;
-  const { durationSeconds: _duration, ...metadataWithoutDuration } = metadata;
-  return { ...rest, metadata: metadataWithoutDuration };
+  return {
+    sceneId: scene.sceneId,
+    sceneNumber: scene.sceneNumber,
+    originalScript: scene.originalScript,
+    metadata: scene.metadata
+      ? {
+          title: scene.metadata.title,
+          location: scene.metadata.location,
+          timeOfDay: scene.metadata.timeOfDay,
+          storyBeat: scene.metadata.storyBeat,
+        }
+      : null,
+  };
+}
+
+/**
+ * Project a bible entry down to the fields that actually drive prompt text.
+ * Identity / provenance / image-gen-tag fields (`characterId`, `locationId`,
+ * `consistencyTag`, `firstMention`) are handed to the LLM but never shape the
+ * prose, so hashing them only manufactures false staleness — e.g. a casting tag
+ * rewrite or a re-extracted `firstMention.lineNumber`. See the staleness doc
+ * §4.2. The LLM still receives the full entries; only the hash is the projection.
+ */
+function projectCharacterForPrompt(c: CharacterBibleEntry) {
+  return {
+    name: trim(c.name),
+    age: trim(c.age),
+    gender: trim(c.gender),
+    ethnicity: trim(c.ethnicity),
+    physicalDescription: trim(c.physicalDescription),
+    standardClothing: trim(c.standardClothing),
+    distinguishingFeatures: trim(c.distinguishingFeatures),
+  };
+}
+
+function projectLocationForPrompt(l: LocationBibleEntry) {
+  return {
+    name: trim(l.name),
+    type: l.type,
+    timeOfDay: trim(l.timeOfDay),
+    description: trim(l.description),
+    architecturalStyle: trim(l.architecturalStyle),
+    keyFeatures: trim(l.keyFeatures),
+    colorPalette: trim(l.colorPalette),
+    lightingSetup: trim(l.lightingSetup),
+    ambiance: trim(l.ambiance),
+  };
+}
+
+function projectElementForPrompt(e: ElementBibleEntry) {
+  return {
+    token: trim(e.token),
+    description: trim(e.description),
+  };
 }
 
 /**
@@ -371,7 +428,7 @@ function sortedBibles(input: PromptSceneContextHashInput) {
  * `*_prompt_input_hash` columns on `frames` / `sequences` so legacy rows
  * fall through that safe path until they're regenerated.
  */
-const PROMPT_INPUT_HASH_VERSION = 3;
+const PROMPT_INPUT_HASH_VERSION = 4;
 
 export function computeVisualPromptInputHash(
   input: PromptSceneContextHashInput
@@ -382,9 +439,11 @@ export function computeVisualPromptInputHash(
     hashVersion: PROMPT_INPUT_HASH_VERSION,
     scene: sceneInputContext(input.scene),
     styleConfig: input.styleConfig,
-    characterBible: bibles.characterBible,
-    locationBible: bibles.locationBible,
-    elementBible: bibles.elementBible,
+    characterBible: bibles.characterBible.map(projectCharacterForPrompt),
+    locationBible: bibles.locationBible.map(projectLocationForPrompt),
+    elementBible: bibles.elementBible
+      ? bibles.elementBible.map(projectElementForPrompt)
+      : null,
     aspectRatio: trim(input.aspectRatio),
     analysisModel: trim(input.analysisModel),
   });
@@ -399,11 +458,16 @@ export function computeMotionPromptInputHash(
     hashVersion: PROMPT_INPUT_HASH_VERSION,
     scene: sceneInputContext(input.scene),
     styleConfig: input.styleConfig,
-    characterBible: bibles.characterBible,
-    locationBible: bibles.locationBible,
-    elementBible: bibles.elementBible,
+    characterBible: bibles.characterBible.map(projectCharacterForPrompt),
+    locationBible: bibles.locationBible.map(projectLocationForPrompt),
+    elementBible: bibles.elementBible
+      ? bibles.elementBible.map(projectElementForPrompt)
+      : null,
     aspectRatio: trim(input.aspectRatio),
     analysisModel: trim(input.analysisModel),
+    // The rendered still motion is conditioned on (#929). Re-rendering the
+    // image yields a new URL, which flips this and re-stales the motion prompt.
+    startingFrameImageUrl: trim(input.startingFrameImageUrl),
   });
 }
 

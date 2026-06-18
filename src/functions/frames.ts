@@ -1,4 +1,9 @@
-import { DEFAULT_IMAGE_MODEL, safeTextToImageModel } from '@/lib/ai/models';
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODELS,
+  isValidTextToImageModel,
+  safeTextToImageModel,
+} from '@/lib/ai/models';
 import {
   computeMotionPromptInputHash,
   computeVisualPromptInputHash,
@@ -44,9 +49,17 @@ export const getFrameFn = createServerFn({ method: 'GET' })
 export const getSequenceImageModelsFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .handler(async ({ context }) => {
-    return context.scopedDb.frameVariants.listModelsForSequence(
+    const models = await context.scopedDb.frameVariants.listModelsForSequence(
       context.sequence.id,
       'image'
+    );
+    // Preview thumbnails are generated with a hidden internal model
+    // (PREVIEW_IMAGE_MODEL = flux_2_turbo) and stored as image variants. Hide
+    // such hidden models from the user-facing sequence image-model list — they
+    // aren't a real choice and only confuse the header dropdown.
+    return models.filter(
+      (model) =>
+        !(isValidTextToImageModel(model) && 'hidden' in IMAGE_MODELS[model])
     );
   });
 
@@ -394,6 +407,7 @@ export const updateFrameFn = createServerFn({ method: 'POST' })
                   analysisModel: preEditSequenceForSplice.analysisModel,
                 },
                 scene: context.frame.metadata,
+                startingFrameImageUrl: context.frame.thumbnailUrl,
               });
               updateData.motionPromptInputHash =
                 await computeMotionPromptInputHash(ctx);
@@ -576,26 +590,42 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
       if (frame.thumbnailInputHash === null) {
         thumbnail = 'untracked';
       } else {
-        const [characters, locations] = await Promise.all([
-          scopedDb.characters.listWithSheets(sequence.id),
-          scopedDb.sequenceLocations.listWithReferences(sequence.id),
-        ]);
+        try {
+          const [characters, locations, elements] = await Promise.all([
+            scopedDb.characters.listWithSheets(sequence.id),
+            scopedDb.sequenceLocations.listWithReferences(sequence.id),
+            scopedDb.sequenceElements.list(sequence.id),
+          ]);
 
-        const snapshot = await buildRegenerateFrameSnapshot({
-          frame,
-          characters,
-          locations,
-          imageModel: safeTextToImageModel(
-            frame.imageModel,
-            DEFAULT_IMAGE_MODEL
-          ),
-          aspectRatio: sequence.aspectRatio,
-        });
+          const snapshot = await buildRegenerateFrameSnapshot({
+            frame,
+            characters,
+            locations,
+            elements,
+            imageModel: safeTextToImageModel(
+              frame.imageModel,
+              DEFAULT_IMAGE_MODEL
+            ),
+            aspectRatio: sequence.aspectRatio,
+          });
 
-        thumbnail =
-          snapshot.snapshotInputHash !== frame.thumbnailInputHash
-            ? 'stale'
-            : 'fresh';
+          thumbnail =
+            snapshot.snapshotInputHash !== frame.thumbnailInputHash
+              ? 'stale'
+              : 'fresh';
+        } catch (error) {
+          // Mirror the visual/motion branches: a thumbnail-hash failure (e.g.
+          // transient D1 read, malformed element/location row) must not throw
+          // out of the whole handler — that would null the entire staleness
+          // result and silently suppress the visual/motion banners too. Stay
+          // 'untracked' (fail-open as 'fresh' would lie about freshness).
+          logger.warn(
+            `thumbnail staleness uncomputable for frame ${frame.id}:`,
+            {
+              err: error,
+            }
+          );
+        }
       }
     }
 
@@ -661,6 +691,7 @@ export const getFrameStalenessFn = createServerFn({ method: 'GET' })
             sequence,
             scene: frame.metadata,
             analysisModelOverride: latest?.analysisModel ?? null,
+            startingFrameImageUrl: frame.thumbnailUrl,
           });
           const liveHash = await computeMotionPromptInputHash(ctx);
           motionPrompt = liveHash !== referenceHash ? 'stale' : 'fresh';

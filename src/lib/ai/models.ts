@@ -33,12 +33,21 @@ export type TextModel = AnalysisModelId;
  * Only model-level metadata lives here: identity, audio override, performance.
  */
 export const IMAGE_TO_VIDEO_MODELS = {
+  grok_imagine_video_1_5: {
+    id: 'xai/grok-imagine-video/v1.5/image-to-video',
+    name: 'Grok Imagine Video 1.5',
+    provider: 'Grok',
+    license: 'proprietary' as const,
+    qualityRank: 1,
+    maxPromptLength: 2500,
+    performance: { estimatedGenerationTime: 20, quality: 'best' as const },
+  },
   ltx_2_3_pro: {
     id: 'fal-ai/ltx-2.3/image-to-video',
     name: 'LTX 2.3 Pro',
     provider: 'Lightricks',
     license: 'open-source' as const,
-    qualityRank: 1,
+    qualityRank: 2,
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 15, quality: 'best' as const },
   },
@@ -60,42 +69,23 @@ export const IMAGE_TO_VIDEO_MODELS = {
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
   },
-  grok_imagine_video: {
-    id: 'xai/grok-imagine-video/image-to-video',
-    name: 'Grok Imagine Video',
-    provider: 'Grok',
-    license: 'proprietary' as const,
-    qualityRank: 4,
-    maxPromptLength: 2500,
-    performance: { estimatedGenerationTime: 20, quality: 'best' as const },
-  },
   minimax_hailuo_02: {
-    id: 'fal-ai/minimax/hailuo-02/pro/image-to-video',
-    name: 'MiniMax Hailuo 02',
+    id: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
+    name: 'MiniMax Hailuo 2.3',
     provider: 'MiniMax',
     license: 'proprietary' as const,
     qualityRank: 5,
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 15, quality: 'best' as const },
   },
-  seedance_v1_5_pro: {
-    id: 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
-    name: 'Seedance 1.5 Pro',
-    provider: 'ByteDance',
-    license: 'proprietary' as const,
-    qualityRank: 6,
-    maxPromptLength: 4096,
-    performance: { estimatedGenerationTime: 12, quality: 'best' as const },
-  },
   seedance_v2: {
-    id: 'bytedance/seedance-2.0/image-to-video',
-    name: 'Seedance 2',
+    id: 'bytedance/seedance-2.0/enterprise/v2/image-to-video',
+    name: 'Seedance 2.0',
     provider: 'ByteDance',
     license: 'proprietary' as const,
     qualityRank: 2,
     maxPromptLength: 4096,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
-    requiredStyleCategory: 'animation',
   },
 } as const;
 
@@ -236,40 +226,10 @@ export function getImageModelById(id: string): ImageModelConfig | undefined {
   return Object.values(IMAGE_MODELS).find((model) => model.id === id);
 }
 
-// Helper to get model display name
-export function getImageModelDisplayName(modelId: string): string {
-  const model = getImageModelById(modelId);
-  return model?.name ?? modelId;
-}
-
 // Image to video model types
 export type ImageToVideoModel = keyof typeof IMAGE_TO_VIDEO_MODELS;
-// Type for the video model configuration object
-export type ImageToVideoModelConfig =
-  (typeof IMAGE_TO_VIDEO_MODELS)[ImageToVideoModel];
-// Type for the video model ID
-type ImageToVideoModelId = ImageToVideoModelConfig['id'];
 
-export const DEFAULT_VIDEO_MODEL: ImageToVideoModel = 'kling_v3_pro';
-
-// Typed list of image-to-video model keys for Zod enum schemas
-// This is type-safe because we use satisfies to validate the tuple matches the type
-export const IMAGE_TO_VIDEO_MODEL_KEYS = [
-  'grok_imagine_video',
-  'kling_v3_pro',
-  'ltx_2_3_pro',
-  'minimax_hailuo_02',
-  'seedance_v1_5_pro',
-  'seedance_v2',
-  'veo3_1',
-] as const satisfies readonly ImageToVideoModel[];
-
-// Helper to get model ID from key (for backward compatibility)
-export function getImageToVideoModelId(
-  modelKey: ImageToVideoModel
-): ImageToVideoModelId {
-  return IMAGE_TO_VIDEO_MODELS[modelKey].id;
-}
+export const DEFAULT_VIDEO_MODEL: ImageToVideoModel = 'seedance_v2';
 
 function schemaOf(modelKey: ImageToVideoModel) {
   return MOTION_INPUT_SCHEMAS[IMAGE_TO_VIDEO_MODELS[modelKey].id];
@@ -480,19 +440,8 @@ export const AUDIO_MODELS = {
 // Audio model types
 export type AudioModel = keyof typeof AUDIO_MODELS;
 export type AudioModelConfig = (typeof AUDIO_MODELS)[AudioModel];
-type AudioModelId = AudioModelConfig['id'];
 
 export const DEFAULT_MUSIC_MODEL: AudioModel = 'elevenlabs_music';
-
-export const AUDIO_MODEL_KEYS = [
-  'ace_step',
-  'ace_step_1_5',
-  'elevenlabs_music',
-] as const satisfies readonly AudioModel[];
-
-export function getAudioModelId(modelKey: AudioModel): AudioModelId {
-  return AUDIO_MODELS[modelKey].id;
-}
 
 export function isValidAudioModel(value: unknown): value is AudioModel {
   return typeof value === 'string' && Object.keys(AUDIO_MODELS).includes(value);

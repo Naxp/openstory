@@ -177,6 +177,7 @@ export class ElementSheetWorkflow extends OpenStoryWorkflowEntrypoint<ElementShe
             costMicros: extractImageCost(imageResult.metadata),
             usedOwnKey: imageResult.metadata.usedOwnKey,
             description: `Element reference (${generationParams.model})`,
+            idempotencyKey: `${event.instanceId}:element-ref-${index}`,
             metadata: {
               model: generationParams.model,
               token: entry.token,

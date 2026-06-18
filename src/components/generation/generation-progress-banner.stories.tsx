@@ -18,6 +18,7 @@ function makeState(
     talentMatches: [],
     locationMatches: [],
     unusedTalent: null,
+    frameRetries: new Map(),
     ...overrides,
   };
 }

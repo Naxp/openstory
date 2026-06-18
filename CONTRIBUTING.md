@@ -9,7 +9,8 @@ For detailed architecture documentation, see [CLAUDE.md](CLAUDE.md).
 ### Prerequisites
 
 - **Bun** >= 1.3.0 — [install](https://bun.com/docs/installation)
-- **Docker** — for the QStash workflow emulator ([OrbStack](https://orbstack.dev) recommended on macOS)
+
+No Docker or external services — local dev runs the full stack (D1, R2, Workflows, Durable Objects) inside Workerd via Miniflare.
 
 ### Setup
 
@@ -18,15 +19,12 @@ For detailed architecture documentation, see [CLAUDE.md](CLAUDE.md).
 gh repo fork openstory-so/openstory --clone
 cd openstory
 
-# Install dependencies and configure environment
+# Install and run
 bun install
-bun setup        # Interactive — checks prerequisites, generates secrets, configures services
-bun dev          # Starts dev server, QStash emulator, and Stripe listener
+bun dev
 ```
 
-`bun setup` handles everything: it checks prerequisites, generates `BETTER_AUTH_SECRET`, sets up local SQLite + QStash defaults, and walks you through optional service configuration (AI keys, storage, OAuth, etc.).
-
-`bun dev` runs DB migration, seeding, dev server, QStash (Docker), and Stripe listener in parallel.
+`bun dev` handles everything: it generates `.env.local` (with auth/encryption secrets) on first run, migrates and seeds the local database, and starts the dev server. To use AI generation features, run `bun setup` to add `FAL_KEY` and `OPENROUTER_KEY` (or paste them into `.env.local`).
 
 Open [http://localhost:3000](http://localhost:3000) — you should see the app running.
 
@@ -51,16 +49,17 @@ Lefthook automatically tags commits with the issue number extracted from the bra
 
 ### Daily Development
 
-`bun dev` runs everything in parallel: DB migration, dev server, QStash (Docker), and Stripe listener.
+`bun dev` runs env bootstrap, DB migration + seeding, and the dev server. For billing work, `bun dev:all` also starts the Stripe listener (skipped when `STRIPE_SECRET_KEY` isn't set).
 
 Key commands:
 
 | Command         | Description                                                     |
 | --------------- | --------------------------------------------------------------- |
-| `bun dev`       | Start all dev services                                          |
+| `bun dev`       | Start the app dev services                                      |
+| `bun dev:all`   | Same as `bun dev` plus the Stripe listener                      |
 | `bun run build` | Build for production (**not** `bun build` — that's the bundler) |
 | `bun typecheck` | Type-check with tsgo                                            |
-| `bun test`      | Run unit tests                                                  |
+| `bun run test`  | Run unit tests (Vitest)                                         |
 | `bun test:e2e`  | Run Playwright end-to-end tests                                 |
 
 ## Code Quality
@@ -95,12 +94,12 @@ GitHub Actions runs the full quality gate on every pull request: lint, format, t
 ### Unit Tests
 
 ```bash
-bun test              # Run all tests
+bun run test          # Run all tests (NOT `bun test` — that's Bun's built-in runner)
 bun test:watch        # Watch mode
 bun test:coverage     # With coverage report
 ```
 
-- Framework: `bun:test`
+- Framework: [Vitest](https://vitest.dev)
 - Location: `__tests__/` directories alongside routes, or `.test.ts` next to modules
 - Focus on business logic — not React components
 
@@ -109,7 +108,7 @@ bun test:coverage     # With coverage report
 ```bash
 bun test:e2e          # Run Playwright tests (hermetic — workflows skipped)
 bun test:e2e:ui       # Interactive Playwright UI
-bun test:e2e:full     # Full pipeline: real workflows, qstash, fal+LLM via aimock fixtures
+bun test:e2e:full     # Full pipeline: real Cloudflare Workflows, fal+LLM via aimock fixtures
 ```
 
 - Location: `e2e/tests/`
@@ -121,14 +120,9 @@ bun test:e2e:full     # Full pipeline: real workflows, qstash, fal+LLM via aimoc
 The full-pipeline test (`e2e/tests/full-sequence.spec.ts`) replays AI responses from `e2e/fixtures/recorded/`. To capture or refresh them:
 
 ```bash
-# 1. Start qstash locally
-bun qstash:dev
-
-# 2. With real keys in .env.local (FAL_KEY, OPENROUTER_KEY), run the recorder
-bun scripts/record-e2e-fixtures.ts
+# With real keys in .env.local (FAL_KEY, OPENROUTER_KEY):
+bun test:e2e:full:record
 ```
-
-The recorder retries the spec up to `E2E_RECORD_PASSES` times (default 8). Each pass records the AI call that broke the previous one — aimock buffers responses while recording, which breaks streaming RPCs, but once a fixture exists on disk subsequent runs replay it as a proper stream. Tracked upstream in [CopilotKit/aimock#152](https://github.com/CopilotKit/aimock/issues/152).
 
 Commit the generated fixtures alongside any code change that alters AI prompts or model selection.
 
@@ -138,7 +132,7 @@ Commit the generated fixtures alongside any code change that alters AI prompts o
 
 1. Modify schema files in `src/lib/db/schema/`
 2. Generate migration: `bun db:generate`
-3. Apply migration: `bun db:migrate`
+3. Apply migration: `bun db:migrate:local` (also runs as part of `bun dev`)
 
 **Important:**
 
@@ -174,14 +168,14 @@ A brief summary — see [CLAUDE.md](CLAUDE.md) for full patterns with examples.
 
 - DB access only in server handlers — never in components
 - Follow the [server handler pattern](CLAUDE.md#server-handler-pattern) in CLAUDE.md
-- Trigger workflows via `qstash.publishJSON()` — never direct `fetch()` calls
+- Trigger workflows via `triggerWorkflow()` from `@/lib/workflow/client` — never direct `fetch()` calls
 
 ## Pull Request Process
 
 1. **Branch from `main`** using the `<issue>-feature` naming convention
 2. **Run quality checks locally** before pushing:
    ```bash
-   bun lint && bun format:check && bun typecheck && bun test
+   bun lint && bun format:check && bun typecheck && bun run test
    ```
 3. **Push and create a PR** — fill out the PR template completely
 4. **Include `Closes #<issue>`** in the PR description so the issue auto-closes on merge

@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 import {
   characterBibleEntrySchema,
+  continuitySchema,
   elementBibleEntrySchema,
   locationBibleEntrySchema,
   musicDesignSchema,
@@ -64,6 +65,11 @@ export const sceneSplittingResultSchema = z.object({
           metadata: true,
         })
         .required()
+        // Scene membership now lives upstream: scene-split, which already holds
+        // the full script + bibles, emits each scene's `continuity` so the
+        // visual-prompt LLM no longer has to derive it. Downstream prompt
+        // workflows narrow their bible inputs with this. See #867.
+        .extend({ continuity: continuitySchema })
     )
     .meta({ description: 'Array of scenes split from the script' }),
   characterBible: z.array(characterBibleEntrySchema).meta({
@@ -81,18 +87,6 @@ export const sceneSplittingResultSchema = z.object({
 });
 
 export type SceneSplittingResult = z.infer<typeof sceneSplittingResultSchema>;
-
-/**
- * Music Prompt Generation Response
- */
-export const musicPromptSchema = z.object({
-  tags: z
-    .string()
-    .describe('Comma-separated genre/style tags for ACE-Step (20-50 words)'),
-  prompt: z
-    .string()
-    .describe('Descriptive music prompt as fallback for non-tag models'),
-});
 
 /**
  * Music Design + Prompt Generation (combined Phase 7)

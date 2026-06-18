@@ -9,6 +9,14 @@ type VideoStateOverlayProps = {
   videoStatus: FrameStatus;
   className?: string;
   progressMessage?: string;
+  /**
+   * In-flight retry state (#882). When set, the overlay reads "Retrying
+   * (attempt/maxAttempts)…" (or a bare "Retrying…" when the budget has no fixed
+   * denominator) so a silently-retrying generation is distinguishable from a
+   * hung one — both before the thumbnail exists (image retry, full loader) and
+   * after (video retry, a non-blocking badge).
+   */
+  retry?: { attempt: number; maxAttempts?: number };
 };
 
 export const VideoStateOverlay: React.FC<VideoStateOverlayProps> = ({
@@ -16,14 +24,35 @@ export const VideoStateOverlay: React.FC<VideoStateOverlayProps> = ({
   videoStatus,
   className,
   progressMessage,
+  retry,
 }) => {
   // Only show loader when there's no thumbnail image yet
   const hasNoThumbnail = !thumbnailUrl;
   const hasFailed = videoStatus === 'failed';
+  const retryMessage = retry
+    ? retry.maxAttempts
+      ? `Retrying (${retry.attempt}/${retry.maxAttempts})…`
+      : 'Retrying…'
+    : undefined;
 
-  // Don't show overlay if we have a thumbnail (even if regenerating)
+  // With a thumbnail and no failure the still image carries the UI — surface
+  // something only while retrying, as a small badge that doesn't cover the
+  // video's play button.
   if (!hasNoThumbnail && !hasFailed) {
-    return null;
+    if (!retryMessage) return null;
+    return (
+      <div
+        className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2',
+          className
+        )}
+      >
+        <span className="flex items-center gap-1.5 rounded-full bg-background/80 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          {retryMessage}
+        </span>
+      </div>
+    );
   }
 
   return (
@@ -45,7 +74,7 @@ export const VideoStateOverlay: React.FC<VideoStateOverlayProps> = ({
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <p className="text-sm font-medium">
-                {progressMessage || 'Generating frame…'}
+                {retryMessage ?? progressMessage ?? 'Generating frame…'}
               </p>
             </div>
           </>

@@ -4,16 +4,47 @@
  */
 
 import type { TextModel } from '@/lib/ai/models';
+import {
+  usdToMicros,
+  ZERO_MICROS,
+  type Microdollars,
+} from '@/lib/billing/money';
 import { aiObservabilityMiddleware } from '@/lib/observability/ai-otel';
 import type { ChatMessage } from '@/lib/prompts';
-import { chat } from '@tanstack/ai';
+import { chat, type DebugOption, type TokenUsage } from '@tanstack/ai';
+import type { ProviderPreferences } from '@tanstack/ai-openrouter';
 import { webSearchTool } from '@tanstack/ai-openrouter/tools';
 import { z } from 'zod';
-import { createAdapter } from './create-adapter';
+import { aiDebugLogger } from './ai-debug-logger';
+import { createAdapter, type LlmKeyInfo } from './create-adapter';
 
 import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'ai', 'llm-client']);
+
+/**
+ * Convert a completed LLM call's usage into a charge. OpenRouter reports an
+ * authoritative per-request `cost` (USD) on every response; we charge that raw
+ * cost (markup is applied downstream in `deductCredits`). Logs and charges
+ * nothing when no cost was reported, surfacing the gap rather than guessing.
+ */
+export function llmCostFromUsage(
+  usage: TokenUsage | undefined,
+  modelId: string
+): Microdollars {
+  if (
+    !usage ||
+    typeof usage.cost !== 'number' ||
+    !Number.isFinite(usage.cost)
+  ) {
+    logger.error(
+      `No usage cost reported for LLM call (${modelId}) — charging nothing`,
+      { usage }
+    );
+    return ZERO_MICROS;
+  }
+  return usdToMicros(usage.cost);
+}
 
 export type StreamChunk<T = never> =
   | { done: false; delta: string; accumulated: string }
@@ -27,20 +58,13 @@ export type StreamChunk<T = never> =
        * (undefined when the stream ended without a `structured-output.complete` event).
        */
       parsed: T | undefined;
+      /**
+       * Provider-reported usage for the call (OpenRouter carries `cost`).
+       * `undefined` when the adapter reported none. Pass to `llmCostFromUsage`
+       * to bill the call.
+       */
+      usage: TokenUsage | undefined;
     };
-
-export type ProgressCallback = (progress: {
-  type: 'chunk' | 'complete';
-  text: string;
-  parsed?: unknown;
-}) => void;
-
-type ProviderPreference = {
-  order?: string[];
-  only?: string[];
-  ignore?: string[];
-  allow_fallbacks?: boolean;
-};
 
 export type LLMRequestParams<T = unknown> = {
   model: TextModel;
@@ -51,7 +75,7 @@ export type LLMRequestParams<T = unknown> = {
   frequency_penalty?: number;
   presence_penalty?: number;
   stream?: boolean;
-  provider?: ProviderPreference;
+  provider?: ProviderPreferences;
   /** Observation name for PostHog LLM analytics (becomes the OTel span name → $ai_span_name) */
   observationName?: string;
   /** Tags for PostHog filtering */
@@ -63,7 +87,8 @@ export type LLMRequestParams<T = unknown> = {
   /** Session id for PostHog grouping (typically sequenceId) */
   sessionId?: string;
   responseSchema?: z.ZodType<T>;
-  apiKey?: string;
+  /** Resolved LLM key info — `via` decides endpoint routing + auth scheme. */
+  apiKey?: LlmKeyInfo;
   /**
    * Enable OpenRouter's web-search server tool for this request. The model
    * decides when to search; OpenRouter runs the search server-side inside the
@@ -74,8 +99,28 @@ export type LLMRequestParams<T = unknown> = {
     | boolean
     | { engine?: 'native' | 'exa'; maxResults?: number; searchPrompt?: string };
 
-  /** Debug mode for LLM client */
-  debug?: boolean;
+  /**
+   * Enable the model's reasoning/thinking pass (OpenRouter unified reasoning).
+   * `effort` is the simplest knob — higher = more internal deliberation before
+   * the answer. Reasoning tokens stream as separate events from the answer
+   * content, so the accumulated text the caller receives stays clean (no
+   * scratch work to strip). Use for tasks where a forward pass converges on the
+   * obvious/modal answer and genuine divergence needs a planning step.
+   */
+  reasoning?: {
+    effort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    enabled?: boolean;
+    maxTokens?: number;
+  };
+
+  /**
+   * Debug mode forwarded to `chat()`. `true`/`false`, or a
+   * `{ logger, …categories }` config. Pass `{ logger: aiDebugLogger }`
+   * (from `@/lib/ai/ai-debug-logger`) to see full payloads in local Workerd
+   * dev — `debug: true` uses TanStack's `console.dir`, which Workerd's console
+   * doesn't render.
+   */
+  debug?: DebugOption;
 };
 
 /**
@@ -86,11 +131,11 @@ const STRUCTURED_OUTPUT_MODELS = new Set([
   'x-ai/grok-4.3',
   'anthropic/claude-sonnet-4.6',
   'x-ai/grok-4.20',
-  'anthropic/claude-opus-4.6',
+  'anthropic/claude-opus-4.8',
   'deepseek/deepseek-v3.2',
-  'z-ai/glm-5',
+  'z-ai/glm-5.2',
   'google/gemini-3.1-pro-preview',
-  'openai/gpt-5.4',
+  'openai/gpt-5.5',
   'google/gemini-3-flash-preview',
   'mistralai/mistral-small-2603',
   'openai/gpt-5.4-mini',
@@ -98,7 +143,7 @@ const STRUCTURED_OUTPUT_MODELS = new Set([
   'openai/gpt-5.4-nano',
 ]);
 
-export function modelSupportsStructuredOutputs(model: string): boolean {
+function modelSupportsStructuredOutputs(model: string): boolean {
   return STRUCTURED_OUTPUT_MODELS.has(model);
 }
 
@@ -108,6 +153,22 @@ export const RECOMMENDED_MODELS = {
   fast: 'anthropic/claude-sonnet-4.6',
   premium: 'anthropic/claude-sonnet-4.6',
 } as const;
+
+/**
+ * Shared reasoning config for the creative generation paths (script enhance +
+ * prompt generation). `medium` effort balances the creativity lift against the
+ * added latency — a forward pass converges on the modal/obvious answer, and the
+ * planning step is what escapes it (see #875 and the eval notes in #870).
+ *
+ * NOT applied to utility calls (prompt shortening, duration estimation) where a
+ * forward pass is already correct and reasoning would only add latency. Enabled
+ * in E2E too — unlike live web search it's deterministic once recorded, so
+ * aimock records + replays the reasoning request/response like any other call.
+ */
+export const PROMPT_REASONING = {
+  enabled: true,
+  effort: 'medium',
+} as const satisfies NonNullable<LLMRequestParams['reasoning']>;
 
 /**
  * System messages must be strings (they become systemPrompts on the adapter).
@@ -145,11 +206,19 @@ function convertMessages(messages: ChatMessage[]): {
   return { systemPrompts, messages: chatMessages };
 }
 
+// Since @tanstack/ai 0.27, sampling options live in provider-native
+// modelOptions (camelCase, per the OpenRouter SDK) instead of the root of
+// chat(). The public LLMRequestParams surface keeps its OpenAI-style
+// snake_case names; this is the single mapping point.
 function buildModelOptions(params: LLMRequestParams) {
   return {
     ...(params.provider && { provider: params.provider }),
-    frequency_penalty: params.frequency_penalty,
-    presence_penalty: params.presence_penalty,
+    ...(params.reasoning && { reasoning: params.reasoning }),
+    maxCompletionTokens: params.max_tokens,
+    temperature: params.temperature,
+    topP: params.top_p,
+    frequencyPenalty: params.frequency_penalty,
+    presencePenalty: params.presence_penalty,
   };
 }
 
@@ -186,13 +255,48 @@ function baseChatOptions(params: LLMRequestParams) {
     adapter: createAdapter(params.model, params.apiKey),
     messages,
     systemPrompts,
-    maxTokens: params.max_tokens,
-    temperature: params.temperature,
-    topP: params.top_p,
     modelOptions: buildModelOptions(params),
     ...(tools && { tools }),
     debug: params.debug ?? false,
   };
+}
+
+/**
+ * Log-safe copy of a message's content: image data parts (base64) are
+ * truncated to a short prefix so the prompt log doesn't dump megabytes.
+ */
+function previewContent(
+  content: ChatMessage['content']
+): ChatMessage['content'] {
+  if (typeof content === 'string') return content;
+  return content.map((part) => {
+    if (part.type !== 'image') return part;
+    const value = part.source.value;
+    const preview =
+      value.length > 64
+        ? `${value.slice(0, 64)}…(${value.length} chars)`
+        : value;
+    return { ...part, source: { ...part.source, value: preview } };
+  });
+}
+
+/**
+ * Log the system prompts + messages we're about to send. TanStack AI's
+ * `request` debug category logs only counts (`messageCount`), never the
+ * content, so when `debug` is on we log the actual prompt ourselves through the
+ * Workerd-friendly logger.
+ */
+function logOutgoingPrompt(
+  systemPrompts: string[],
+  messages: AdapterMessage[]
+): void {
+  aiDebugLogger.debug('📝 [llm-client] outgoing prompt', {
+    systemPrompts,
+    messages: messages.map((m) => ({
+      role: m.role,
+      content: previewContent(m.content),
+    })),
+  });
 }
 
 /**
@@ -320,9 +424,7 @@ export function extractRunError(event: unknown): RunErrorDetail | null {
  * Returns a compact `provider=… <message>` string, or `undefined` when there's
  * no usable detail. Read defensively: `rawEvent` is an arbitrary provider frame.
  */
-export function extractProviderErrorDetail(
-  rawEvent: unknown
-): string | undefined {
+function extractProviderErrorDetail(rawEvent: unknown): string | undefined {
   if (!rawEvent || typeof rawEvent !== 'object') return undefined;
   const meta =
     'metadata' in rawEvent &&
@@ -403,22 +505,37 @@ export async function* callLLMStream<T>(
 ): AsyncGenerator<StreamChunk<T>> {
   let accumulated = '';
   let parsed: T | undefined;
+  let usage: TokenUsage | undefined;
 
   const baseOptions = {
     ...baseChatOptions(params),
-    middleware: aiObservabilityMiddleware({
-      observationName: params.observationName,
-      tags: params.tags,
-      metadata: params.metadata,
-      userId: params.userId,
-      sessionId: params.sessionId,
-    }),
     modelOptions: {
       ...buildModelOptions(params),
       streamOptions: { includeUsage: true },
     },
+    // Capture the terminal usage (carries OpenRouter's `cost`) so callers can
+    // bill the call via `llmCostFromUsage`, alongside emitting PostHog LLM
+    // analytics spans.
+    middleware: [
+      {
+        onFinish: (_ctx: unknown, info: { usage?: TokenUsage }) => {
+          usage = info.usage;
+        },
+      },
+      ...aiObservabilityMiddleware({
+        observationName: params.observationName,
+        tags: params.tags,
+        metadata: params.metadata,
+        userId: params.userId,
+        sessionId: params.sessionId,
+      }),
+    ],
     stream: true as const,
   };
+
+  if (params.debug) {
+    logOutgoingPrompt(baseOptions.systemPrompts, baseOptions.messages);
+  }
 
   const responseSchema = params.responseSchema;
   if (responseSchema) {
@@ -457,5 +574,5 @@ export async function* callLLMStream<T>(
     }
   }
 
-  yield { delta: '', accumulated, done: true, parsed };
+  yield { delta: '', accumulated, done: true, parsed, usage };
 }

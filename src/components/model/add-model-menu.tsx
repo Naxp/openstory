@@ -62,7 +62,7 @@ export const AddModelMenuSection = ({
   const { data: style } = useStyle(sequence?.styleId ?? '');
   const aspectRatio = sequence?.aspectRatio ?? DEFAULT_ASPECT_RATIO;
   // Style-category gating (mirrors motion-model-selector): a model declaring a
-  // `requiredStyleCategory` (e.g. Seedance 2 → 'animation') is only offered when
+  // `requiredStyleCategory` (none currently declare one) is only offered when
   // the sequence's style matches — otherwise it isn't a valid choice here.
   const styleCategory = style?.category ?? undefined;
 
@@ -197,10 +197,10 @@ export const AddModelMenuSection = ({
             e.preventDefault();
             handleAdd(c);
           }}
-          className="cursor-pointer flex items-center justify-between gap-3"
+          className="cursor-pointer flex flex-col items-start gap-0.5"
         >
-          <span className="truncate">{c.name}</span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">
+          <span className="w-full truncate">{c.name}</span>
+          <span className="text-[10px] text-muted-foreground">
             {c.scope} · ~{microsToDisplayUsd(c.cost)}
           </span>
         </DropdownMenuItem>

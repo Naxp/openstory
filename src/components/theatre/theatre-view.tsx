@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SequencePlayer } from '@/components/theatre/sequence-player';
 import { useSequenceExport } from '@/components/theatre/use-sequence-export';
 import { useFramesBySequence } from '@/hooks/use-frames';
+import { useSetSequenceMusic } from '@/hooks/use-sequences';
 import type { ExportProgress } from '@/lib/sequence-player/export';
 import type { Sequence } from '@/types/database';
 import { Download, Film, Link, Loader2, Share2 } from 'lucide-react';
@@ -33,6 +34,7 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
   const posthog = usePostHog();
   const { data: frames } = useFramesBySequence(sequence.id);
   const sequenceExport = useSequenceExport(sequence);
+  const setMusicEnabled = useSetSequenceMusic(sequence.id);
 
   const scenes = useMemo(() => {
     if (!frames) return [];
@@ -49,7 +51,11 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
       return;
     }
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      // Stored export URLs are origin-relative (#894) — absolutize against the
+      // current origin so the copied link is usable when pasted elsewhere. The
+      // worker's public /r2 route serves it (redirecting to the CDN in prod).
+      const absoluteUrl = new URL(shareUrl, window.location.origin).href;
+      await navigator.clipboard.writeText(absoluteUrl);
       toast.success('Video URL copied');
       posthog.capture('video_url_copied', { sequence_id: sequence.id });
     } catch (err) {
@@ -134,15 +140,13 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
       scenes={scenes}
       musicUrl={sequence.musicUrl ?? null}
       musicLoudnessGainDb={null}
+      musicEnabled={sequence.includeMusic}
+      onMusicEnabledChange={(enabled) => setMusicEnabled.mutate(enabled)}
       aspectRatio={sequence.aspectRatio}
       overlayActions={overlay}
     />
   );
 };
-
-export const TheatreViewSkeleton: React.FC = () => (
-  <Skeleton className="aspect-video w-full" />
-);
 
 function formatExportProgress(progress: ExportProgress | null): string {
   if (!progress) return 'Exporting…';

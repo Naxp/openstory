@@ -7,27 +7,6 @@
  */
 
 import { getEnv } from '#env';
-import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
-
-/**
- * Platform detection
- */
-type DeploymentPlatform = 'cloudflare' | 'local' | 'unknown';
-
-/**
- * Detect which platform the app is running on
- */
-export function getDeploymentPlatform(): DeploymentPlatform {
-  const env = getEnv();
-  if (env.CF_PAGES) {
-    return 'cloudflare';
-  }
-  if (env.NODE_ENV === 'development') {
-    return 'local';
-  }
-  return 'unknown';
-}
 
 /**
  * Server-side application URL
@@ -54,7 +33,7 @@ export function getProductionDeploymentAppUrl(request: Request): string {
   return getServerAppUrl(request);
 }
 
-export function isProductionDeployment(request: Request): boolean {
+function isProductionDeployment(request: Request): boolean {
   return (
     !isLocalDevelopment() &&
     getProductionDeploymentAppUrl(request) === getServerAppUrl(request)
@@ -82,33 +61,9 @@ export function isPreviewDeployment(request: Request): boolean {
 }
 
 /**
- * Check if a hostname is a preview deployment
- * Pure function that can be used on server or client.
- * If VITE_APP_URL env var is set, a preview host is any host that doesn't match it.
- * If no VITE_APP_URL, consider it non-preview.
- */
-export function isPreviewHost(host: string): boolean {
-  if (host.startsWith('localhost')) {
-    return false;
-  }
-
-  const envAppUrl = getEnv().VITE_APP_URL;
-  if (!envAppUrl) {
-    return false;
-  }
-
-  try {
-    const productionHost = new URL(envAppUrl).host;
-    return host !== productionHost;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Check if we're running in local development environment
  */
-export function isLocalDevelopment(): boolean {
+function isLocalDevelopment(): boolean {
   return getEnv().NODE_ENV === 'development';
 }
 
@@ -137,12 +92,15 @@ export function isLocalRequestHost(request: Request): boolean {
 }
 
 /**
- * Server function to check if the current request is from a preview deployment.
- * Safe to call from client code (executes server-side via RPC).
+ * Is Google OAuth configured (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET set)?
+ * Single source of truth for Google sign-in availability: gates both the
+ * better-auth socialProviders registration (src/lib/auth/config.ts) and the
+ * login form's Google button (via getAuthOptionsFn). Environments
+ * without the secrets — local dev by default, PR previews (whose hosts have
+ * no registered OAuth redirect URIs, so the deploy workflow doesn't push
+ * them) — simply don't offer Google.
  */
-export const getIsPreviewFn = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    const request = getRequest();
-    return isPreviewDeployment(request);
-  }
-);
+export function isGoogleAuthConfigured(): boolean {
+  const env = getEnv();
+  return Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+}

@@ -143,6 +143,8 @@ function parseFlags(argv: string[]): Flags {
 
 type RenderJob = {
   styleName: string;
+  category: string | null;
+  tags: string[];
   slug: string;
   kind: 'canonical' | 'bespoke';
   imageModel: TextToImageModel;
@@ -196,6 +198,8 @@ function buildJobs(flags: Flags): RenderJob[] {
 
     const common = {
       styleName: style.name,
+      category: style.category ?? null,
+      tags: style.tags ?? [],
       slug,
       imageModel,
       videoModel,
@@ -258,7 +262,12 @@ async function prepareBeats(job: RenderJob): Promise<SampleBeat[]> {
 
   const { enhancedScript, beats } = await generateCanonicalScript({
     brief: job.brief,
-    styleConfig: job.config,
+    style: {
+      config: job.config,
+      name: job.styleName,
+      category: job.category,
+      tags: job.tags,
+    },
     aspectRatio: job.aspectRatio,
   });
   const saved: SavedScript = { brief: job.brief, enhancedScript, beats };
@@ -328,7 +337,7 @@ async function renderStill(
       sceneDescription: beat.imagePrompt,
       config: job.config,
       model: GATE_MODEL,
-      apiKey: OPENROUTER_KEY,
+      apiKey: { key: OPENROUTER_KEY, via: 'openrouter' },
     });
     if (!best || verdict.styleAdherence > best.adherence) {
       best = { url, webp, adherence: verdict.styleAdherence };

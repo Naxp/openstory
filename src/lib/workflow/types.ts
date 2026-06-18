@@ -298,13 +298,16 @@ export type RegenerateFrameSnapshot = {
   characterSheetHashes: string[];
   /** Sorted location-sheet input_hashes referenced by this frame. */
   locationSheetHashes: string[];
+  /** Sorted element reference-image identities referenced by this frame. */
+  elementReferenceHashes: string[];
   /** Reference image descriptions used for image generation. */
   characterRefs: ReferenceImageDescription[];
   locationRefs: ReferenceImageDescription[];
   /**
    * Per-frame hash of `(prompt, model, aspect, characterSheetHashes,
-   * locationSheetHashes)`. Stored on the artifact row at write time and
-   * compared to a freshly recomputed hash to detect divergence.
+   * locationSheetHashes, elementReferenceHashes)`. Stored on the artifact row
+   * at write time and compared to a freshly recomputed hash to detect
+   * divergence.
    */
   snapshotInputHash: string;
 };
@@ -386,18 +389,6 @@ export type TalentCharacterMatch = {
 };
 
 /**
- * Result from talent matching service
- */
-export type TalentMatchResult = {
-  /** Successfully matched talent to characters */
-  matches: TalentCharacterMatch[];
-  /** Talent IDs that couldn't be matched to any character */
-  unusedTalentIds: string[];
-  /** Talent names that couldn't be matched (for display) */
-  unusedTalentNames: string[];
-};
-
-/**
  * Talent matching workflow input
  */
 export interface TalentMatchingWorkflowInput extends SequenceWorkflowContext {
@@ -428,7 +419,7 @@ export interface CharacterBibleWorkflowInput extends SequenceWorkflowContext {
   styleConfig?: StyleConfig;
 }
 
-export type FrameMapping = Array<{ sceneId: string; frameId: string }>;
+type FrameMapping = Array<{ sceneId: string; frameId: string }>;
 
 export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   scenes: Scene[];
@@ -472,6 +463,13 @@ export interface MotionPromptWorkflowInput extends SequenceWorkflowContext {
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameMapping?: FrameMapping;
+  /**
+   * Rendered starting-frame image URL per scene (`sceneId` → primary
+   * `thumbnailUrl`), captured at trigger time so the per-scene motion-prompt
+   * children never look it up mid-run (#929). Absent / null entry → that scene
+   * had no rendered still and falls back to the text-only motion path.
+   */
+  startingFrameImageUrls?: Record<string, string | null>;
 }
 
 export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext {
@@ -485,18 +483,20 @@ export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext 
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
   frameId?: string;
+  /**
+   * Rendered starting-frame image URL, captured at trigger time (#929). The
+   * motion prompt is conditioned on this exact still (vision input) and the
+   * URL is its staleness identity — it must be PASSED IN, never looked up
+   * inside the workflow, so a concurrent re-render can't swap it mid-run. Null
+   * / absent → no still available, text-only motion path.
+   */
+  startingFrameImageUrl?: string | null;
   /** See {@link VisualPromptSceneWorkflowInput.emitStreaming}. */
   emitStreaming?: boolean;
 }
 /**
  * Workflow result types
  */
-export interface ImageWorkflowResult {
-  imageUrl: string;
-  frameId?: string;
-  sequenceId?: string;
-}
-
 export interface MotionWorkflowResult {
   videoUrl: string;
   duration?: number;
@@ -672,19 +672,6 @@ export interface LocationMatchingWorkflowOutput {
   matches: LibraryLocationMatch[];
 }
 /**
- * Regenerate frames workflow input for locations
- * Bulk regenerates images for frames at a specific location after recast
- */
-export interface RegenerateLocationFramesWorkflowInput extends SequenceWorkflowContext {
-  /** Frame IDs to regenerate */
-  frameIds: string[];
-  /** Location ID that triggered regeneration (for logging/tracking) */
-  triggeringLocationId: string;
-  /** Image model to use */
-  imageModel?: TextToImageModel;
-}
-
-/**
  * Recast location workflow input
  * Orchestrates location sheet generation + frame regeneration for recast
  */
@@ -786,6 +773,12 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
      * a pre-assembled `prompt` instead.
      */
     motionPrompt?: MotionPrompt;
+    /**
+     * Scene character tags (`continuity.characterTags`). Passed alongside
+     * `motionPrompt` so per-model re-assembly can apply character-only
+     * in-prompt guards (e.g. Seedance's "Avoid jitter and bent limbs.").
+     */
+    characterTags?: string[];
     duration?: number;
     fps?: number;
     motionBucket?: number;
@@ -868,7 +861,14 @@ export interface FrameImagesWorkflowInput extends SequenceWorkflowContext {
 }
 
 export interface FrameImagesWorkflowResult {
-  imageUrls: string[];
+  /**
+   * Primary image URL per scene, ALIGNED to the input
+   * `scenesWithVisualPrompts` order — a failed scene keeps its slot as
+   * `null`. Consumers index this by scene position (analyze-script phase 5),
+   * so compacting failures out would silently pair the wrong image with the
+   * wrong scene.
+   */
+  imageUrls: (string | null)[];
 }
 
 /**
@@ -892,6 +892,13 @@ export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext
    * downstream in `motion-batch`.
    */
   videoModels?: ImageToVideoModel[];
+  /**
+   * Rendered starting-frame image URL per scene (`sceneId` → primary
+   * `thumbnailUrl`), captured by analyze-script after frame images render and
+   * threaded down to the per-scene motion-prompt children (#929). See
+   * {@link MotionPromptWorkflowInput.startingFrameImageUrls}.
+   */
+  startingFrameImageUrls?: Record<string, string | null>;
 }
 
 export interface MotionMusicPromptsWorkflowResult {

@@ -1,5 +1,6 @@
 import { useAuthGate } from '@/components/auth/auth-gate-provider';
 import { BillingGateDialog } from '@/components/billing/billing-gate-dialog';
+import { buildMentionItems } from '@/components/scenes/prompt-mention/mention-items';
 import {
   ElementSelector,
   type ElementSelectorHandle,
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { ThinkingBar } from '@/components/ai/thinking-bar';
 import { PremiumCard } from '@/components/cards/premium-card';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
@@ -30,11 +32,17 @@ import {
 } from '@/components/ui/popover';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { enhanceScriptStreamFn } from '@/functions/ai';
+import { toEnhanceInputs } from '@/lib/ai/enhance-inputs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { useBillingGate } from '@/hooks/use-billing-gate';
 import { useGenerationSettings } from '@/hooks/use-generation-settings';
 import { useSequenceDraft } from '@/hooks/use-sequence-draft';
-import type { DraftElementUpload } from '@/hooks/use-sequence-elements';
+import { useSequenceCharacters } from '@/hooks/use-sequence-characters';
+import {
+  useSequenceElements,
+  type DraftElementUpload,
+} from '@/hooks/use-sequence-elements';
+import { useSequenceLocations } from '@/hooks/use-sequence-locations';
 import { useCreateSequence } from '@/hooks/use-sequences';
 import { useStyles } from '@/hooks/use-styles';
 import {
@@ -247,6 +255,30 @@ export const ScriptView: FC<{
   );
   const styleCategory = selectedStyle?.category ?? undefined;
   const styleName = selectedStyle?.name ?? undefined;
+
+  // Sequence cast/elements/locations drive @-mention pills in the script
+  // editor — same canonical tags the scene prompt editors use. Only an existing
+  // (analysed) sequence has these; on the create screen there are no canonical
+  // tags yet, so we pass `undefined` to keep mentions off there.
+  const mentionSequenceId = sequence?.id;
+  const { data: mentionElements } = useSequenceElements(mentionSequenceId);
+  const { data: mentionCharacters } = useSequenceCharacters(
+    mentionSequenceId ?? ''
+  );
+  const { data: mentionLocations } = useSequenceLocations(
+    mentionSequenceId ?? ''
+  );
+  const mentionItems = useMemo(
+    () =>
+      mentionSequenceId
+        ? buildMentionItems({
+            characters: mentionCharacters ?? [],
+            elements: mentionElements ?? [],
+            locations: mentionLocations ?? [],
+          })
+        : undefined,
+    [mentionSequenceId, mentionCharacters, mentionElements, mentionLocations]
+  );
   const recommendedImageModel = selectedStyle?.recommendedImageModel ?? null;
   const recommendedVideoModel = selectedStyle?.recommendedVideoModel ?? null;
   const recommendedAspectRatio = selectedStyle?.defaultAspectRatio ?? null;
@@ -605,21 +637,24 @@ export const ScriptView: FC<{
 
     try {
       const selectedStyle = styles.find((s) => s.id === styleId);
+      // Create flow holds elements in local draft state; an existing sequence
+      // holds them in the DB (loaded as `mentionElements`). Feed whichever
+      // applies so enhance-on-existing-sequence ("Generate Copy") attaches the
+      // sequence's elements + reference images, not an empty list.
+      const enhanceElements = mentionSequenceId
+        ? (mentionElements ?? [])
+        : draftElements;
       let accumulated = '';
       for await (const chunk of await enhanceScriptStreamFn({
         data: {
           script: scriptValue,
           targetDuration,
-          styleConfig: selectedStyle?.config ?? undefined,
           analysisModel: analysisModels[0],
           aspectRatio,
-          elements:
-            draftElements.length > 0
-              ? draftElements.map((el) => ({
-                  token: el.token,
-                  imageUrl: el.tempPublicUrl,
-                }))
-              : undefined,
+          ...toEnhanceInputs({
+            style: selectedStyle,
+            elements: enhanceElements,
+          }),
         },
       })) {
         if (abortController.signal.aborted) break;
@@ -768,6 +803,12 @@ export const ScriptView: FC<{
         </CardHeader>
 
         <CardContent className="min-h-0 @container flex flex-col gap-4 py-6 overflow-hidden">
+          {/* Thinking bar shows during the reasoning pass — i.e. while
+              enhancing but before any enhanced text has streamed back. */}
+          <ThinkingBar
+            active={isEnhancing && !scriptValue}
+            className="shrink-0"
+          />
           <div className="relative min-h-0 flex flex-col">
             <ScriptEditor
               ref={textareaRef}
@@ -780,6 +821,7 @@ export const ScriptView: FC<{
               placeholder="A one-liner or website URL is all you need — click Enhance Script to do the rest. Or paste a full screenplay and generate directly."
               disabled={loading}
               showCharacterCount={false}
+              mentionItems={mentionItems}
             />
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
               {canUndoEnhance && !isEnhancing && (

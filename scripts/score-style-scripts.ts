@@ -32,7 +32,7 @@
  * Usage:
  *   bun scripts/score-style-scripts.ts                          # score all
  *   bun scripts/score-style-scripts.ts --filter "Rom Com"
- *   bun scripts/score-style-scripts.ts --model openai/gpt-5.4 --threshold 6.5
+ *   bun scripts/score-style-scripts.ts --model openai/gpt-5.5 --threshold 6.5
  */
 import type { TextModel } from '@/lib/ai/models';
 import { callLLM } from '@/lib/ai/llm-client';
@@ -226,7 +226,7 @@ async function scoreScript(task: StyleTask): Promise<ScriptVerdict> {
     max_tokens: 1200,
     temperature: 0,
     observationName: 'score-style-script',
-    apiKey: openRouterKey,
+    apiKey: { key: openRouterKey, via: 'openrouter' },
   });
   return scriptVerdictSchema.parse(JSON.parse(extractJson(reply)));
 }

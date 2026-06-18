@@ -53,12 +53,11 @@ export class ElementVisionWorkflow extends OpenStoryWorkflowEntrypoint<ElementVi
     const { description, consistencyTag, suggestedToken } = await step.do(
       'describe-element',
       async () => {
-        const openRouterApiKeyInfo =
-          await scopedDb.apiKeys.resolveKey('openrouter');
+        const llmKeyInfo = await scopedDb.apiKeys.resolveLlmKey();
         return await describeElementImage({
           imageUrl,
           filename,
-          openRouterApiKey: openRouterApiKeyInfo.key,
+          llmKey: llmKeyInfo,
         });
       }
     );
@@ -75,12 +74,17 @@ export class ElementVisionWorkflow extends OpenStoryWorkflowEntrypoint<ElementVi
     // Step 5: auto-rename to vision-suggested token if different. Uses
     // ensureUniqueToken (suffixes `_2` on collision) because the system is
     // choosing the name — failing the workflow on collision would strand the
-    // element with no usable name.
+    // element with no usable name. Excluding the element's own row keeps a
+    // step retry idempotent: after a successful rename the replay gets the
+    // suggested token back un-suffixed, and — since the in-memory
+    // `element.token` still holds the pre-rename name, so neither early
+    // return fires — the cascade re-runs, atomically yielding zero deltas.
     const finalToken = await step.do('auto-rename', async () => {
       if (suggestedToken === element.token) return element.token;
       const unique = await scopedDb.sequenceElements.ensureUniqueToken(
         element.sequenceId,
-        suggestedToken
+        suggestedToken,
+        elementId
       );
       if (unique === element.token) return element.token;
       const result = await scopedDb.sequenceElements.cascadeRename({

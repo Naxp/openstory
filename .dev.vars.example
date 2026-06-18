@@ -1,0 +1,21 @@
+# Secrets for Cloudflare Workers deploys. The Deploy to Cloudflare button
+# reads this file and prompts for each value — every listed secret is
+# REQUIRED by the dialog (it has no optional fields), so only hard
+# requirements belong here. On-screen notes come from the
+# "cloudflare".bindings map in package.json.
+#
+# Local development does NOT use this file — `bun dev` auto-generates
+# .env.local. See .env.example for the full list of options.
+
+# Better Auth signing secret (required). Generate with: openssl rand -hex 32
+BETTER_AUTH_SECRET=
+
+# Encrypts AI keys that teams add in-app via bring-your-own-key (required for
+# BYOK). Generate with: openssl rand -hex 32
+API_KEY_ENCRYPTION_KEY=
+
+# AI keys are intentionally NOT prompted at deploy time. Add them either:
+#   - per team, in the app (Settings → API Keys; OpenRouter also supports OAuth), or
+#   - server-wide, as Worker secrets after deploy:
+#       wrangler secret put FAL_KEY          # https://fal.ai/dashboard/keys
+#       wrangler secret put OPENROUTER_KEY   # https://openrouter.ai/settings/keys

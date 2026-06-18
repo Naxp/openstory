@@ -1,17 +1,12 @@
 import { getEnv } from '#env';
-import { calculateVideoCost } from '@/lib/ai/fal-cost';
+import { estimateFalCost } from '@/lib/ai/fal-cost';
 import {
   DEFAULT_VIDEO_MODEL,
-  IMAGE_TO_VIDEO_MODEL_KEYS,
   IMAGE_TO_VIDEO_MODELS,
   type ImageToVideoModel,
-  videoModelSupportsAudio,
 } from '@/lib/ai/models';
 import type { Microdollars } from '@/lib/billing/money';
-import {
-  type AspectRatio,
-  aspectRatioSchema,
-} from '@/lib/constants/aspect-ratios';
+import { type AspectRatio } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { MOTION_JSON_SCHEMAS } from '@/lib/motion/endpoint-map';
 import {
@@ -21,21 +16,6 @@ import {
 } from '@/lib/motion/motion-transform';
 import { generateVideo, getVideoJobStatus } from '@tanstack/ai';
 import { falVideo } from '@tanstack/ai-fal';
-import { z } from 'zod';
-
-export const generationMotionOptionsSchema = z.object({
-  imageUrl: z.url(),
-  prompt: z.string(),
-  model: z
-    .enum(IMAGE_TO_VIDEO_MODEL_KEYS)
-    .optional()
-    .default(DEFAULT_VIDEO_MODEL),
-  duration: z.number().optional(),
-  fps: z.number().optional(),
-  motionBucket: z.number().optional(),
-  aspectRatio: aspectRatioSchema.optional(),
-  generateAudio: z.boolean().optional(),
-});
 
 export type GenerateMotionOptions = {
   scopedDb?: ScopedDb; // scopedDb is used to resolve the API key for the motion generation with BYOK
@@ -93,9 +73,21 @@ export async function submitMotionJob(
   const modelKey = options.model || DEFAULT_VIDEO_MODEL;
   const modelConfig = IMAGE_TO_VIDEO_MODELS[modelKey];
 
+  // Resolve the API key for the motion generation with BYOK if available.
+  // Resolved BEFORE normalizing the image URL: the fal-storage upload below
+  // authenticates with this key, so on a BYOK-only deployment (no platform
+  // FAL_KEY) the platform key would be empty and the upload would fail with
+  // "Authorization header is required" before submission (#924).
+  const falApiKeyInfo = options.scopedDb
+    ? await options.scopedDb.apiKeys.resolveKey('fal')
+    : { key: getEnv().FAL_KEY, source: 'platform' as const };
+
   // Locally-served /r2/ image URLs aren't reachable by real fal — swap them
   // for a fal-storage upload first (no-op in prod and e2e replay).
-  const imageUrl = await ensureExternallyFetchableUrl(options.imageUrl);
+  const imageUrl = await ensureExternallyFetchableUrl(
+    options.imageUrl,
+    falApiKeyInfo.key
+  );
 
   // Prepare the model input
   const modelInput = buildModelInput(
@@ -115,11 +107,6 @@ export async function submitMotionJob(
     promptLength: optimisedPrompt.length,
     modelOptions,
   });
-
-  // Resolve the API key for the motion generation with BYOK if available
-  const falApiKeyInfo = options.scopedDb
-    ? await options.scopedDb.apiKeys.resolveKey('fal')
-    : { key: getEnv().FAL_KEY, source: 'platform' as const };
 
   // Create the Tanstack AI adapter and submit the job
   // Note this is typesafe - only options compatible with modelConfig.id are allowed
@@ -143,13 +130,6 @@ export async function submitMotionJob(
     submittedAt: Date.now(),
   };
 }
-
-export type MotionPollResult = {
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  videoUrl?: string;
-  progress?: number;
-  error?: string;
-};
 
 /**
  * Check the status of a submitted motion job.
@@ -178,7 +158,9 @@ export async function pollMotionJob(
 }
 
 /**
- * Calculate motion cost + metadata after job completes.
+ * Pre-flight motion cost estimate + metadata, computed before the job runs.
+ * `cost` is a rough estimate used for the credit-availability gate — the exact
+ * charge comes from `falCostFromUnits` once fal reports `unitsBilled`.
  */
 export function calculateMotionMetadata(options: GenerateMotionOptions): {
   cost: Microdollars;
@@ -192,12 +174,8 @@ export function calculateMotionMetadata(options: GenerateMotionOptions): {
   const validatedDuration = snapDuration(options.duration, modelKey);
 
   const providerInput = buildModelInput(options, modelConfig, modelKey);
-  const audioEnabled =
-    videoModelSupportsAudio(modelKey) && options.generateAudio !== false;
-  const cost = calculateVideoCost({
-    endpointId: modelConfig.id,
+  const cost = estimateFalCost(modelConfig.id, {
     durationSeconds: validatedDuration,
-    audioEnabled,
     resolution:
       'resolution' in providerInput &&
       typeof providerInput.resolution === 'string'

@@ -53,11 +53,43 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
       analysisModelId,
       sequenceId,
       frameId,
+      startingFrameImageUrl,
     } = input;
 
     // ============================================================
     // PHASE 3: Motion Prompt Generation (using durableLLMCall helper)
     // ============================================================
+
+    // The motion prompt is conditioned on the rendered starting frame (#929):
+    // it's passed to the LLM as a vision input so motion continues the exact
+    // pose/composition the image committed to, and the image URL is folded
+    // into the staleness hash so a re-render re-stales the prompt.
+    //
+    // CRITICAL: the still arrives as an INPUT (`startingFrameImageUrl`),
+    // snapshotted by the trigger when frame images finished — this workflow
+    // must NOT look it up from the DB. A workflow can run/retry/replay at any
+    // time, and a concurrent re-render could swap `frame.thumbnailUrl` mid-run;
+    // reading it here would condition the prompt on an image the trigger never
+    // saw. Null/absent → no still, text-only path.
+    if (!startingFrameImageUrl) {
+      logger.info(
+        `[MotionPromptSceneWorkflow:cf] No starting frame provided for ${scene.sceneId}; generating motion prompt without vision input`
+      );
+    }
+
+    // Narrow the bibles to this scene's entities (via `scene.continuity`, set
+    // by scene-split) before the LLM call, so the model and the staleness hash
+    // see the same minimal, scene-scoped input. See #867.
+    const narrowed = narrowFramePromptContext({
+      scene,
+      styleConfig,
+      characterBible,
+      locationBible,
+      elementBible,
+      aspectRatio,
+      analysisModel: analysisModelId,
+      startingFrameImageUrl: startingFrameImageUrl ?? null,
+    });
 
     const promptVariables = {
       sceneBefore: sceneBefore
@@ -65,9 +97,9 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
         : '(none)',
       sceneAfter: sceneAfter ? JSON.stringify(sceneAfter, null, 2) : '(none)',
       scene: JSON.stringify(scene, null, 2),
-      characterBible: JSON.stringify(characterBible, null, 2),
-      locationBible: JSON.stringify(locationBible, null, 2),
-      elementBible: JSON.stringify(elementBible, null, 2),
+      characterBible: JSON.stringify(narrowed.characterBible, null, 2),
+      locationBible: JSON.stringify(narrowed.locationBible, null, 2),
+      elementBible: JSON.stringify(narrowed.elementBible, null, 2),
       styleConfig: JSON.stringify(styleConfig, null, 2),
       aspectRatio,
     };
@@ -86,9 +118,19 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
         modelId: analysisModelId,
         responseSchema: motionPromptSchema,
         additionalMetadata: { frameId },
+        reasoning: true,
+        // Attach the rendered still whenever we have one. The LLM helper owns
+        // the vision-routing policy: it runs the call on a vision-capable model
+        // (the chosen model if it sees images, else DEFAULT_VISION_MODEL —
+        // e.g. GLM-5.2 → Claude Sonnet, #944). The staleness hash always folds
+        // in the image regardless, so a re-render re-stales the prompt.
+        visionImageUrls: startingFrameImageUrl
+          ? [startingFrameImageUrl]
+          : undefined,
       },
       {
         sequenceId,
+        workflowRunId: event.instanceId,
         scopedDb,
         framePromptStream:
           input.emitStreaming && frameId
@@ -104,18 +146,8 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
         );
       }
 
-      // Hash inputs are narrowed by the scene's continuity (populated upstream
-      // by the visual-prompt workflow) so unreferenced entities don't poison
-      // the stored hash.
-      const narrowed = narrowFramePromptContext({
-        scene,
-        styleConfig,
-        characterBible,
-        locationBible,
-        elementBible,
-        aspectRatio,
-        analysisModel: analysisModelId,
-      });
+      // Hash the same scene-scoped `narrowed` context the LLM was given above,
+      // so the stored hash equals the verify-time recompute by construction.
       const inputHash = await computeMotionPromptInputHash(narrowed);
 
       const enrichedScene = {

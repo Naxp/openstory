@@ -184,6 +184,33 @@ export const updateSequenceFn = createServerFn({ method: 'POST' })
   });
 
 // ============================================================================
+// Set Music Preference (theatre playback + MP4 export)
+// ============================================================================
+
+const setSequenceMusicInputSchema = z.object({
+  sequenceId: ulidSchema,
+  includeMusic: z.boolean(),
+});
+
+/**
+ * Persist the per-sequence "include music in playback + export" toggle (#834).
+ *
+ * Deliberately separate from {@link updateSequenceFn}: that path force-defaults
+ * `aspectRatio` and runs regeneration/credit logic, so reusing it for a
+ * music-only write would silently reset a non-16:9 sequence's aspect ratio.
+ * This is a minimal preference write with no side effects.
+ */
+export const setSequenceMusicFn = createServerFn({ method: 'POST' })
+  .middleware([sequenceAccessMiddleware])
+  .inputValidator(zodValidator(setSequenceMusicInputSchema))
+  .handler(async ({ data, context }) => {
+    return await context.scopedDb.sequences.update({
+      id: data.sequenceId,
+      includeMusic: data.includeMusic,
+    });
+  });
+
+// ============================================================================
 // Retry Failed Storyboard
 // ============================================================================
 
@@ -525,6 +552,7 @@ export const addModelToSequenceFn = createServerFn({ method: 'POST' })
           prompt: resolveMotionPrompt(f, model),
           model,
           motionPrompt: f.metadata?.prompts?.motion,
+          characterTags: f.metadata?.continuity?.characterTags,
           duration: f.durationMs
             ? f.durationMs / 1000
             : (f.metadata?.metadata?.durationSeconds ?? 3),
