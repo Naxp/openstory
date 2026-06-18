@@ -373,14 +373,11 @@ export class VisualPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Visua
           analysisModel: analysisModelId,
         });
 
-        await getGenerationChannel(sequenceId).emit(
-          'generation.frame:updated',
-          {
-            shotId: shotId,
-            updateType: 'visual-prompt',
-            metadata: enrichedScene,
-          }
-        );
+        await getGenerationChannel(sequenceId).emit('generation.shot:updated', {
+          shotId: shotId,
+          updateType: 'visual-prompt',
+          metadata: enrichedScene,
+        });
 
         // Signal end-of-stream to the per-frame channel so the UI can swap
         // out the streamed-deltas buffer for the persisted prompt.

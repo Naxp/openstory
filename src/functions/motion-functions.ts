@@ -35,7 +35,7 @@ const generateMotionInputSchema = generateMotionSchema.extend({
   shotId: ulidSchema,
 });
 
-export const generateFrameMotionFn = createServerFn({ method: 'POST' })
+export const generateShotMotionFn = createServerFn({ method: 'POST' })
   .middleware([frameAccessMiddleware])
   .inputValidator(zodValidator(generateMotionInputSchema))
   .handler(async ({ data, context }) => {

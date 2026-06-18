@@ -96,7 +96,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
     // Gap C: this single `step.do` owns the prompt fetch + the entire
     // streaming session. Inside, the partial-JSON parser, per-chunk DB writes
     // (upsertFrame), per-chunk realtime event emissions
-    // (`generation.scene:new`, `generation.frame:created`,
+    // (`generation.scene:new`, `generation.shot:created`,
     // `generation.scene:updated`, `generation.updated`,
     // `generation.phase:start`) and per-chunk fire-and-forget preview-image
     // triggers all run inline. On step failure the engine replays the whole
@@ -287,7 +287,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                 });
 
                 await getGenerationChannel(sequenceId).emit(
-                  'generation.frame:created',
+                  'generation.shot:created',
                   {
                     shotId: frame.id,
                     sceneId: ev.scene.sceneId,
@@ -475,7 +475,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           if (!streamedSceneIds.has(sId)) {
             const scene = scenes.find((s) => s.sceneId === sId);
             await getGenerationChannel(sequenceId).emit(
-              'generation.frame:created',
+              'generation.shot:created',
               {
                 shotId: shotId,
                 sceneId: sId,

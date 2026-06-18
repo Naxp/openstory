@@ -5,7 +5,7 @@
  *
  * Lives here — not inline in `updateShotFn` — because the auto-link feature
  * (#683) needs to fire from both the explicit save path AND the regenerate
- * paths (`generateShotImageFn`, `generateFrameMotionFn`). In practice the
+ * paths (`generateShotImageFn`, `generateShotMotionFn`). In practice the
  * regenerate paths are the only ones the UI actually calls today, so without
  * this helper the auto-link is dead code.
  *

@@ -186,14 +186,11 @@ export class MotionPromptSceneWorkflow extends OpenStoryWorkflowEntrypoint<Motio
           analysisModel: analysisModelId,
         });
 
-        await getGenerationChannel(sequenceId).emit(
-          'generation.frame:updated',
-          {
-            shotId,
-            updateType: 'motion-prompt',
-            metadata: enrichedScene,
-          }
-        );
+        await getGenerationChannel(sequenceId).emit('generation.shot:updated', {
+          shotId,
+          updateType: 'motion-prompt',
+          metadata: enrichedScene,
+        });
 
         if (input.emitStreaming) {
           await getFramePromptChannel(shotId).emit('framePrompt.completed', {

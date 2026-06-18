@@ -88,14 +88,14 @@ export const realtimeSchema = {
     }),
 
     // Shot events (after DB write)
-    'frame:created': z.object({
+    'shot:created': z.object({
       shotId: z.string(),
       sceneId: z.string(),
       orderIndex: z.number(),
     }),
 
     // Shot updated with prompts (visual, motion, audio)
-    'frame:updated': z.object({
+    'shot:updated': z.object({
       shotId: z.string(),
       updateType: z.enum([
         'visual-prompt',

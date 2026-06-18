@@ -25,7 +25,7 @@ import { useSequenceLocations } from '@/hooks/use-sequence-locations';
 import { shortenPromptFn } from '@/functions/ai';
 import { updateShotFn } from '@/functions/shots';
 import { generateShotImageFn } from '@/functions/shot-image';
-import { generateFrameMotionFn } from '@/functions/motion-functions';
+import { generateShotMotionFn } from '@/functions/motion-functions';
 import { regenerateFramePromptFn } from '@/functions/prompt-variants';
 import { useActiveImageModel } from '@/hooks/use-active-image-model';
 import { useActiveVideoModel } from '@/hooks/use-active-video-model';
@@ -64,7 +64,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CopyIcon, History, Loader2, Minimize2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ShotStalenessBanners } from './frame-staleness-banners';
+import { ShotStalenessBanners } from './shot-staleness-banners';
 import { SceneCastTab } from './scene-cast-tab';
 import { SceneElementsTab } from './scene-elements-tab';
 import { SceneLocationTab } from './scene-location-tab';
@@ -382,7 +382,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
   }, [framePromptStream.motion.status, motionError]);
 
   // When a streamed regen lands, the workflow has already written the new
-  // variant to the DB and emitted `generation.frame:updated` — refetch so
+  // variant to the DB and emitted `generation.shot:updated` — refetch so
   // the textarea swaps from the live-streamed text to the persisted prompt
   // without a flicker.
   const shotId = frame?.id;
@@ -769,7 +769,7 @@ export const SceneScriptPrompts: React.FC<SceneScriptPromptsProps> = ({
     const supportsAudio = videoModelSupportsAudio(motionModelForCall);
 
     try {
-      await generateFrameMotionFn({
+      await generateShotMotionFn({
         data: {
           sequenceId: frame.sequenceId,
           shotId: frame.id,

@@ -27,7 +27,7 @@ type SheetStalenessBannersProps = {
 };
 
 /**
- * Sheet-shaped sibling of `frame-staleness-banners.tsx`. Same precedence
+ * Sheet-shaped sibling of `shot-staleness-banners.tsx`. Same precedence
  * rules: divergent banner wins, staleness indicator otherwise. Stage 2 ships
  * the divergent path; the staleness path is wired but currently a no-op for
  * sheet entities since the live-hash recompute server fns aren't part of v1.

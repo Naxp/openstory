@@ -50,7 +50,17 @@ export class ShotVariantWorkflow extends OpenStoryWorkflowEntrypoint<ShotVariant
     step: WorkflowStep,
     scopedDb: ScopedDb
   ): Promise<ShotVariantWorkflowResult> {
-    const input = event.payload;
+    const rawInput = event.payload;
+    // Back-compat: accept shotId or frameId from in-flight instances serialized before #906
+    // TODO(#906): remove frameId shim one release after deploy
+    const input = {
+      ...rawInput,
+      shotId:
+        rawInput.shotId ??
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- back-compat shim for in-flight CF Workflow instances serialized before #906
+        (rawInput as { frameId?: string }).frameId ??
+        undefined,
+    };
     const workflowRunId = event.instanceId;
 
     // Step 1: Set status to generating if shotId is provided

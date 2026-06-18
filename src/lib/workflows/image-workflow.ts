@@ -60,7 +60,17 @@ export class ImageWorkflow extends OpenStoryWorkflowEntrypoint<ImageWorkflowInpu
     step: WorkflowStep,
     scopedDb: ScopedDb
   ): Promise<ImageWorkflowResult> {
-    const input = event.payload;
+    const rawInput = event.payload;
+    // Back-compat: accept shotId or frameId from in-flight instances serialized before #906
+    // TODO(#906): remove frameId shim one release after deploy
+    const input = {
+      ...rawInput,
+      shotId:
+        rawInput.shotId ??
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- back-compat shim for in-flight CF Workflow instances serialized before #906
+        (rawInput as { frameId?: string }).frameId ??
+        undefined,
+    };
     const workflowRunId = event.instanceId;
 
     if (input.sceneSnapshot) {

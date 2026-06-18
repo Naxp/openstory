@@ -119,7 +119,7 @@ function mapEventToAction(
         },
       };
 
-    case 'generation.frame:created':
+    case 'generation.shot:created':
       return {
         type: 'FRAME_CREATED',
         payload: {
@@ -317,8 +317,8 @@ export function useGenerationStream(
       'generation.phase:complete',
       'generation.scene:new',
       'generation.scene:updated',
-      'generation.frame:created',
-      'generation.frame:updated',
+      'generation.shot:created',
+      'generation.shot:updated',
       'generation.image:progress',
       'generation.video:progress',
       'generation.audio:progress',

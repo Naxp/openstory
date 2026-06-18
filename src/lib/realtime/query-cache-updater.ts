@@ -101,7 +101,7 @@ export function updateQueryCacheFromEvent(
   const shotId = getString(data, 'shotId');
 
   switch (eventName) {
-    case 'generation.frame:created':
+    case 'generation.shot:created':
       // Debounced invalidation - multiple rapid events = one refetch
       debouncedInvalidate(
         queryClient,
@@ -110,7 +110,7 @@ export function updateQueryCacheFromEvent(
       );
       break;
 
-    case 'generation.frame:updated': {
+    case 'generation.shot:updated': {
       // Update frame metadata with prompts
       // The metadata is validated by the realtime schema before reaching here
       const metadata = data.metadata;
