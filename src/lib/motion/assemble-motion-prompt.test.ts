@@ -296,7 +296,7 @@ describe('assembleMotionPrompt', () => {
     });
   });
 
-  describe('MiniMax Hailuo 02 (no audio)', () => {
+  describe('MiniMax Hailuo 2.3 (no audio)', () => {
     const model = 'minimax_hailuo_02';
 
     it('returns fullPrompt for non-audio model', () => {

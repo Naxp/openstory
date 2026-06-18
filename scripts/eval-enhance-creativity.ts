@@ -20,7 +20,7 @@
  *
  * Usage:
  *   bun scripts/eval-enhance-creativity.ts
- *   bun scripts/eval-enhance-creativity.ts --model openai/gpt-5.4 --runs 2
+ *   bun scripts/eval-enhance-creativity.ts --model openai/gpt-5.5 --runs 2
  */
 import { callLLM, RECOMMENDED_MODELS } from '@/lib/ai/llm-client';
 import type { TextModel } from '@/lib/ai/models';

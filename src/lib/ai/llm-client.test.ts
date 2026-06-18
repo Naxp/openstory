@@ -268,7 +268,7 @@ describe('llm-client', () => {
     describe('with responseSchema', () => {
       const schema = z.object({ greeting: z.string() });
       // A non-Anthropic structured-output model → native `outputSchema` path.
-      const nativeModel = 'openai/gpt-5.4';
+      const nativeModel = 'openai/gpt-5.5';
 
       it('yields parsed object on terminal chunk when structured-output.complete fires', async () => {
         mockChat.mockReturnValue(
@@ -576,7 +576,7 @@ describe('llm-client', () => {
       );
 
       const result = await callLLM({
-        model: 'openai/gpt-5.4',
+        model: 'openai/gpt-5.5',
         messages: [{ role: 'user', content: 'test' }],
         responseSchema: schema,
       });
@@ -594,7 +594,7 @@ describe('llm-client', () => {
 
       return expect(
         callLLM({
-          model: 'openai/gpt-5.4',
+          model: 'openai/gpt-5.5',
           messages: [{ role: 'user', content: 'test' }],
           responseSchema: schema,
         })

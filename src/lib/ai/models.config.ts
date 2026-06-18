@@ -39,8 +39,8 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'Lowest hallucination rate, flagship agentic model',
   },
   {
-    id: 'anthropic/claude-opus-4.6',
-    name: 'Claude Opus 4.6',
+    id: 'anthropic/claude-opus-4.8',
+    name: 'Claude Opus 4.8',
     provider: 'Anthropic',
     license: 'proprietary' as const,
     qualityRank: 4,
@@ -70,16 +70,16 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'MIT license, MMLU 94.2, GPT-5 class reasoning',
   },
   {
-    id: 'z-ai/glm-5',
-    name: 'GLM-5',
+    id: 'z-ai/glm-5.2',
+    name: 'GLM-5.2',
     provider: 'Z.ai',
     license: 'open-source' as const,
     qualityRank: 7,
-    contextWindow: 202_752,
+    contextWindow: 1_048_576,
     // Treated as text-only for the vision-conditioned motion path (#929)
     // until confirmed to accept image input.
     vision: false,
-    description: 'MIT license, 744B MoE, SWE-bench 77.8',
+    description: 'Large-scale reasoning model, 1M context, long-horizon agents',
   },
   {
     id: 'google/gemini-3.1-pro-preview',
@@ -92,8 +92,8 @@ export const SCRIPT_ANALYSIS_MODELS = [
     description: 'Frontier multimodal reasoning with 1M context',
   },
   {
-    id: 'openai/gpt-5.4',
-    name: 'GPT-5.4',
+    id: 'openai/gpt-5.5',
+    name: 'GPT-5.5',
     provider: 'OpenAI',
     license: 'proprietary' as const,
     qualityRank: 9,

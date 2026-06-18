@@ -62,9 +62,16 @@ type BuilderVideoPricingPerToken = {
   pricingNotes?: string;
 };
 
+type BuilderVideoPricingFlat = {
+  mode: 'flat';
+  basePrice: MicrosValue;
+  pricingNotes?: string;
+};
+
 type BuilderVideoPricing =
   | BuilderVideoPricingPerSecond
-  | BuilderVideoPricingPerToken;
+  | BuilderVideoPricingPerToken
+  | BuilderVideoPricingFlat;
 
 type BuilderAudioPricing = {
   basePrice: MicrosValue;
@@ -159,8 +166,17 @@ const IMAGE_OVERRIDES: Record<string, Partial<BuilderImagePricing>> = {
 
 const VIDEO_OVERRIDES: Record<
   string,
-  Partial<BuilderVideoPricingPerSecond> | { mode: 'per_token' }
+  | Partial<BuilderVideoPricingPerSecond>
+  // `tokensPerUnit`: how many tokens the pricing API's "unit" represents, used
+  // to scale unit_price up to a per-million-token rate (fal's token pricing is
+  // quoted per 1000 tokens, the default).
+  | { mode: 'per_token'; tokensPerUnit?: number }
+  | { mode: 'flat' }
 > = {
+  'fal-ai/minimax/hailuo-2.3/pro/image-to-video': {
+    // Flat $0.49/video fee regardless of duration (no duration param in schema)
+    mode: 'flat',
+  },
   'fal-ai/veo3': {
     // API returns audio-on rate ($0.40); no multiplier needed
   },
@@ -183,8 +199,11 @@ const VIDEO_OVERRIDES: Record<
     resolutionPricing: { '480p': m(0.08), '720p': m(0.14) },
     surcharges: { imageInput: m(0.01) },
   },
-  'fal-ai/bytedance/seedance/v1/pro/image-to-video': {
+  'bytedance/seedance-2.0/enterprise/v2/image-to-video': {
+    // fal bills $0.014 per 1000 tokens; the pricing API reports unit_price per
+    // 1000-token "unit", so scale up to a per-million-token rate ($14/M).
     mode: 'per_token',
+    tokensPerUnit: 1000,
   },
 };
 
@@ -299,9 +318,15 @@ for (const p of data.prices.sort((a, b) =>
       const override = VIDEO_OVERRIDES[p.endpoint_id];
       // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- Record lookup returns undefined for missing keys
       if (override && 'mode' in override && override.mode === 'per_token') {
+        const tokensPerUnit = override.tokensPerUnit ?? 1000;
         videoPricing[p.endpoint_id] = {
           mode: 'per_token',
-          pricePerMillionTokens: m(p.unit_price),
+          pricePerMillionTokens: m((p.unit_price * 1_000_000) / tokensPerUnit),
+        };
+      } else if (override && 'mode' in override && override.mode === 'flat') {
+        videoPricing[p.endpoint_id] = {
+          mode: 'flat',
+          basePrice: m(p.unit_price),
         };
       } else {
         const secOverride = override as
@@ -609,7 +634,15 @@ type VideoPricingPerToken = VideoPricingBase & {
   pricePerMillionTokens: Microdollars;
 };
 
-export type VideoPricing = VideoPricingPerSecond | VideoPricingPerToken;
+type VideoPricingFlat = VideoPricingBase & {
+  mode: 'flat';
+  basePrice: Microdollars;
+};
+
+export type VideoPricing =
+  | VideoPricingPerSecond
+  | VideoPricingPerToken
+  | VideoPricingFlat;
 
 ${serializeMap('VIDEO_PRICING', 'VideoPricing', videoPricing)}
 
