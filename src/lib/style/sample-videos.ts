@@ -97,14 +97,17 @@ export const CATEGORY_BRIEFS: Record<string, string> = {
 /**
  * Per-style brief overrides (keyed by style slug), consulted BEFORE the
  * generated per-style briefs (`style-briefs.generated.ts`) and the category
- * fallback. The generated briefs now cover every style on-style, so this map
- * holds ONLY the three single-shot styles: their real render is the verbatim
- * `CANONICAL_SCRIPT_OVERRIDES` below; the entry here is only the review-tool
- * BRIEF label, kept matching so it doesn't show the generated multi-cut text.
+ * fallback. Two kinds of entry live here:
  *
- * (We deliberately do NOT soften content here — e.g. the generated `action` /
- * `western-epic` briefs render verbatim so we can see what the model actually
- * does, rather than pre-empting the content checker.)
+ * 1. Creative-direction overrides that intentionally reshape the generated
+ *    brief: `perfume-editorial` (sultry register), `product-ad` /
+ *    `ugc-unboxing` (put a real on-camera person in frame, not faceless
+ *    hands), `animated` (a physical poster, not a hologram), `beach-ritual`
+ *    (a new style that has no generated brief yet).
+ * 2. Single-shot review labels for styles whose real render is the verbatim
+ *    `CANONICAL_SCRIPT_OVERRIDES` below (`mood-only-frames`, `360-turntable`,
+ *    `restaurant-menu-hero`) — the entry here is only the review-tool BRIEF
+ *    label, kept matching so it doesn't show the generated multi-cut text.
  *
  * `documentary` ships a full hand-written script via CANONICAL_SCRIPT_OVERRIDES
  * (`enhance: 'off'`), so it needs no brief here.

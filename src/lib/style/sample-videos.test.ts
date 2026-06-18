@@ -9,6 +9,7 @@ import {
   CANONICAL_SCRIPT_OVERRIDES,
   CATEGORY_BRIEFS,
   CANONICAL_TARGET_SECONDS,
+  STYLE_BRIEF_OVERRIDES,
   heroStyleSlugs,
   isHeroStyle,
   sampleVideoUrl,
@@ -104,6 +105,24 @@ describe('canonical script overrides', () => {
   it('every override has a non-empty script', () => {
     for (const [slug, override] of Object.entries(CANONICAL_SCRIPT_OVERRIDES)) {
       expect(override.enhancedScript.length, slug).toBeGreaterThan(50);
+    }
+  });
+});
+
+describe('style brief overrides', () => {
+  const templateSlugs = new Set(
+    DEFAULT_STYLE_TEMPLATES.map((s) => styleSlug(s.name))
+  );
+
+  it('every override slug maps to a real template name', () => {
+    for (const slug of Object.keys(STYLE_BRIEF_OVERRIDES)) {
+      expect(templateSlugs.has(slug), slug).toBe(true);
+    }
+  });
+
+  it('every override has a non-empty brief', () => {
+    for (const [slug, brief] of Object.entries(STYLE_BRIEF_OVERRIDES)) {
+      expect(brief.length, slug).toBeGreaterThan(0);
     }
   });
 });

@@ -14,7 +14,7 @@
  *
  *   OPENROUTER_KEY=… bun --env-file=.env.admin scripts/eval-redo-sequences.ts
  *     [--in /tmp/prod-eval-data.json] [--out /tmp/redo-eval.json]
- *     [--model google/gemini-3.1-pro-preview] [--filter perfume-editorial,rom-com]
+ *     [--model google/gemini-3.5-flash] [--filter perfume-editorial,rom-com]
  *     [--limit 5] [--concurrency 4]
  */
 import { readFile, writeFile } from 'node:fs/promises';
@@ -157,15 +157,20 @@ function intendedLook(slug: string): string {
 
 /**
  * Fetch a frame image as base64, downscaled via Cloudflare image resizing.
- * The raw R2 thumbnails are ~5MB webp — over Anthropic's 5MB/image limit — so
- * we route through `/cdn-cgi/image/...` to get a ~200KB JPEG that every vision
- * provider accepts. Origin-relative `/r2/…` URLs are prefixed with ORIGIN.
+ * The raw R2 thumbnails are ~5MB webp — over common vision-API per-image
+ * limits — so we route through `/cdn-cgi/image/...` to get a ~200KB JPEG.
+ * Origin-relative `/r2/…` URLs are prefixed with ORIGIN. Returns null on a
+ * failed fetch (logged), so a dropped frame is visible rather than silently
+ * collapsing into a partial-sequence eval.
  */
 async function fetchImageB64(relUrl: string): Promise<string | null> {
   const path = relUrl.startsWith('http') ? new URL(relUrl).pathname : relUrl;
   const url = `${ORIGIN}/cdn-cgi/image/width=1280,quality=82,format=jpeg${path}`;
   const res = await fetch(url);
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.warn(`   ⚠️  image fetch failed (${res.status}): ${url}`);
+    return null;
+  }
   return Buffer.from(await res.arrayBuffer()).toString('base64');
 }
 
