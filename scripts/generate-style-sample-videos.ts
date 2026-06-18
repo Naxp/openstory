@@ -104,12 +104,18 @@ type Flags = {
   submitOnly: boolean;
   /** Images-only render: no image-to-video clips, no music. */
   noMotion: boolean;
+  /** Override every job's image model (key in IMAGE_MODELS); null = per-style. */
+  imageModel: string | null;
 };
 
 function parseFlags(argv: string[]): Flags {
   const filterIdx = argv.findIndex((a) => a === '--filter');
   const filterRaw = filterIdx >= 0 ? (argv[filterIdx + 1]?.trim() ?? '') : '';
+  const imageModelIdx = argv.findIndex((a) => a === '--image-model');
+  const imageModelRaw =
+    imageModelIdx >= 0 ? (argv[imageModelIdx + 1]?.trim() ?? '') : '';
   return {
+    imageModel: imageModelRaw || null,
     filters: filterRaw
       ? filterRaw
           .split(',')
@@ -158,10 +164,14 @@ function buildJobs(flags: Flags): RenderJob[] {
     const bespoke = BESPOKE_SCRIPTS[slug];
     if (flags.heroOnly && !bespoke) continue;
 
-    const imageModel = safeTextToImageModel(
-      style.recommendedImageModel,
-      DEFAULT_IMAGE_MODEL
-    );
+    if (flags.imageModel && !(flags.imageModel in IMAGE_MODELS)) {
+      throw new Error(
+        `Unknown --image-model "${flags.imageModel}". Keys: ${Object.keys(IMAGE_MODELS).join(', ')}`
+      );
+    }
+    const imageModel = flags.imageModel
+      ? safeTextToImageModel(flags.imageModel, DEFAULT_IMAGE_MODEL)
+      : safeTextToImageModel(style.recommendedImageModel, DEFAULT_IMAGE_MODEL);
     const videoModel = safeImageToVideoModel(style.recommendedVideoModel);
     const aspectRatio = aspectRatioSchema
       .catch('16:9')

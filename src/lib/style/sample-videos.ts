@@ -115,6 +115,24 @@ export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
   // the canonical render toward the sultry, sensual register the genre expects.
   'perfume-editorial':
     'A sultry high-fashion perfume film in warm, low-key light. A strikingly beautiful woman in a liquid-gold silk slip reclines against deep velvet, bare shoulders and collarbone glowing; she draws a faceted amber bottle slowly along the line of her neck, lips parted, eyes half-closed, as backlit mist drifts past — then turns a slow, smouldering look straight to camera while a sheer curtain billows behind her.',
+  // Creative-direction override: the generated briefs for these two were
+  // faceless "hands only" product shots — boring, and they never exercise the
+  // character-consistency pipeline. Put a real on-camera woman (face visible,
+  // recurring across all three scenes) front and centre.
+  'product-ad':
+    'A woman with sleek dark hair and a cream linen shirt unscrews a frosted-glass serum bottle on a sunlit bathroom shelf, dispenses a glossy drop onto her fingertip, and presses it across her cheek as warm late-afternoon light catches the dewy texture.',
+  'ugc-unboxing':
+    'A bubbly young woman with a messy bun and chipped pink nails films herself on her phone, grinning to camera as she tears open a cardboard box, peels back tissue paper, and lifts out a sleek skincare bottle to show it off.',
+  // The generated brief asked for a "holographic wanted-poster", which fights
+  // the visual-prompt generator's hard NO-HOLOGRAPHIC-SCREENS rule and rendered
+  // as a blank blue rift. Use a physical paper poster instead.
+  animated:
+    'A grizzled male bounty hunter in a tattered crimson coat strides through a rain-slicked neon alley, then halts before a weathered paper wanted-poster nailed to a wall, recognition crossing his scarred face as its torn edges lift in the wind.',
+  // New style (no generated brief yet): pin the generate-style-briefs.ts output
+  // here so it renders on-brief instead of falling back to the off-style
+  // commercial category brief. Regenerate the full set to retire this.
+  'beach-ritual':
+    'A tanned woman with sun-bleached wavy hair in a coral swimsuit wades out of the turquoise surf at golden hour, pushing her wet hair back and laughing as she lifts a frosty bottle from the wet sand, the handheld camera tracking her toward weathered timber with lens flares dancing.',
   // Single-shot review labels — the verbatim render lives in
   // CANONICAL_SCRIPT_OVERRIDES; kept matching so the review BRIEF isn't the
   // generated multi-cut text.

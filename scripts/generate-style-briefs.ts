@@ -71,7 +71,7 @@ HARD RULES:
 - Name a concrete SUBJECT and a real EVENT with visible motion — something happens. Never a static mood piece, never a person standing still.
 - If a person appears, give them an explicit gender and a short visual descriptor (hair, wardrobe) so their identity stays consistent across cuts.
 - Keep it shootable in the style's own setting, lighting and camera (use the config cues).
-- Stay safely inside content filters: no nudity or swimwear, no violence or gore, no lone-woman-in-peril framing.
+- Stay safely inside content filters: no nudity, no violence or gore, no lone-woman-in-peril framing. Swimwear is fine where on-brief (e.g. a woman on a beach in a swimsuit).
 - One sentence, present tense, ~25–50 words.
 
 Return ONLY JSON: { "brief": "<the sentence>" }`;

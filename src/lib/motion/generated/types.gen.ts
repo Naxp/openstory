@@ -47,18 +47,6 @@ export type QueueStatus = {
  */
 export type GrokImagineVideoV15ImageToVideoInput = {
     /**
-     * Resolution
-     *
-     * Resolution of the output video.
-     */
-    resolution?: '480p' | '720p';
-    /**
-     * Prompt
-     *
-     * Text description of desired changes or motion in the video.
-     */
-    prompt: string;
-    /**
      * Duration
      *
      * Video duration in seconds.
@@ -70,6 +58,18 @@ export type GrokImagineVideoV15ImageToVideoInput = {
      * URL of the input image for video generation.
      */
     image_url: string | Blob | File;
+    /**
+     * Resolution
+     *
+     * Resolution of the output video.
+     */
+    resolution?: '480p' | '720p';
+    /**
+     * Prompt
+     *
+     * Text description of desired changes or motion in the video.
+     */
+    prompt: string;
 };
 
 /**
@@ -84,23 +84,17 @@ export type GrokImagineVideoV15ImageToVideoOutput = {
  */
 export type VideoFile = {
     /**
-     * Duration
+     * Content Type
      *
-     * The duration of the video
+     * The mime type of the file.
      */
-    duration?: number | unknown;
+    content_type?: string | unknown;
     /**
-     * File Name
+     * Num Frames
      *
-     * The name of the file. It will be auto-generated if not provided.
+     * The number of frames in the video
      */
-    file_name?: string | unknown;
-    /**
-     * Fps
-     *
-     * The FPS of the video
-     */
-    fps?: number | unknown;
+    num_frames?: number | unknown;
     /**
      * Height
      *
@@ -108,23 +102,11 @@ export type VideoFile = {
      */
     height?: number | unknown;
     /**
-     * Content Type
+     * Duration
      *
-     * The mime type of the file.
+     * The duration of the video
      */
-    content_type?: string | unknown;
-    /**
-     * Url
-     *
-     * The URL where the file can be downloaded from.
-     */
-    url: string;
-    /**
-     * Width
-     *
-     * The width of the video
-     */
-    width?: number | unknown;
+    duration?: number | unknown;
     /**
      * File Size
      *
@@ -132,11 +114,29 @@ export type VideoFile = {
      */
     file_size?: number | unknown;
     /**
-     * Num Frames
+     * Fps
      *
-     * The number of frames in the video
+     * The FPS of the video
      */
-    num_frames?: number | unknown;
+    fps?: number | unknown;
+    /**
+     * Width
+     *
+     * The width of the video
+     */
+    width?: number | unknown;
+    /**
+     * File Name
+     *
+     * The name of the file. It will be auto-generated if not provided.
+     */
+    file_name?: string | unknown;
+    /**
+     * Url
+     *
+     * The URL where the file can be downloaded from.
+     */
+    url: string;
 };
 
 /**
@@ -205,23 +205,17 @@ export type Ltx23ImageToVideoOutput = {
  */
 export type Veo31ImageToVideoInput = {
     /**
-     * Duration
-     *
-     * The duration of the generated video.
-     */
-    duration?: '4s' | '6s' | '8s';
-    /**
-     * Negative Prompt
-     *
-     * A negative prompt to guide the video generation.
-     */
-    negative_prompt?: string | unknown;
-    /**
      * Auto Fix
      *
      * Whether to automatically attempt to fix prompts that fail content policy or other validation checks by rewriting them.
      */
     auto_fix?: boolean;
+    /**
+     * Resolution
+     *
+     * The resolution of the generated video.
+     */
+    resolution?: '720p' | '1080p' | '4k';
     /**
      * Image URL
      *
@@ -229,23 +223,11 @@ export type Veo31ImageToVideoInput = {
      */
     image_url: string | Blob | File;
     /**
-     * Safety Tolerance
-     *
-     * The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.
-     */
-    safety_tolerance?: '1' | '2' | '3' | '4' | '5' | '6';
-    /**
      * Generate Audio
      *
      * Whether to generate audio for the video.
      */
     generate_audio?: boolean;
-    /**
-     * Resolution
-     *
-     * The resolution of the generated video.
-     */
-    resolution?: '720p' | '1080p' | '4k';
     /**
      * Prompt
      *
@@ -259,11 +241,29 @@ export type Veo31ImageToVideoInput = {
      */
     seed?: number | unknown;
     /**
+     * Negative Prompt
+     *
+     * A negative prompt to guide the video generation.
+     */
+    negative_prompt?: string | unknown;
+    /**
+     * Safety Tolerance
+     *
+     * The safety tolerance level for content moderation. 1 is the most strict (blocks most content), 6 is the least strict.
+     */
+    safety_tolerance?: '1' | '2' | '3' | '4' | '5' | '6';
+    /**
      * Aspect Ratio
      *
      * The aspect ratio of the generated video. Only 16:9 and 9:16 are supported.
      */
     aspect_ratio?: 'auto' | '16:9' | '9:16';
+    /**
+     * Duration
+     *
+     * The duration of the generated video.
+     */
+    duration?: '4s' | '6s' | '8s';
 };
 
 /**
@@ -278,12 +278,6 @@ export type Veo31ImageToVideoOutput = {
  */
 export type File = {
     /**
-     * Content Type
-     *
-     * The mime type of the file.
-     */
-    content_type?: string | unknown;
-    /**
      * Url
      *
      * The URL where the file can be downloaded from.
@@ -295,6 +289,12 @@ export type File = {
      * The size of the file in bytes.
      */
     file_size?: number | unknown;
+    /**
+     * Content Type
+     *
+     * The mime type of the file.
+     */
+    content_type?: string | unknown;
     /**
      * File Name
      *
@@ -308,32 +308,33 @@ export type File = {
  */
 export type KlingVideoV3ProImageToVideoInput = {
     /**
-     * Cfg Scale
+     * Duration
      *
-     *
-     * The CFG (Classifier Free Guidance) scale is a measure of how close you want
-     * the model to stick to your prompt.
-     *
+     * The duration of the generated video in seconds
      */
-    cfg_scale?: number;
+    duration?: '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12' | '13' | '14' | '15';
+    /**
+     * Elements
+     *
+     * Elements (characters/objects) to include in the video. Each example can either be an image set (frontal + reference images) or a video. Reference in prompt as @Element1, @Element2, etc.
+     */
+    elements?: Array<KlingV3ComboElementInput> | unknown;
+    /**
+     * Negative Prompt
+     */
+    negative_prompt?: string;
+    /**
+     * Generate Audio
+     *
+     * Whether to generate native audio for the video. Supports Chinese and English voice output. Other languages are automatically translated to English. For English speech, use lowercase letters; for acronyms or proper nouns, use uppercase.
+     */
+    generate_audio?: boolean;
     /**
      * Start Image Url
      *
      * URL of the image to be used for the video
      */
     start_image_url: string | Blob | File;
-    /**
-     * Prompt
-     *
-     * Text prompt for video generation. Either prompt or multi_prompt must be provided, but not both.
-     */
-    prompt?: string | unknown;
-    /**
-     * Duration
-     *
-     * The duration of the generated video in seconds
-     */
-    duration?: '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12' | '13' | '14' | '15';
     /**
      * End Image Url
      *
@@ -347,27 +348,26 @@ export type KlingVideoV3ProImageToVideoInput = {
      */
     shot_type?: 'customize' | 'intelligent';
     /**
+     * Prompt
+     *
+     * Text prompt for video generation. Either prompt or multi_prompt must be provided, but not both.
+     */
+    prompt?: string | unknown;
+    /**
      * Multi Prompt
      *
      * List of prompts for multi-shot video generation. If provided, divides the video into multiple shots.
      */
     multi_prompt?: Array<KlingV3MultiPromptElement> | unknown;
     /**
-     * Negative Prompt
-     */
-    negative_prompt?: string;
-    /**
-     * Generate Audio
+     * Cfg Scale
      *
-     * Whether to generate native audio for the video. Supports Chinese and English voice output. Other languages are automatically translated to English. For English speech, use lowercase letters; for acronyms or proper nouns, use uppercase.
-     */
-    generate_audio?: boolean;
-    /**
-     * Elements
      *
-     * Elements (characters/objects) to include in the video. Each example can either be an image set (frontal + reference images) or a video. Reference in prompt as @Element1, @Element2, etc.
+     * The CFG (Classifier Free Guidance) scale is a measure of how close you want
+     * the model to stick to your prompt.
+     *
      */
-    elements?: Array<KlingV3ComboElementInput> | unknown;
+    cfg_scale?: number;
 };
 
 /**
@@ -375,6 +375,36 @@ export type KlingVideoV3ProImageToVideoInput = {
  */
 export type KlingVideoV3ProImageToVideoOutput = {
     video: File;
+};
+
+/**
+ * KlingV3ComboElementInput
+ */
+export type KlingV3ComboElementInput = {
+    /**
+     * Frontal Image Url
+     *
+     * The frontal image of the element (main view).
+     */
+    frontal_image_url?: string | unknown;
+    /**
+     * Reference Image Urls
+     *
+     * Additional reference images from different angles. 1-3 images supported. At least one image is required.
+     */
+    reference_image_urls?: Array<string> | unknown;
+    /**
+     * Voice Id
+     *
+     * The voice ID for this element. The voice will be binded to the element and references to this element will use the binded voice. Get voice IDs from the following endpoint: https://fal.ai/models/fal-ai/kling-video/create-voice
+     */
+    voice_id?: string | unknown;
+    /**
+     * Video Url
+     *
+     * The video URL of the element. A request can only have one element with a video.
+     */
+    video_url?: string | unknown;
 };
 
 /**
@@ -393,36 +423,6 @@ export type KlingV3MultiPromptElement = {
      * The prompt for this shot.
      */
     prompt: string;
-};
-
-/**
- * KlingV3ComboElementInput
- */
-export type KlingV3ComboElementInput = {
-    /**
-     * Reference Image Urls
-     *
-     * Additional reference images from different angles. 1-3 images supported. At least one image is required.
-     */
-    reference_image_urls?: Array<string> | unknown;
-    /**
-     * Video Url
-     *
-     * The video URL of the element. A request can only have one element with a video.
-     */
-    video_url?: string | unknown;
-    /**
-     * Frontal Image Url
-     *
-     * The frontal image of the element (main view).
-     */
-    frontal_image_url?: string | unknown;
-    /**
-     * Voice Id
-     *
-     * The voice ID for this element. The voice will be binded to the element and references to this element will use the binded voice. Get voice IDs from the following endpoint: https://fal.ai/models/fal-ai/kling-video/create-voice
-     */
-    voice_id?: string | unknown;
 };
 
 /**
@@ -463,17 +463,11 @@ export type MinimaxHailuo02ProImageToVideoOutput = {
  */
 export type Seedance20EnterpriseV2ImageToVideoInput = {
     /**
-     * Resolution
+     * Bitrate Mode
      *
-     * Video resolution - 480p for faster generation, 720p for balance, 1080p for highest quality.
+     * Output bitrate mode. 'high' requests a higher-quality, larger-file encode from the model; 'standard' uses the default bitrate.
      */
-    resolution?: '480p' | '720p' | '1080p';
-    /**
-     * Duration
-     *
-     * Duration of the video in seconds. Supports 4 to 15 seconds, or auto to let the model decide based on the prompt.
-     */
-    duration?: 'auto' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12' | '13' | '14' | '15';
+    bitrate_mode?: 'standard' | 'high';
     /**
      * Prompt
      *
@@ -481,11 +475,23 @@ export type Seedance20EnterpriseV2ImageToVideoInput = {
      */
     prompt: string;
     /**
-     * End User Id
+     * Seed
      *
-     * The unique user ID of the end user.
+     * Random seed for reproducibility. Note that results may still vary slightly even with the same seed.
      */
-    end_user_id?: string | unknown;
+    seed?: number | unknown;
+    /**
+     * Generate Audio
+     *
+     * Whether to generate synchronized audio for the video, including sound effects, ambient sounds, and lip-synced speech. The cost of video generation is the same regardless of whether audio is generated or not.
+     */
+    generate_audio?: boolean;
+    /**
+     * Duration
+     *
+     * Duration of the video in seconds. Supports 4 to 15 seconds, or auto to let the model decide based on the prompt.
+     */
+    duration?: 'auto' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12' | '13' | '14' | '15';
     /**
      * Aspect Ratio
      *
@@ -493,23 +499,23 @@ export type Seedance20EnterpriseV2ImageToVideoInput = {
      */
     aspect_ratio?: 'auto' | '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16';
     /**
-     * Seed
-     *
-     * Random seed for reproducibility. Note that results may still vary slightly even with the same seed.
-     */
-    seed?: number | unknown;
-    /**
      * End Image Url
      *
      * The URL of the image to use as the last frame of the video. When provided, the generated video will transition from the starting image to this ending image. Supported formats: JPEG, PNG, WebP. Max 30 MB.
      */
     end_image_url?: string | unknown;
     /**
-     * Generate Audio
+     * End User Id
      *
-     * Whether to generate synchronized audio for the video, including sound effects, ambient sounds, and lip-synced speech. The cost of video generation is the same regardless of whether audio is generated or not.
+     * The unique user ID of the end user.
      */
-    generate_audio?: boolean;
+    end_user_id?: string | unknown;
+    /**
+     * Resolution
+     *
+     * Video resolution - 480p for faster generation, 720p for balance, 1080p for highest quality.
+     */
+    resolution?: '480p' | '720p' | '1080p';
     /**
      * Image Url
      *

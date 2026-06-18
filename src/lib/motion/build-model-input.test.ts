@@ -110,10 +110,20 @@ describe('buildModelInput', () => {
     });
   });
 
-  describe('Seedance 2.0', () => {
+  describe('Seedance 2.0 (audio)', () => {
     it('uses image_url', () => {
       const result = build('seedance_v2');
       expect(result).toHaveProperty('image_url', baseOptions.imageUrl);
+    });
+
+    it('sets generate_audio to true from schema default', () => {
+      const result = build('seedance_v2');
+      expect(result.generate_audio).toBe(true);
+    });
+
+    it('forwards generate_audio=false when caller suppresses audio', () => {
+      const result = build('seedance_v2', { generateAudio: false });
+      expect(result.generate_audio).toBe(false);
     });
   });
 
