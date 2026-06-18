@@ -238,8 +238,12 @@ async function generateImageInternal(
   const processingTimeMs = Date.now() - startTime;
 
   // Exact cost from fal's reported billed units (resolution/style premiums are
-  // already baked into the count by fal).
-  const cost = falCostFromUnits(endpoint, result.usage?.unitsBilled);
+  // already baked into the count by fal; sourced from providerUsageDetails).
+  const unitsBilled = result.usage?.providerUsageDetails?.['unitsBilled'];
+  const cost = falCostFromUnits(
+    endpoint,
+    typeof unitsBilled === 'number' ? unitsBilled : undefined
+  );
 
   return {
     imageUrls,

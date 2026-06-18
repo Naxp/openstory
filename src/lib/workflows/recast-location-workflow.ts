@@ -32,12 +32,12 @@ import type {
   LocationSheetWorkflowInput,
   LocationSheetWorkflowResult,
   RecastLocationWorkflowInput,
-  RegenerateFramesWorkflowInput,
+  RegenerateShotsWorkflowInput,
 } from '@/lib/workflow/types';
 import {
-  buildRegenerateFrameSnapshot,
-  computeRegenerateFramesBatchHash,
-} from '@/lib/workflows/regenerate-frames-snapshot';
+  buildRegenerateShotSnapshot,
+  computeRegenerateShotsBatchHash,
+} from '@/lib/workflows/regenerate-shots-snapshot';
 import {
   computeLocationSheetHashFromDto,
   resolveLibraryLocationReferenceHash,
@@ -76,7 +76,7 @@ async function regenerateFramesIfNeeded(
 
   const regenerateBody = await step.do(
     'build-regenerate-snapshot',
-    async (): Promise<RegenerateFramesWorkflowInput> => {
+    async (): Promise<RegenerateShotsWorkflowInput> => {
       const sequenceId = input.sequenceId;
       if (!sequenceId) {
         throw new NonRetryableError(
@@ -95,7 +95,7 @@ async function regenerateFramesIfNeeded(
         scopedDb.characters.listWithSheets(sequenceId),
         scopedDb.sequenceLocations.listWithReferences(sequenceId),
         scopedDb.sequenceElements.list(sequenceId),
-        scopedDb.frames.getByIds(input.affectedFrameIds),
+        scopedDb.shots.getByIds(input.affectedFrameIds),
       ]);
       if (frames.length !== input.affectedFrameIds.length) {
         const found = new Set(frames.map((f) => f.id));
@@ -107,7 +107,7 @@ async function regenerateFramesIfNeeded(
       const aspectRatio = sequence.aspectRatio;
       const frameSnapshots = await Promise.all(
         frames.map((frame) =>
-          buildRegenerateFrameSnapshot({
+          buildRegenerateShotSnapshot({
             frame,
             characters,
             locations,
@@ -118,7 +118,7 @@ async function regenerateFramesIfNeeded(
         )
       );
       const partial = { sequenceId, imageModel, aspectRatio, frameSnapshots };
-      const snapshotInputHash = await computeRegenerateFramesBatchHash(partial);
+      const snapshotInputHash = await computeRegenerateShotsBatchHash(partial);
       return {
         userId: input.userId,
         teamId: input.teamId,
@@ -134,8 +134,8 @@ async function regenerateFramesIfNeeded(
     }
   );
 
-  await spawnAndAwaitChild<RegenerateFramesWorkflowInput, unknown>(step, {
-    binding: env.REGENERATE_FRAMES_WORKFLOW,
+  await spawnAndAwaitChild<RegenerateShotsWorkflowInput, unknown>(step, {
+    binding: env.REGENERATE_SHOTS_WORKFLOW,
     parentBindingName: 'RECAST_LOCATION_WORKFLOW',
     parentInstanceId,
     childId: `regenerate-frames:location:${input.locationDbId}`,

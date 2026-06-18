@@ -78,7 +78,7 @@ export function useRecastCharacter() {
         queryKey: sequenceCharacterKeys.all,
       });
       // Invalidate frames that contain this character
-      void queryClient.invalidateQueries({ queryKey: ['frames'] });
+      void queryClient.invalidateQueries({ queryKey: ['shots'] });
     },
   });
 }

@@ -45,11 +45,11 @@ export const getFrameIdsForCharacterFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .inputValidator(zodValidator(z.object({ characterId: z.string().min(1) })))
   .handler(async ({ context, data }) => {
-    const frameIds = await context.scopedDb.characters.getFrameIdsForCharacter(
+    const shotIds = await context.scopedDb.characters.getFrameIdsForCharacter(
       context.sequence.id,
       data.characterId
     );
-    return { frameIds, count: frameIds.length };
+    return { shotIds, count: shotIds.length };
   });
 
 /** Recast a character with different talent, triggering sheet regeneration */

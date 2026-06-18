@@ -31,12 +31,12 @@ import type {
   CharacterSheetWorkflowInput,
   CharacterSheetWorkflowResult,
   RecastCharacterWorkflowInput,
-  RegenerateFramesWorkflowInput,
+  RegenerateShotsWorkflowInput,
 } from '@/lib/workflow/types';
 import {
-  buildRegenerateFrameSnapshot,
-  computeRegenerateFramesBatchHash,
-} from '@/lib/workflows/regenerate-frames-snapshot';
+  buildRegenerateShotSnapshot,
+  computeRegenerateShotsBatchHash,
+} from '@/lib/workflows/regenerate-shots-snapshot';
 import {
   computeCharacterSheetHashFromDto,
   resolveTalentSheetHash,
@@ -77,8 +77,8 @@ async function regenerateFramesIfNeeded(
   // back from a separate step.do that wraps the snapshot construction —
   // but here we keep it inline because the `build-regenerate-snapshot`
   // step above already computed everything we need.
-  await spawnAndAwaitChild<RegenerateFramesWorkflowInput, unknown>(step, {
-    binding: env.REGENERATE_FRAMES_WORKFLOW,
+  await spawnAndAwaitChild<RegenerateShotsWorkflowInput, unknown>(step, {
+    binding: env.REGENERATE_SHOTS_WORKFLOW,
     parentBindingName: 'RECAST_CHARACTER_WORKFLOW',
     parentInstanceId,
     childId: `regenerate-frames:character:${input.characterDbId}`,
@@ -97,7 +97,7 @@ async function regenerateFramesIfNeeded(
 async function buildRegeneratePayload(
   scopedDb: ScopedDb,
   input: RecastCharacterWorkflowInput
-): Promise<RegenerateFramesWorkflowInput> {
+): Promise<RegenerateShotsWorkflowInput> {
   const sequenceId = input.sequenceId;
   if (!sequenceId) {
     throw new NonRetryableError(
@@ -116,7 +116,7 @@ async function buildRegeneratePayload(
     scopedDb.characters.listWithSheets(sequenceId),
     scopedDb.sequenceLocations.listWithReferences(sequenceId),
     scopedDb.sequenceElements.list(sequenceId),
-    scopedDb.frames.getByIds(input.affectedFrameIds),
+    scopedDb.shots.getByIds(input.affectedFrameIds),
   ]);
   if (frames.length !== input.affectedFrameIds.length) {
     const found = new Set(frames.map((f) => f.id));
@@ -128,7 +128,7 @@ async function buildRegeneratePayload(
   const aspectRatio = sequence.aspectRatio;
   const frameSnapshots = await Promise.all(
     frames.map((frame) =>
-      buildRegenerateFrameSnapshot({
+      buildRegenerateShotSnapshot({
         frame,
         characters,
         locations,
@@ -139,7 +139,7 @@ async function buildRegeneratePayload(
     )
   );
   const partial = { sequenceId, imageModel, aspectRatio, frameSnapshots };
-  const snapshotInputHash = await computeRegenerateFramesBatchHash(partial);
+  const snapshotInputHash = await computeRegenerateShotsBatchHash(partial);
   return {
     userId: input.userId,
     teamId: input.teamId,

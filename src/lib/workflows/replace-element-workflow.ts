@@ -31,7 +31,7 @@ import {
 } from '@/lib/ai/models';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
-import type { ElementVisionStatus, Frame } from '@/lib/db/schema';
+import type { ElementVisionStatus, Shot } from '@/lib/db/schema';
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
 import { getGenerationChannel } from '@/lib/realtime';
 import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
@@ -61,7 +61,7 @@ const PARENT_BINDING_NAME =
 
 type ImageChildResult = {
   imageUrl: string;
-  frameId?: string;
+  shotId?: string;
   sequenceId?: string;
 };
 
@@ -71,8 +71,8 @@ type MotionChildResult = {
 };
 
 export type FrameResult =
-  | { frameId: string; success: true; imageUrl: string }
-  | { frameId: string; success: false; error: string };
+  | { shotId: string; success: true; imageUrl: string }
+  | { shotId: string; success: false; error: string };
 
 type BatchOutcome =
   | { kind: 'complete'; successCount: number; failedCount: number }
@@ -142,7 +142,7 @@ export function settledToResult(
 ): FrameResult {
   if (settled.status === 'fulfilled') return settled.value;
   return {
-    frameId: fallbackFrameId ?? 'unknown',
+    shotId: fallbackFrameId ?? 'unknown',
     success: false,
     error: rejectionReasonMessage(settled.reason),
   };
@@ -293,7 +293,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
     // Frames captured at trigger time may have been deleted mid-flight. Treat
     // missing frames as skipped rather than aborting the whole batch.
     const liveFrames = await step.do('load-frames', () =>
-      scopedDb.frames.getByIds(affectedFrameIds)
+      scopedDb.shots.getByIds(affectedFrameIds)
     );
     const liveFrameIds = new Set(liveFrames.map((f) => f.id));
     const skippedDeletedFrameIds = affectedFrameIds.filter(
@@ -319,19 +319,19 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
           updates.videoError = null;
         }
         if (Object.keys(updates).length === 0) continue;
-        await scopedDb.frames.update(frame.id, updates, {
+        await scopedDb.shots.update(frame.id, updates, {
           throwOnMissing: false,
         });
         await safeEmit(sequenceId, `image-progress:${frame.id}`, () =>
           getGenerationChannel(sequenceId).emit('generation.image:progress', {
-            frameId: frame.id,
+            shotId: frame.id,
             status: 'generating',
           })
         );
         if (frame.videoUrl) {
           await safeEmit(sequenceId, `video-progress:${frame.id}`, () =>
             getGenerationChannel(sequenceId).emit('generation.video:progress', {
-              frameId: frame.id,
+              shotId: frame.id,
               status: 'generating',
             })
           );
@@ -363,7 +363,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
           // text-to-image regeneration would silently invent a frame from
           // prose alone.
           return {
-            frameId: frame.id,
+            shotId: frame.id,
             success: false,
             error: 'no source thumbnail to edit',
           };
@@ -384,7 +384,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
           userId: input.userId,
           teamId: input.teamId,
           sequenceId,
-          frameId: frame.id,
+          shotId: frame.id,
           prompt: editPrompt,
           model,
           imageSize: aspectRatioToImageSize(aspectRatio),
@@ -423,14 +423,14 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
               `[ReplaceElementWorkflow:cf] Image edit returned empty url frame=${frame.id}`
             );
             return {
-              frameId: frame.id,
+              shotId: frame.id,
               success: false,
               error: 'Image edit no imageUrl',
             };
           }
 
           return {
-            frameId: frame.id,
+            shotId: frame.id,
             success: true,
             imageUrl: childResult.imageUrl,
           };
@@ -440,7 +440,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
             `[ReplaceElementWorkflow:cf] Image edit failed frame=${frame.id} reason=${reason}`
           );
           return {
-            frameId: frame.id,
+            shotId: frame.id,
             success: false,
             error: `Image edit failed: ${reason}`,
           };
@@ -453,7 +453,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
     const results: FrameResult[] = settled.map((s, i) => {
       if (s.status === 'rejected') {
         logger.error('[ReplaceElementWorkflow:cf] Per-frame promise rejected', {
-          frameId: liveFrames[i]?.id ?? 'unknown',
+          shotId: liveFrames[i]?.id ?? 'unknown',
           reason: s.reason,
         });
       }
@@ -473,13 +473,13 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
     // in-flight state on both the image and video pages.
     const successByFrameId = new Map<string, string>();
     for (const r of results) {
-      if (r.success) successByFrameId.set(r.frameId, r.imageUrl);
+      if (r.success) successByFrameId.set(r.shotId, r.imageUrl);
     }
     const videoModel = safeImageToVideoModel(
       sequence.videoModel,
       DEFAULT_VIDEO_MODEL
     );
-    const framesNeedingVideoRegen: Frame[] = liveFrames.filter(
+    const framesNeedingVideoRegen: Shot[] = liveFrames.filter(
       (f) => !!f.videoUrl && successByFrameId.has(f.id)
     );
 
@@ -496,10 +496,10 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
         async (frame, index) => {
           const newThumbnailUrl = successByFrameId.get(frame.id);
           if (!newThumbnailUrl) {
-            return { frameId: frame.id, success: false };
+            return { shotId: frame.id, success: false };
           }
 
-          await scopedDb.frames.update(frame.id, {
+          await scopedDb.shots.update(frame.id, {
             videoStatus: 'generating',
             videoError: null,
           });
@@ -508,7 +508,7 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
             userId: input.userId,
             teamId: input.teamId,
             sequenceId,
-            frameId: frame.id,
+            shotId: frame.id,
             imageUrl: newThumbnailUrl,
             prompt: resolveMotionPrompt(frame, videoModel),
             model: videoModel,
@@ -530,12 +530,12 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
                 timeout: '30 minutes',
               }
             );
-            return { frameId: frame.id, success: true };
+            return { shotId: frame.id, success: true };
           } catch (e) {
             logger.error('[ReplaceElementWorkflow:cf] motion child failed:', {
               err: rejectionReasonMessage(e),
             });
-            return { frameId: frame.id, success: false };
+            return { shotId: frame.id, success: false };
           }
         }
       );

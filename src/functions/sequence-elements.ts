@@ -284,7 +284,7 @@ export const renameSequenceElementTokenFn = createServerFn({ method: 'POST' })
   });
 
 // ============================================================================
-// Frame IDs / Replace
+// Shot IDs / Replace
 // ============================================================================
 
 /** Get frame IDs for all frames that reference an element by token */
@@ -294,12 +294,12 @@ export const getFrameIdsForElementFn = createServerFn({ method: 'GET' })
     zodValidator(z.object({ sequenceId: ulidSchema, elementId: ulidSchema }))
   )
   .handler(async ({ context, data }) => {
-    const frameIds =
+    const shotIds =
       await context.scopedDb.sequenceElements.getFrameIdsForElement(
         context.sequence.id,
         data.elementId
       );
-    return { frameIds, count: frameIds.length };
+    return { shotIds, count: shotIds.length };
   });
 
 /**

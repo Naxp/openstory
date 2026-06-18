@@ -202,7 +202,7 @@ export function useRenameSequenceElementToken() {
       // Frames now contain the new token in metadata / prompts. Refresh
       // anything that renders frame text or counts.
       if (result.framesUpdated > 0) {
-        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        void queryClient.invalidateQueries({ queryKey: ['shots'] });
         void queryClient.invalidateQueries({
           queryKey: sequenceElementKeys.frameCountsBySequence(
             variables.sequenceId
@@ -295,7 +295,7 @@ export function useReplaceElementProgress(
             queryKey: sequenceElementKeys.bySequence(sequenceId),
           });
         }
-        void queryClient.invalidateQueries({ queryKey: ['frames'] });
+        void queryClient.invalidateQueries({ queryKey: ['shots'] });
         return;
       }
 
@@ -373,7 +373,7 @@ export function useReplaceSequenceElement() {
           variables.sequenceId
         ),
       });
-      void queryClient.invalidateQueries({ queryKey: ['frames'] });
+      void queryClient.invalidateQueries({ queryKey: ['shots'] });
     },
   });
 }

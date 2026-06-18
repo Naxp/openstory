@@ -123,7 +123,7 @@ function mapEventToAction(
       return {
         type: 'FRAME_CREATED',
         payload: {
-          frameId: asString(data.frameId),
+          shotId: asString(data.shotId),
           sceneId: asString(data.sceneId),
           orderIndex: asNumber(data.orderIndex),
         },
@@ -133,7 +133,7 @@ function mapEventToAction(
       return {
         type: 'IMAGE_PROGRESS',
         payload: {
-          frameId: asString(data.frameId),
+          shotId: asString(data.shotId),
           status: asFrameStatus(data.status),
           thumbnailUrl: asOptionalString(data.thumbnailUrl),
           previewThumbnailUrl: asOptionalString(data.previewThumbnailUrl),
@@ -145,7 +145,7 @@ function mapEventToAction(
       return {
         type: 'VIDEO_PROGRESS',
         payload: {
-          frameId: asString(data.frameId),
+          shotId: asString(data.shotId),
           status: asFrameStatus(data.status),
           videoUrl: asOptionalString(data.videoUrl),
           retry: asRetryInfo(data),

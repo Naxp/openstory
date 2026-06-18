@@ -66,12 +66,12 @@ export const getFrameIdsForLocationFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .inputValidator(zodValidator(getFrameIdsForLocationInputSchema))
   .handler(async ({ context, data }) => {
-    const frameIds =
+    const shotIds =
       await context.scopedDb.sequenceLocations.getFrameIdsForLocation(
         context.sequence.id,
         data.locationId
       );
-    return { frameIds, count: frameIds.length };
+    return { shotIds, count: shotIds.length };
   });
 
 const recastLocationInputSchema = z.object({

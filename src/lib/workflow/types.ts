@@ -53,7 +53,7 @@ export interface ImageWorkflowInput extends SequenceWorkflowContext {
   imageSize?: ImageSize;
   numImages?: number;
   seed?: number;
-  frameId?: string; // Optional: update frame thumbnail
+  shotId?: string; // Optional: update shot thumbnail
   /** Reference images for character consistency (auto-switches to edit endpoint) */
   referenceImages?: ReferenceImageDescription[];
   /** Skip R2 upload and store fal.ai CDN URL directly (for ephemeral preview images) */
@@ -105,7 +105,7 @@ export interface ShotVariantWorkflowInput extends SequenceWorkflowContext {
   imageSize?: ImageSize;
   numImages?: number;
   seed?: number;
-  frameId?: string;
+  shotId?: string;
   /** Sequence aspect ratio — drives shot grid layout */
   aspectRatio?: AspectRatio;
   /** Scene description from frame.metadata.prompts.visual.fullPrompt */
@@ -190,7 +190,7 @@ export type SceneSplitWorkflowInput = SequenceWorkflowContext & {
 export type SceneSplitWorkflowResult = {
   scenes: Scene[];
   title: string;
-  frameMapping: Array<{ sceneId: string; frameId: string }>;
+  frameMapping: Array<{ sceneId: string; shotId: string }>;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
   elementBible: ElementBibleEntry[];
@@ -221,7 +221,7 @@ export interface ElementSheetWorkflowResult {
  * Motion generation workflow input
  */
 export interface MotionWorkflowInput extends SequenceWorkflowContext {
-  frameId?: string;
+  shotId?: string;
   imageUrl: string;
   prompt: string;
   model?: keyof typeof IMAGE_TO_VIDEO_MODELS;
@@ -290,8 +290,8 @@ export interface CharacterSheetWorkflowInput extends SequenceWorkflowContext {
  * `null` means the row predated hash tracking and is treated as
  * "unknown, never stale" rather than forcing a false-positive divergence.
  */
-export type RegenerateFrameSnapshot = {
-  frameId: string;
+export type RegenerateShotSnapshot = {
+  shotId: string;
   /** Visual prompt frozen at trigger time. */
   imagePrompt: string;
   /** Sorted character-sheet input_hashes referenced by this frame. */
@@ -320,7 +320,7 @@ export type RegenerateFrameSnapshot = {
  * workflow does not read live mutable state inside `context.run`. See
  * docs/architecture/workflow-snapshots-and-content-hash-staleness.md.
  */
-export interface RegenerateFramesWorkflowInput extends SequenceWorkflowContext {
+export interface RegenerateShotsWorkflowInput extends SequenceWorkflowContext {
   /** Frame IDs to regenerate */
   frameIds: string[];
   /**
@@ -338,7 +338,7 @@ export interface RegenerateFramesWorkflowInput extends SequenceWorkflowContext {
   /** Aspect ratio (frozen at trigger time, replaces a live sequence read). */
   aspectRatio: AspectRatio;
   /** Per-frame inlined snapshot DTOs. */
-  frameSnapshots: RegenerateFrameSnapshot[];
+  frameSnapshots: RegenerateShotSnapshot[];
   /**
    * Hash over the full inlined DTO. The workflow validates this against a
    * recompute at start (tamper check) via `createScopedWorkflow`'s snapshot
@@ -419,7 +419,7 @@ export interface CharacterBibleWorkflowInput extends SequenceWorkflowContext {
   styleConfig?: StyleConfig;
 }
 
-type FrameMapping = Array<{ sceneId: string; frameId: string }>;
+type FrameMapping = Array<{ sceneId: string; shotId: string }>;
 
 export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   scenes: Scene[];
@@ -429,7 +429,7 @@ export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
-  /** Maps sceneId to frameId for DB persistence after visual prompt generation */
+  /** Maps sceneId to shotId for DB persistence after visual prompt generation */
   frameMapping?: FrameMapping;
 }
 
@@ -443,7 +443,7 @@ export interface VisualPromptSceneWorkflowInput extends SequenceWorkflowContext 
   elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
-  frameId?: string;
+  shotId?: string;
   /**
    * Stream incremental `fullPrompt` deltas over the per-frame realtime
    * channel while the LLM generates. Set by the explicit "Regenerate Prompt"
@@ -482,7 +482,7 @@ export interface MotionPromptSceneWorkflowInput extends SequenceWorkflowContext 
   elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
-  frameId?: string;
+  shotId?: string;
   /**
    * Rendered starting-frame image URL, captured at trigger time (#929). The
    * motion prompt is conditioned on this exact still (vision input) and the
@@ -513,7 +513,7 @@ export interface CharacterSheetWorkflowResult {
  * to higher resolution.
  */
 export interface UpscaleShotVariantWorkflowInput extends SequenceWorkflowContext {
-  frameId: string;
+  shotId: string;
   /** URL of the cropped tile to upscale */
   croppedTileUrl: string;
   /** R2 path of the cropped tile (for replacement) */
@@ -756,8 +756,8 @@ export interface MusicWorkflowResult {
  */
 export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
   /** Per-frame motion inputs (ordered by scene) */
-  frames: Array<{
-    frameId: string;
+  shots: Array<{
+    shotId: string;
     imageUrl: string;
     /**
      * Prompt assembled for the primary model. Used directly for single-model
@@ -838,7 +838,7 @@ export type FrameImageSceneSnapshot = {
  * Frame images workflow input
  * Orchestrates frame image generation + automatic variant generation
  */
-export interface FrameImagesWorkflowInput extends SequenceWorkflowContext {
+export interface ShotImagesWorkflowInput extends SequenceWorkflowContext {
   scenesWithVisualPrompts: Scene[];
   charactersWithSheets: CharacterMinimal[];
   locationsWithSheets: SequenceLocationMinimal[];
@@ -860,7 +860,7 @@ export interface FrameImagesWorkflowInput extends SequenceWorkflowContext {
   snapshotInputHash?: string;
 }
 
-export interface FrameImagesWorkflowResult {
+export interface ShotImagesWorkflowResult {
   /**
    * Primary image URL per scene, ALIGNED to the input
    * `scenesWithVisualPrompts` order — a failed scene keeps its slot as

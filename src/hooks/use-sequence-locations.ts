@@ -113,7 +113,7 @@ export function useRecastLocation() {
         queryKey: sequenceLocationKeys.all,
       });
       // Invalidate frames that are at this location
-      void queryClient.invalidateQueries({ queryKey: ['frames'] });
+      void queryClient.invalidateQueries({ queryKey: ['shots'] });
     },
   });
 }

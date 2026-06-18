@@ -5,7 +5,7 @@ import type {
   StalenessIndicatorDensity,
 } from '@/components/staleness/staleness-indicator';
 
-type SheetEntityType = Exclude<StalenessEntityType, 'frame' | 'sequence'>;
+type SheetEntityType = Exclude<StalenessEntityType, 'shot' | 'sequence'>;
 
 type SheetStalenessBannersProps = {
   entityType: SheetEntityType;

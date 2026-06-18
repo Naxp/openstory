@@ -9,7 +9,7 @@ import {
   DEFAULT_ASPECT_RATIO,
 } from '@/lib/constants/aspect-ratios';
 import type { Database } from '@/lib/db/client';
-import type { Frame, NewSequence, Sequence, Style } from '@/lib/db/schema';
+import type { Shot, NewSequence, Sequence, Style } from '@/lib/db/schema';
 import { sequences } from '@/lib/db/schema';
 import type { MusicStatus, SequenceStatus } from '@/lib/db/schema/sequences';
 import { ValidationError } from '@/lib/errors';
@@ -24,8 +24,8 @@ export type MusicFieldsUpdate = {
   musicGeneratedAt?: Date;
 };
 
-type SequenceWithFrames = Sequence & {
-  frames: Frame[];
+type SequenceWithShots = Sequence & {
+  shots: Shot[];
   style: Style | null;
 };
 
@@ -54,11 +54,11 @@ function createSequencesReadMethods(db: Database, teamId: string) {
 
     getWithFrames: async (
       sequenceId: string
-    ): Promise<SequenceWithFrames | null> => {
+    ): Promise<SequenceWithShots | null> => {
       const result = await db.query.sequences.findFirst({
         where: { id: sequenceId, teamId },
         with: {
-          frames: {
+          shots: {
             orderBy: { orderIndex: 'asc' },
           },
           style: true,

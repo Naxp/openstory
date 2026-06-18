@@ -8,7 +8,7 @@
  */
 
 import type { ScopedDb } from '@/lib/db/scoped';
-import { FRAME_GENERATION_STATUSES } from '@/lib/db/schema/frames';
+import { FRAME_GENERATION_STATUSES } from '@/lib/db/schema/shots';
 import type { MusicStatus, SequenceStatus } from '@/lib/db/schema/sequences';
 import { toShareableUrl } from '@/lib/storage/buckets';
 import type { Sequence } from '@/types/database';
@@ -23,7 +23,7 @@ const TERMINAL_STATUSES = new Set<SequenceStatus>([
   'archived',
 ]);
 
-type SequenceStateFrame = {
+type SequenceStateShot = {
   id: string;
   orderIndex: number;
   title: string | null;
@@ -41,7 +41,7 @@ export type SequenceState = {
   updatedAt: string;
   poster: { url: string } | null;
   music: { status: MusicStatus; url: string | null };
-  frames: SequenceStateFrame[];
+  frames: SequenceStateShot[];
   counts: {
     frames: number;
     imagesReady: number;
@@ -57,7 +57,7 @@ export type SequenceState = {
 };
 
 export async function buildSequenceState(
-  scopedDb: { frames: Pick<ScopedDb['frames'], 'listBySequence'> },
+  scopedDb: { shots: Pick<ScopedDb['shots'], 'listBySequence'> },
   sequence: Sequence,
   // Scheme+host the request arrived on. Stored media URLs are origin-relative
   // (#894); the API hands them to off-origin clients, so absolutize them to a
@@ -65,12 +65,12 @@ export async function buildSequenceState(
   // toShareableUrl.
   origin: string
 ): Promise<SequenceState> {
-  const frames = await scopedDb.frames.listBySequence(sequence.id);
+  const frames = await scopedDb.shots.listBySequence(sequence.id);
   const ordered = [...frames].sort((a, b) => a.orderIndex - b.orderIndex);
   const share = (url: string | null): string | null =>
     url === null ? null : toShareableUrl(url, origin);
 
-  const stateFrames: SequenceStateFrame[] = ordered.map((frame) => {
+  const stateFrames: SequenceStateShot[] = ordered.map((frame) => {
     const imageUrl = frame.thumbnailUrl ?? frame.previewThumbnailUrl ?? null;
     return {
       id: frame.id,
