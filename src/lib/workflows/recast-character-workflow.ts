@@ -17,7 +17,7 @@
  *   - The chained `character-sheet` and `regenerate-frames` child invocations
  *     are stubbed out pending Pattern 3 (fan-out helpers) — exercised in a
  *     later batch after all leaves are ported. The `build-regenerate-snapshot`
- *     step lives in `regenerateFramesIfNeeded` for diff parity with the
+ *     step lives in `regenerateShotsIfNeeded` for diff parity with the
  *     QStash original; it becomes reachable once the sheet stub is replaced
  *     with a real child spawn. */
 
@@ -49,8 +49,8 @@ const logger = getLogger(['openstory', 'workflow', 'recast-character']);
 
 type RecastCharacterWorkflowResult = {
   sheetImageUrl: string;
-  framesRegenerated: number;
-  framesFailed: number;
+  shotsRegenerated: number;
+  shotsFailed: number;
 };
 
 /**
@@ -61,15 +61,15 @@ type RecastCharacterWorkflowResult = {
  * Lives in its own helper to mirror the QStash original's flow: snapshot
  * building runs as its own step before the child kicks off.
  */
-async function regenerateFramesIfNeeded(
+async function regenerateShotsIfNeeded(
   step: WorkflowStep,
   env: CloudflareEnv,
   parentInstanceId: string,
   scopedDb: ScopedDb,
   input: RecastCharacterWorkflowInput
-): Promise<{ framesRegenerated: number; framesFailed: number }> {
+): Promise<{ shotsRegenerated: number; shotsFailed: number }> {
   if (input.affectedShotIds.length === 0) {
-    return { framesRegenerated: 0, framesFailed: 0 };
+    return { shotsRegenerated: 0, shotsFailed: 0 };
   }
 
   // The actual payload is rebuilt inside the spawn step from the previous
@@ -89,8 +89,8 @@ async function regenerateFramesIfNeeded(
     awaitStepName: 'await-regenerate-frames',
   });
   return {
-    framesRegenerated: input.affectedShotIds.length,
-    framesFailed: 0,
+    shotsRegenerated: input.affectedShotIds.length,
+    shotsFailed: 0,
   };
 }
 
@@ -209,7 +209,7 @@ export class RecastCharacterWorkflow extends OpenStoryWorkflowEntrypoint<RecastC
     });
 
     const sheetImageUrl = sheetResult.sheetImageUrl;
-    const { framesRegenerated, framesFailed } = await regenerateFramesIfNeeded(
+    const { shotsRegenerated, shotsFailed } = await regenerateShotsIfNeeded(
       step,
       this.env,
       event.instanceId,
@@ -217,7 +217,7 @@ export class RecastCharacterWorkflow extends OpenStoryWorkflowEntrypoint<RecastC
       input
     );
 
-    return { sheetImageUrl, framesRegenerated, framesFailed };
+    return { sheetImageUrl, shotsRegenerated, shotsFailed };
   }
 
   protected override async onFailure({

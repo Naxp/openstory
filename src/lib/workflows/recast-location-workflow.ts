@@ -18,7 +18,7 @@
  *     (`spawnAndAwaitChild`) against the CF `LocationSheetWorkflow`.
  *   - The chained `regenerate-frames` child invocation is stubbed pending
  *     its own CF port (Wave 3 batch). The `build-regenerate-snapshot` step
- *     lives in `regenerateFramesIfNeeded` for diff parity with the QStash
+ *     lives in `regenerateShotsIfNeeded` for diff parity with the QStash
  *     original; the stub fires immediately after the snapshot step so the
  *     workflow falls back to QStash via the registry switch. */
 
@@ -50,8 +50,8 @@ const logger = getLogger(['openstory', 'workflow', 'recast-location']);
 
 type RecastLocationWorkflowResult = {
   referenceImageUrl: string;
-  framesRegenerated: number;
-  framesFailed: number;
+  shotsRegenerated: number;
+  shotsFailed: number;
 };
 
 /**
@@ -63,15 +63,15 @@ type RecastLocationWorkflowResult = {
  * Lives in its own helper to mirror the QStash original's flow: snapshot
  * building runs as its own step before the child kicks off.
  */
-async function regenerateFramesIfNeeded(
+async function regenerateShotsIfNeeded(
   step: WorkflowStep,
   env: CloudflareEnv,
   parentInstanceId: string,
   scopedDb: ScopedDb,
   input: RecastLocationWorkflowInput
-): Promise<{ framesRegenerated: number; framesFailed: number }> {
+): Promise<{ shotsRegenerated: number; shotsFailed: number }> {
   if (input.affectedShotIds.length === 0) {
-    return { framesRegenerated: 0, framesFailed: 0 };
+    return { shotsRegenerated: 0, shotsFailed: 0 };
   }
 
   const regenerateBody = await step.do(
@@ -145,8 +145,8 @@ async function regenerateFramesIfNeeded(
   });
 
   return {
-    framesRegenerated: input.affectedShotIds.length,
-    framesFailed: 0,
+    shotsRegenerated: input.affectedShotIds.length,
+    shotsFailed: 0,
   };
 }
 
@@ -218,7 +218,7 @@ export class RecastLocationWorkflow extends OpenStoryWorkflowEntrypoint<RecastLo
     );
 
     // Step 2: Regenerate affected frames via Pattern 3 spawn.
-    const { framesRegenerated, framesFailed } = await regenerateFramesIfNeeded(
+    const { shotsRegenerated, shotsFailed } = await regenerateShotsIfNeeded(
       step,
       this.env,
       event.instanceId,
@@ -228,14 +228,14 @@ export class RecastLocationWorkflow extends OpenStoryWorkflowEntrypoint<RecastLo
 
     if (input.affectedShotIds.length > 0) {
       logger.info(
-        `[RecastLocationWorkflow:cf] Regenerated ${framesRegenerated} frames for ${input.locationName}`
+        `[RecastLocationWorkflow:cf] Regenerated ${shotsRegenerated} shots for ${input.locationName}`
       );
     }
 
     return {
       referenceImageUrl: sheetResult.referenceImageUrl,
-      framesRegenerated,
-      framesFailed,
+      shotsRegenerated,
+      shotsFailed,
     };
   }
 
