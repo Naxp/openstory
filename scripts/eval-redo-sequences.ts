@@ -180,7 +180,9 @@ async function evalSequence(seq: SeqData, model: string): Promise<Result> {
   try {
     const ordered = [...seq.frames].sort((a, b) => a.order - b.order);
     const images = await Promise.all(
-      ordered.map((f) => (f.imageUrl ? fetchImageB64(f.imageUrl) : null))
+      ordered.map((f) =>
+        f.imageUrl ? fetchImageB64(f.imageUrl) : Promise.resolve(null)
+      )
     );
     const gotImages = images.filter((b): b is string => b !== null);
     if (gotImages.length === 0) throw new Error('no images fetched');
