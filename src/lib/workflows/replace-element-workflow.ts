@@ -197,7 +197,12 @@ export class ReplaceElementWorkflow extends OpenStoryWorkflowEntrypoint<ReplaceE
     scopedDb: ScopedDb
   ): Promise<ReplaceElementWorkflowResult> {
     const input = event.payload;
-    const { sequenceId, elementId, affectedFrameIds, newImageUrl } = input;
+    const {
+      sequenceId,
+      elementId,
+      affectedShotIds: affectedFrameIds,
+      newImageUrl,
+    } = input;
     let token = input.token;
 
     logger.info(

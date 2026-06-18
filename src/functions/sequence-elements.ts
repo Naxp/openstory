@@ -364,7 +364,7 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
       }
     );
 
-    const affectedFrameIds =
+    const affectedShotIds =
       await context.scopedDb.sequenceElements.getFrameIdsForElement(
         context.sequence.id,
         data.elementId
@@ -379,7 +379,7 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
       previousDescription,
       newImageUrl: data.publicUrl,
       newFilename: data.filename,
-      affectedFrameIds,
+      affectedShotIds,
     };
 
     // If the trigger throws, the row is stranded in `analyzing` — restore
@@ -415,7 +415,7 @@ export const replaceSequenceElementFn = createServerFn({ method: 'POST' })
 
     return {
       element: updated,
-      affectedFrameIds,
+      affectedShotIds,
       workflowRunId,
     };
   });

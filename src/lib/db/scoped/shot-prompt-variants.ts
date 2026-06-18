@@ -97,7 +97,7 @@ export function createShotPromptVariantsMethods(db: Database) {
      * The variant row is the source of truth; the cached column on `shots`
      * is a read-path optimization. To make retries safe, AI-generated
      * rows are deduped by the unique partial index on
-     * `(frame_id, prompt_type, input_hash) WHERE input_hash IS NOT NULL`:
+     * `(shot_id, prompt_type, input_hash) WHERE input_hash IS NOT NULL`:
      * an insert that conflicts with an existing row no-ops, the existing row
      * is fetched, and the cached pointer is updated as normal.
      *

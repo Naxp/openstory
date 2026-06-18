@@ -117,7 +117,7 @@ export const recastLocationFn = createServerFn({ method: 'POST' })
       { locationId: data.locationId, status: 'generating' }
     );
 
-    const affectedFrameIds =
+    const affectedShotIds =
       await context.scopedDb.sequenceLocations.getFrameIdsForLocation(
         location.sequenceId,
         data.locationId
@@ -135,7 +135,7 @@ export const recastLocationFn = createServerFn({ method: 'POST' })
         referenceImageUrl: data.referenceImageUrl,
         libraryLocationDescription: data.description,
         imageModel: safeTextToImageModel(sequence.imageModel),
-        affectedFrameIds,
+        affectedShotIds,
         styleConfig,
       } satisfies RecastLocationWorkflowInput,
       { label: buildWorkflowLabel(location.sequenceId) }
@@ -144,6 +144,6 @@ export const recastLocationFn = createServerFn({ method: 'POST' })
     return {
       locationId: data.locationId,
       referenceWorkflowRunId: workflowRunId,
-      affectedFrameIds,
+      affectedShotIds,
     };
   });

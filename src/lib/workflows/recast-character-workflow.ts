@@ -68,7 +68,7 @@ async function regenerateFramesIfNeeded(
   scopedDb: ScopedDb,
   input: RecastCharacterWorkflowInput
 ): Promise<{ framesRegenerated: number; framesFailed: number }> {
-  if (input.affectedFrameIds.length === 0) {
+  if (input.affectedShotIds.length === 0) {
     return { framesRegenerated: 0, framesFailed: 0 };
   }
 
@@ -89,7 +89,7 @@ async function regenerateFramesIfNeeded(
     awaitStepName: 'await-regenerate-frames',
   });
   return {
-    framesRegenerated: input.affectedFrameIds.length,
+    framesRegenerated: input.affectedShotIds.length,
     framesFailed: 0,
   };
 }
@@ -116,11 +116,11 @@ async function buildRegeneratePayload(
     scopedDb.characters.listWithSheets(sequenceId),
     scopedDb.sequenceLocations.listWithReferences(sequenceId),
     scopedDb.sequenceElements.list(sequenceId),
-    scopedDb.shots.getByIds(input.affectedFrameIds),
+    scopedDb.shots.getByIds(input.affectedShotIds),
   ]);
-  if (frames.length !== input.affectedFrameIds.length) {
+  if (frames.length !== input.affectedShotIds.length) {
     const found = new Set(frames.map((f) => f.id));
-    const missing = input.affectedFrameIds.filter((id) => !found.has(id));
+    const missing = input.affectedShotIds.filter((id) => !found.has(id));
     throw new Error(
       `[RecastCharacterWorkflow:cf] Missing frames for ${input.characterName}: ${missing.join(', ')}`
     );
@@ -144,7 +144,7 @@ async function buildRegeneratePayload(
     userId: input.userId,
     teamId: input.teamId,
     sequenceId,
-    frameIds: input.affectedFrameIds,
+    shotIds: input.affectedShotIds,
     triggerKind: 'character' as const,
     triggerId: input.characterDbId,
     imageModel,
@@ -169,7 +169,7 @@ export class RecastCharacterWorkflow extends OpenStoryWorkflowEntrypoint<RecastC
       'build-character-sheet-snapshot',
       async (): Promise<CharacterSheetWorkflowInput> => {
         logger.info(
-          `[RecastCharacterWorkflow:cf] Starting recast for ${input.characterName} with ${input.affectedFrameIds.length} affected frames`
+          `[RecastCharacterWorkflow:cf] Starting recast for ${input.characterName} with ${input.affectedShotIds.length} affected frames`
         );
         const talentSheetInputHash = await resolveTalentSheetHash(
           scopedDb,

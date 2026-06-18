@@ -277,7 +277,7 @@ export const MobileSceneDrawer: React.FC<MobileSceneDrawerProps> = ({
                   <>
                     <Video className="mr-2 h-4 w-4" />
                     Generate {eligibleFrames.length} / {totalShots}{' '}
-                    {totalShots === 1 ? 'frame' : 'frames'}
+                    {totalShots === 1 ? 'shot' : 'shots'}
                   </>
                 )}
               </Button>

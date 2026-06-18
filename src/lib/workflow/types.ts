@@ -321,8 +321,8 @@ export type RegenerateShotSnapshot = {
  * docs/architecture/workflow-snapshots-and-content-hash-staleness.md.
  */
 export interface RegenerateShotsWorkflowInput extends SequenceWorkflowContext {
-  /** Frame IDs to regenerate */
-  frameIds: string[];
+  /** Shot IDs to regenerate */
+  shotIds: string[];
   /**
    * What kind of entity triggered this regeneration. Drives which realtime
    * channel the workflow emits start/complete/failed events on.
@@ -366,8 +366,8 @@ export interface RecastCharacterWorkflowInput extends SequenceWorkflowContext {
   talentMetadata?: CharacterBibleEntry;
   /** Talent description */
   talentDescription?: string;
-  /** Frame IDs to regenerate after sheet generation */
-  affectedFrameIds: string[];
+  /** Shot IDs to regenerate after sheet generation */
+  affectedShotIds: string[];
   /** Sequence style config to apply to the character sheet */
   styleConfig?: StyleConfig;
 }
@@ -688,8 +688,8 @@ export interface RecastLocationWorkflowInput extends SequenceWorkflowContext {
   referenceImageUrl?: string;
   /** Library location description */
   libraryLocationDescription?: string;
-  /** Frame IDs to regenerate after sheet generation */
-  affectedFrameIds: string[];
+  /** Shot IDs to regenerate after sheet generation */
+  affectedShotIds: string[];
   /** Sequence style config to apply to the location sheet */
   styleConfig?: StyleConfig;
 }
@@ -948,7 +948,7 @@ export interface ReplaceElementWorkflowInput extends SequenceWorkflowContext {
   /** Original filename of the new image (for vision analysis context) */
   newFilename: string;
   /** Frame IDs to edit using the new element */
-  affectedFrameIds: string[];
+  affectedShotIds: string[];
   /** Image model to use for the edit (defaults to nano_banana_2 for edit support) */
   imageModel?: TextToImageModel;
 }

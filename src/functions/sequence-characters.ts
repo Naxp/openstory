@@ -132,7 +132,7 @@ export const recastCharacterFn = createServerFn({ method: 'POST' })
       }
     );
 
-    const affectedFrameIds =
+    const affectedShotIds =
       await context.scopedDb.characters.getFrameIdsForCharacter(
         character.sequenceId,
         data.characterId
@@ -167,7 +167,7 @@ export const recastCharacterFn = createServerFn({ method: 'POST' })
       talentDescription:
         `This character must look exactly like ${talentWithSheets.name}. ${talentWithSheets.description ?? ''}`.trim(),
       imageModel: safeTextToImageModel(sequence.imageModel),
-      affectedFrameIds,
+      affectedShotIds,
       styleConfig,
     };
 
@@ -181,6 +181,6 @@ export const recastCharacterFn = createServerFn({ method: 'POST' })
       character: updatedCharacter,
       talentId: data.talentId,
       sheetWorkflowRunId: workflowRunId,
-      affectedFrameIds,
+      affectedShotIds,
     };
   });

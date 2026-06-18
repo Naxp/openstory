@@ -272,7 +272,7 @@ const SceneListComponent: React.FC<SceneListProps> = ({
               <>
                 <Video className="mr-2 h-4 w-4" />
                 Generate {notStartedShots.length} / {totalShots}{' '}
-                {totalShots === 1 ? 'frame' : 'frames'}
+                {totalShots === 1 ? 'shot' : 'shots'}
               </>
             )}
           </Button>

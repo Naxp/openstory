@@ -61,7 +61,7 @@ const meta = {
   decorators: [
     (Story, context) => {
       // Get frames from story parameters (not args since ScenesView doesn't accept them)
-      const frames = context.parameters.frames as Shot[];
+      const shots = context.parameters.frames as Shot[];
       const sequenceId = context.args.sequenceId || 'mock-sequence';
       const sequenceOverrides = context.parameters
         .sequenceOverrides as Partial<Sequence>;
@@ -76,7 +76,7 @@ const meta = {
       });
 
       // Pre-populate the cache with mock data using the correct query keys
-      queryClient.setQueryData(['frames', 'list', sequenceId], frames);
+      queryClient.setQueryData(['shots', 'list', sequenceId], shots);
       queryClient.setQueryData(['sequences', 'detail', sequenceId], {
         ...mockSequence,
         id: sequenceId,

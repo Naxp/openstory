@@ -29,7 +29,7 @@ import { getLogger } from '@/lib/observability/logger';
 
 const logger = getLogger(['openstory', 'serverFn', 'shots']);
 
-const frameIdInputSchema = z.object({
+const shotIdInputSchema = z.object({
   sequenceId: ulidSchema,
   shotId: ulidSchema,
 });
@@ -509,7 +509,7 @@ export const updateShotFn = createServerFn({ method: 'POST' })
 
 export const deleteShotFn = createServerFn({ method: 'POST' })
   .middleware([frameAccessMiddleware])
-  .inputValidator(zodValidator(frameIdInputSchema))
+  .inputValidator(zodValidator(shotIdInputSchema))
   .handler(async ({ data, context }) => {
     await context.scopedDb.shots.delete(data.shotId);
     return { success: true, sequenceId: data.sequenceId };
@@ -559,7 +559,7 @@ export const reorderShotsFn = createServerFn({ method: 'POST' })
  */
 export const getShotStalenessFn = createServerFn({ method: 'GET' })
   .middleware([frameAccessMiddleware])
-  .inputValidator(zodValidator(frameIdInputSchema))
+  .inputValidator(zodValidator(shotIdInputSchema))
   .handler(async ({ context }) => {
     const { shot: frame, sequence, scopedDb } = context;
 
@@ -703,7 +703,7 @@ export const getShotStalenessFn = createServerFn({ method: 'GET' })
  */
 export const getShotDownloadUrlFn = createServerFn({ method: 'GET' })
   .middleware([frameAccessMiddleware])
-  .inputValidator(zodValidator(frameIdInputSchema))
+  .inputValidator(zodValidator(shotIdInputSchema))
   .handler(async ({ context }) => {
     const { shot: frame } = context;
 

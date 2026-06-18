@@ -119,7 +119,7 @@ export function useSetSequenceModel() {
           queryKey: VARIANTS_KEY[variantType](sequenceId),
         }),
         queryClient.invalidateQueries({
-          queryKey: ['frames', 'list', sequenceId],
+          queryKey: ['shots', 'list', sequenceId],
         }),
       ]);
     },
