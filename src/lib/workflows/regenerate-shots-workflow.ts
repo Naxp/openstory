@@ -58,8 +58,8 @@ type ShotResult =
 type RegenerateFramesResult = {
   totalFrames: number;
   successCount: number;
-  failedFrames: string[];
-  divergedFrameIds: string[];
+  failedShots: string[];
+  divergedShotIds: string[];
 };
 
 type ImageChildOutput = {
@@ -111,8 +111,8 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
       return {
         totalFrames: 0,
         successCount: 0,
-        failedFrames: [],
-        divergedFrameIds: [],
+        failedShots: [],
+        divergedShotIds: [],
       };
     }
 
@@ -407,23 +407,23 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     // Single pass over reconcileOutcomes with an exhaustive switch.
     // Adding a new ReconcileOutcome variant fails compile here (the `never`
     // assignment) instead of silently dropping those frames from every tally.
-    const convergentFrameIds: string[] = [];
-    const divergedFrameIds: string[] = [];
-    const skippedDeletedFrameIds: string[] = [];
-    const reconcileFailedFrameIds: string[] = [];
+    const convergentShotIds: string[] = [];
+    const divergedShotIds: string[] = [];
+    const skippedDeletedShotIds: string[] = [];
+    const reconcileFailedShotIds: string[] = [];
     for (const [shotId, outcome] of reconcileOutcomes) {
       switch (outcome.kind) {
         case 'convergent':
-          convergentFrameIds.push(shotId);
+          convergentShotIds.push(shotId);
           break;
         case 'divergent':
-          divergedFrameIds.push(shotId);
+          divergedShotIds.push(shotId);
           break;
         case 'skipped-deleted':
-          skippedDeletedFrameIds.push(shotId);
+          skippedDeletedShotIds.push(shotId);
           break;
         case 'failed':
-          reconcileFailedFrameIds.push(shotId);
+          reconcileFailedShotIds.push(shotId);
           break;
         default: {
           const _exhaustive: never = outcome;
@@ -442,10 +442,10 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     // frames preserve the user's live primary, so their existing shot
     // variants are still correct.
     await step.do('trigger-variant-regen', async () => {
-      const convergentFrameIdSet = new Set(convergentFrameIds);
+      const convergentShotIdSet = new Set(convergentShotIds);
       const convergent = imageResults.filter(
         (r): r is Extract<ShotResult, { success: true }> =>
-          r.success && convergentFrameIdSet.has(r.shotId)
+          r.success && convergentShotIdSet.has(r.shotId)
       );
 
       await Promise.all(
@@ -486,12 +486,12 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
     // Success = frames whose primary write was reconciled (convergent kept
     // the primary; divergent saved an alternate). Image-generation failures,
     // deleted-mid-flight skips, and reconcile failures don't count.
-    const imageFailedFrameIds = imageResults
+    const imageFailedShotIds = imageResults
       .filter((r) => !r.success)
       .map((r) => r.shotId);
 
-    const failedFrames = [...imageFailedFrameIds, ...reconcileFailedFrameIds];
-    const successCount = convergentFrameIds.length + divergedFrameIds.length;
+    const failedShots = [...imageFailedShotIds, ...reconcileFailedShotIds];
+    const successCount = convergentShotIds.length + divergedShotIds.length;
 
     await step.do('emit-complete', async () => {
       await emitRecastEvent({
@@ -500,19 +500,19 @@ export class RegenerateShotsWorkflow extends OpenStoryWorkflowEntrypoint<Regener
         sequenceId,
         triggerId,
         successCount,
-        failedCount: failedFrames.length,
+        failedCount: failedShots.length,
       });
     });
 
     logger.info(
-      `[RegenerateFramesWorkflow:cf] Completed: ${successCount} success, ${failedFrames.length} failed, ${divergedFrameIds.length} diverged, ${skippedDeletedFrameIds.length} skipped-deleted`
+      `[RegenerateFramesWorkflow:cf] Completed: ${successCount} success, ${failedShots.length} failed, ${divergedShotIds.length} diverged, ${skippedDeletedShotIds.length} skipped-deleted`
     );
 
     return {
       totalFrames: snapshots.length,
       successCount,
-      failedFrames,
-      divergedFrameIds,
+      failedShots,
+      divergedShotIds,
     };
   }
 
