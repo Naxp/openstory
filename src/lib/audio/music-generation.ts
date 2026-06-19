@@ -202,12 +202,8 @@ async function callFalAudio(
     throw new Error('No audio URL returned from music generation');
   }
 
-  // Exact cost from fal's reported billed units (via providerUsageDetails).
-  const unitsBilled = result.usage?.providerUsageDetails?.['unitsBilled'];
-  const cost = falCostFromUnits(
-    modelConfig.id,
-    typeof unitsBilled === 'number' ? unitsBilled : undefined
-  );
+  // Exact cost from fal's reported billed units.
+  const cost = falCostFromUnits(modelConfig.id, result.usage?.unitsBilled);
 
   return {
     success: true,
