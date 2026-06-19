@@ -71,13 +71,13 @@ const LOG_METADATA = { phase: PHASE.number, phaseName: PHASE.name };
 /**
  * Shape produced by the streaming step (post JSON round-trip). Mirrors the
  * QStash `streamResult` value — note `projectMetadata` is preserved so the
- * reconcile step can extract the title, and `frameMapping` reflects only the
- * frames written inline during streaming.
+ * reconcile step can extract the title, and `shotMapping` reflects only the
+ * shots written inline during streaming.
  */
 type StreamResult = {
   scenes: SceneSplittingResult['scenes'];
   projectMetadata: SceneSplittingResult['projectMetadata'];
-  frameMapping: Array<{ sceneId: string; shotId: string }>;
+  shotMapping: Array<{ analysisSceneId: string; shotId: string }>;
   characterBible: SceneSplittingResult['characterBible'];
   locationBible: SceneSplittingResult['locationBible'];
   elementBible: SceneSplittingResult['elementBible'];
@@ -153,7 +153,8 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         );
 
         const parser = createStreamingSceneParser();
-        const frameMapping: Array<{ sceneId: string; shotId: string }> = [];
+        const shotMapping: Array<{ analysisSceneId: string; shotId: string }> =
+          [];
         let finalText = '';
         let chunkCount = 0;
         let prevScene: SceneSplittingScene | undefined = undefined;
@@ -185,7 +186,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
 
           if (chunkCount % 20 === 0) {
             logger.info(
-              `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] chunk #${chunkCount} | ${finalText.length} chars | ${frameMapping.length} frames so far`
+              `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] chunk #${chunkCount} | ${finalText.length} chars | ${shotMapping.length} shots so far`
             );
           }
 
@@ -290,8 +291,8 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                   `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Frame created: ${frame.id} for scene "${ev.scene.sceneId}"`
                 );
 
-                frameMapping.push({
-                  sceneId: ev.scene.sceneId,
+                shotMapping.push({
+                  analysisSceneId: ev.scene.sceneId,
                   shotId: frame.id,
                 });
 
@@ -384,7 +385,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           throw new NonRetryableError(
             `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Stream ended without a validated structured-output payload. ` +
               `chunks=${chunkCount} chars=${finalText.length} ` +
-              `streamedScenes=${frameMapping.length} model=${modelId}. ` +
+              `streamedScenes=${shotMapping.length} model=${modelId}. ` +
               `Likely cause: provider did not honor responseFormat:json_schema.`
           );
         }
@@ -400,7 +401,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         const streamResult: StreamResult = {
           scenes: parsed.scenes,
           projectMetadata: parsed.projectMetadata,
-          frameMapping,
+          shotMapping,
           characterBible: parsed.characterBible,
           locationBible: parsed.locationBible,
           elementBible: parsed.elementBible,
@@ -415,7 +416,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
     const streamResult: StreamResult = JSON.parse(streamResultJson);
     if (
       !Array.isArray(streamResult.scenes) ||
-      !Array.isArray(streamResult.frameMapping)
+      !Array.isArray(streamResult.shotMapping)
     ) {
       throw new NonRetryableError(
         'scene-splitting-stream returned a malformed result from cache',
@@ -435,7 +436,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           return JSON.stringify({
             scenes,
             title: resolvedTitle,
-            frameMapping: streamResult.frameMapping,
+            shotMapping: streamResult.shotMapping,
             characterBible: streamResult.characterBible,
             locationBible: streamResult.locationBible,
             elementBible: streamResult.elementBible,
@@ -465,7 +466,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         const reconciledFrames = await scopedDb.shots.bulkUpsert(frameInserts);
         const reconciledMapping = reconciledFrames.map((f) => ({
           // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: metadata is JSONB, can be null despite Drizzle types
-          sceneId: f.metadata?.sceneId || '',
+          analysisSceneId: f.metadata?.sceneId || '',
           shotId: f.id,
         }));
 
@@ -479,9 +480,9 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
 
         // Emit frame:created for any frames the streaming step didn't cover.
         const streamedSceneIds = new Set(
-          streamResult.frameMapping.map((f) => f.sceneId)
+          streamResult.shotMapping.map((f) => f.analysisSceneId)
         );
-        for (const { sceneId: sId, shotId } of reconciledMapping) {
+        for (const { analysisSceneId: sId, shotId } of reconciledMapping) {
           if (!streamedSceneIds.has(sId)) {
             const scene = scenes.find((s) => s.sceneId === sId);
             await getGenerationChannel(sequenceId).emit(
@@ -498,7 +499,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         return JSON.stringify({
           scenes,
           title: resolvedTitle,
-          frameMapping: reconciledMapping,
+          shotMapping: reconciledMapping,
           characterBible: streamResult.characterBible,
           locationBible: streamResult.locationBible,
           elementBible: streamResult.elementBible,
@@ -508,7 +509,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
     const reconciled: SceneSplitWorkflowResult = JSON.parse(reconcileJson);
     if (
       !Array.isArray(reconciled.scenes) ||
-      !Array.isArray(reconciled.frameMapping)
+      !Array.isArray(reconciled.shotMapping)
     ) {
       throw new NonRetryableError(
         'reconcile-frames returned a malformed result from cache',

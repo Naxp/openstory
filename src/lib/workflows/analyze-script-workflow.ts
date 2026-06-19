@@ -122,7 +122,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
     );
 
     // ----------------------------------------------------------------------
-    // PHASE 1: scene-split (LLM stream → scenes/bibles/frameMapping)
+    // PHASE 1: scene-split (LLM stream → scenes/bibles/shotMapping)
     // ----------------------------------------------------------------------
     await step.do('phase-1-start', async () => {
       await getGenerationChannel(sequenceId).emit('generation.phase:start', {
@@ -208,13 +208,8 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       timeout: '45 minutes',
     });
 
-    const {
-      scenes,
-      frameMapping,
-      characterBible,
-      locationBible,
-      elementBible,
-    } = sceneSplitResult;
+    const { scenes, shotMapping, characterBible, locationBible, elementBible } =
+      sceneSplitResult;
 
     // ----------------------------------------------------------------------
     // PHASE 2: talent + location matching in parallel
@@ -402,7 +397,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
             elementBible,
             styleConfig,
             analysisModelId,
-            frameMapping,
+            shotMapping,
           },
           spawnStepName: 'spawn-visual-prompts',
           awaitStepName: 'await-visual-prompts',
@@ -478,7 +473,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
       charactersWithSheets,
       locationsWithSheets,
       elements: allElements,
-      frameMapping,
+      shotMapping,
       imageModel,
       imageModels,
       aspectRatio,
@@ -548,7 +543,7 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           teamId: input.teamId,
           sequenceId,
           scenesWithVisualPrompts,
-          frameMapping,
+          shotMapping,
           aspectRatio,
           characterBible: castCharacterBible,
           locationBible,
@@ -632,8 +627,8 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
           return [];
         }
 
-        const matchedFrame = frameMapping.find(
-          (f) => f.sceneId === scene.sceneId
+        const matchedFrame = shotMapping.find(
+          (f) => f.analysisSceneId === scene.sceneId
         );
 
         const characterTags = scene.continuity?.characterTags;

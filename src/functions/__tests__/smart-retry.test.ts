@@ -91,6 +91,8 @@ function makeFrame(overrides: Partial<Shot> = {}): Shot {
   return {
     id: 'frame-1',
     sequenceId: 'seq_1',
+    sceneId: null,
+    shotNumber: null,
     orderIndex: 0,
     description: 'A scene',
     durationMs: 3000,
