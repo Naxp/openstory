@@ -24,7 +24,7 @@
  *   bun scripts/score-style-previews.ts                       # score all
  *   bun scripts/score-style-previews.ts --filter "Pop-Up Book"
  *   bun scripts/score-style-previews.ts --scene action        # only that scene
- *   bun scripts/score-style-previews.ts --model openai/gpt-5.4 --threshold 6.5
+ *   bun scripts/score-style-previews.ts --model openai/gpt-5.5 --threshold 6.5
  */
 import type { TextModel } from '@/lib/ai/models';
 import { callLLM } from '@/lib/ai/llm-client';
