@@ -3,6 +3,7 @@ import type { StyleConfig } from '@/lib/db/schema/libraries';
 import { dbSceneId } from '@/lib/db/schema';
 import type { Scene } from './scene-analysis.schema';
 import {
+  ACTIVE_MAX_SHOTS_PER_SCENE,
   buildSceneInserts,
   buildShotInsertsForScene,
   shotMetadataSceneId,
@@ -154,7 +155,10 @@ describe('shotMetadataSceneId', () => {
 describe('buildShotInsertsForScene', () => {
   const sceneId = dbSceneId('scene-row-ulid');
 
-  it('expands a multi-shot scene into N shot rows with unique sceneId tokens', () => {
+  it('gates a multi-shot scene to ONE persisted shot until #953 (bare token)', () => {
+    // makeSceneWithShots() emits 2 shots; ACTIVE_MAX_SHOTS_PER_SCENE caps
+    // persistence to 1 (multi-shot emission gated off pending per-shot images).
+    // shotCount → 1 ⇒ the metadata.sceneId token stays the BARE analysis id.
     const rows = buildShotInsertsForScene({
       sequenceId: 'seq-1',
       sceneId,
@@ -163,15 +167,14 @@ describe('buildShotInsertsForScene', () => {
       baseOrderIndex: 0,
     });
 
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.metadata?.sceneId)).toEqual([
-      'analysis-scene-1#1',
-      'analysis-scene-1#2',
-    ]);
-    expect(rows.map((r) => r.shotNumber)).toEqual([1, 2]);
-    expect(rows.map((r) => r.orderIndex)).toEqual([0, 1]);
-    // Every shot links to the same persisted scene row.
-    expect(rows.every((r) => r.sceneId === sceneId)).toBe(true);
+    expect(rows).toHaveLength(ACTIVE_MAX_SHOTS_PER_SCENE);
+    expect(rows).toHaveLength(1);
+    // Bare id (no `#shotNumber` suffix) — so the per-shot downstream chain and
+    // render strategy behave exactly as a single-shot scene.
+    expect(rows[0]?.metadata?.sceneId).toBe('analysis-scene-1');
+    expect(rows[0]?.shotNumber).toBe(1);
+    expect(rows[0]?.orderIndex).toBe(0);
+    expect(rows[0]?.sceneId).toBe(sceneId);
   });
 
   it('preserves the bare analysis id for a single-shot scene (legacy parity)', () => {
@@ -204,8 +207,9 @@ describe('buildShotInsertsForScene', () => {
     expect(shot?.metadata?.prompts?.motion?.fullPrompt).toBeTruthy();
   });
 
-  it('continues the global orderIndex from baseOrderIndex across scenes', () => {
-    // Scene A (2 shots) at base 0 → 0,1; scene B (2 shots) should start at 2.
+  it('starts each scene at its baseOrderIndex (one shot while gated)', () => {
+    // Gated to 1 shot/scene: a scene at base 2 persists a single shot at 2.
+    // (#953 re-enables N shots → baseOrderIndex..baseOrderIndex+N-1.)
     const rowsB = buildShotInsertsForScene({
       sequenceId: 'seq-1',
       sceneId,
@@ -213,6 +217,6 @@ describe('buildShotInsertsForScene', () => {
       styleConfig,
       baseOrderIndex: 2,
     });
-    expect(rowsB.map((r) => r.orderIndex)).toEqual([2, 3]);
+    expect(rowsB.map((r) => r.orderIndex)).toEqual([2]);
   });
 });

@@ -28,6 +28,21 @@ import { deriveShotScenes } from './shot-list.derive';
 import type { SceneWithShots } from './shot-list.schema';
 
 /**
+ * Live cap on shots PERSISTED per scene (#910 / #953).
+ *
+ * The render PLUMBING for multi-shot scenes ships in #910, but multi-shot
+ * EMISSION is gated OFF until #953 builds the per-shot start-image pipeline —
+ * without it a multi-shot scene can't actually render (no per-shot anchor
+ * images) and the downstream per-shot motion trigger would receive an empty
+ * shotId. Capping every persisted scene to ONE shot keeps the schema flip +
+ * `deriveShotScenes` (#908) live and 1-shot-safe: the `metadata.sceneId` token
+ * stays the bare analysis id, and `resolveRenderStrategy` always returns
+ * `per-shot`, so the multi-shot render path is never reached. Raise this to
+ * `MAX_SHOTS_PER_SCENE` in #953 once per-shot images exist.
+ */
+export const ACTIVE_MAX_SHOTS_PER_SCENE = 1;
+
+/**
  * Build the `scenes` insert rows for a sequence from the ordered analysis
  * scenes. `orderIndex` is the scene's position in the analysis output (0-based),
  * which is the unique key the `scenes` table sorts and de-duplicates on.
@@ -96,7 +111,14 @@ export function buildShotInsertsForScene({
   baseOrderIndex: number;
   imageModel?: string;
 }): NewShot[] {
-  const derived = deriveShotScenes(scene, styleConfig);
+  // Gated to ACTIVE_MAX_SHOTS_PER_SCENE (1) until per-shot images land — #953.
+  // deriveShotScenes stays the single derivation source; we just cap how many
+  // of its shots we persist, so a scene is always renderable today (one shot,
+  // bare sceneId token, per-shot render strategy).
+  const derived = deriveShotScenes(scene, styleConfig).slice(
+    0,
+    ACTIVE_MAX_SHOTS_PER_SCENE
+  );
   const shotCount = derived.length;
 
   return derived.map((shot, i) => {
