@@ -1,15 +1,8 @@
-import { MotionModelSelector } from '@/components/model/motion-model-selector';
 import { MusicModelSelector } from '@/components/model/music-model-selector';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  DEFAULT_MUSIC_MODEL,
-  DEFAULT_VIDEO_MODEL,
-  videoModelSupportsAudio,
-  type AudioModel,
-  type ImageToVideoModel,
-} from '@/lib/ai/models';
+import { DEFAULT_MUSIC_MODEL, type AudioModel } from '@/lib/ai/models';
 import type { AspectRatio } from '@/lib/constants/aspect-ratios';
 import type { Shot, ShotVariant } from '@/lib/db/schema';
 import { Loader2, Video } from 'lucide-react';
@@ -18,10 +11,9 @@ import { SceneListItem } from './scene-list-item';
 
 export type BatchGenerateMotionArgs = {
   includeMusic: boolean;
-  motionModel: ImageToVideoModel;
   musicModel: AudioModel;
-  /** When the motion model emits audio (sfx/dialogue/ambient), allow the
-   *  user to suppress it. Ignored for models without audio output. */
+  /** When any scene's motion model emits audio (sfx/dialogue/ambient), allow
+   *  the user to suppress it. Ignored for models without audio output. */
   generateAudio: boolean;
 };
 
@@ -39,12 +31,8 @@ type SceneListProps = {
   /** Live divergent alternates for the current sequence (filtered per-frame). */
   divergentVariants?: ShotVariant[];
   onCompareDivergent?: (variant: ShotVariant) => void;
-  /** Initial motion model for the batch selector (from `sequence.videoModel`). */
-  initialMotionModel?: ImageToVideoModel;
   /** Initial music model for the batch selector (from `sequence.musicModel`). */
   initialMusicModel?: AudioModel;
-  /** Current style category — used to filter style-restricted motion models. */
-  styleCategory?: string;
   /**
    * Scenes the pinned image model hasn't generated yet (#547). Those cards show
    * a "No {model}" badge so the thumbnail (which still shows the primary image)
@@ -73,9 +61,7 @@ const SceneListComponent: React.FC<SceneListProps> = ({
   hideBatchButton = false,
   divergentVariants,
   onCompareDivergent,
-  initialMotionModel,
   initialMusicModel,
-  styleCategory,
   modelMissingFrameIds,
   modelMissingLabel,
 }) => {
@@ -93,25 +79,12 @@ const SceneListComponent: React.FC<SceneListProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [includeMusic, setIncludeMusic] = useState(true);
   const [generateAudio, setGenerateAudio] = useState(true);
-  const [motionModel, setMotionModel] = useState<ImageToVideoModel>(
-    initialMotionModel ?? DEFAULT_VIDEO_MODEL
-  );
   const [musicModel, setMusicModel] = useState<AudioModel>(
     initialMusicModel ?? DEFAULT_MUSIC_MODEL
   );
 
-  const motionSupportsAudio = videoModelSupportsAudio(motionModel);
-
   // Sync local selection when the sequence's saved model changes from outside
   // (e.g. after generation completes and the workflow persists the new model).
-  const prevInitialMotionRef = useRef(initialMotionModel);
-  if (
-    initialMotionModel &&
-    initialMotionModel !== prevInitialMotionRef.current
-  ) {
-    prevInitialMotionRef.current = initialMotionModel;
-    setMotionModel(initialMotionModel);
-  }
   const prevInitialMusicRef = useRef(initialMusicModel);
   if (initialMusicModel && initialMusicModel !== prevInitialMusicRef.current) {
     prevInitialMusicRef.current = initialMusicModel;
@@ -152,9 +125,8 @@ const SceneListComponent: React.FC<SceneListProps> = ({
     try {
       await onBatchGenerateMotion({
         includeMusic,
-        motionModel,
         musicModel,
-        generateAudio: motionSupportsAudio ? generateAudio : false,
+        generateAudio,
       });
     } finally {
       setIsGenerating(false);
@@ -223,19 +195,12 @@ const SceneListComponent: React.FC<SceneListProps> = ({
         </div>
       </ScrollArea>
 
-      {/* Sticky footer with Generate Motion button */}
+      {/* Sticky footer: sequence-level "generate all motion" (#909). Each shot
+          renders with its scene's chosen video model — picked in the scene
+          header — so there's no model selector here; this is the secondary
+          batch action across every scene. */}
       {showButton && (
         <div className="sticky bottom-0 border-t bg-background p-4 flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Motion model</span>
-            <MotionModelSelector
-              selectedModel={motionModel}
-              onModelChange={setMotionModel}
-              disabled={isGenerating || isMotionInProgress}
-              aspectRatio={aspectRatio}
-              styleCategory={styleCategory}
-            />
-          </div>
           {includeMusic && (
             <div className="flex flex-col gap-1">
               <span className="text-xs text-muted-foreground">Music model</span>
@@ -289,21 +254,19 @@ const SceneListComponent: React.FC<SceneListProps> = ({
               )}
             </span>
           </label>
-          {motionSupportsAudio && (
-            <label
-              htmlFor="batch-generate-audio"
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Checkbox
-                id="batch-generate-audio"
-                checked={generateAudio}
-                onCheckedChange={(checked) =>
-                  setGenerateAudio(checked === true)
-                }
-              />
-              <span>Include SFX &amp; dialogue</span>
-            </label>
-          )}
+          {/* Audio is opt-out for any scene whose model emits it; ignored
+              server-side for models without audio output. */}
+          <label
+            htmlFor="batch-generate-audio"
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+          >
+            <Checkbox
+              id="batch-generate-audio"
+              checked={generateAudio}
+              onCheckedChange={(checked) => setGenerateAudio(checked === true)}
+            />
+            <span>Include SFX &amp; dialogue</span>
+          </label>
         </div>
       )}
     </div>
@@ -321,9 +284,7 @@ const areEqual = (
     prevProps.selectedFrameId !== nextProps.selectedFrameId ||
     prevProps.aspectRatio !== nextProps.aspectRatio ||
     prevProps.musicPromptsReady !== nextProps.musicPromptsReady ||
-    prevProps.initialMotionModel !== nextProps.initialMotionModel ||
     prevProps.initialMusicModel !== nextProps.initialMusicModel ||
-    prevProps.styleCategory !== nextProps.styleCategory ||
     prevProps.modelMissingLabel !== nextProps.modelMissingLabel ||
     prevProps.modelMissingFrameIds !== nextProps.modelMissingFrameIds
   ) {

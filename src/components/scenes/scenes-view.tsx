@@ -4,6 +4,7 @@ import { ScenePlayer } from '@/components/motion/scene-player';
 import { MobileSceneDrawer } from '@/components/scenes/mobile-scene-drawer';
 import { SceneList } from '@/components/scenes/scene-list';
 import type { BatchGenerateMotionArgs } from '@/components/scenes/scene-list';
+import { SceneModelHeader } from '@/components/scenes/scene-model-header';
 import {
   SceneScriptPrompts,
   type TabValue,
@@ -24,7 +25,12 @@ import {
 } from '@/hooks/use-shots';
 import { useActiveImageModel } from '@/hooks/use-active-image-model';
 import { useActiveVideoModel } from '@/hooks/use-active-video-model';
-import { type ModelGenerationStatus } from '@/components/model/base-model-selector';
+import { useScenes } from '@/hooks/use-scenes';
+import {
+  resolveSceneImageModel,
+  resolveSceneVideoModel,
+} from '@/lib/model/resolve-scene-model';
+import { computeSceneModelStatuses } from '@/lib/model/scene-model-status';
 import { useStaleDetected } from '@/lib/realtime/use-stale-detected';
 import { DivergenceCompareDialog } from '@/components/scenes/divergence-compare-dialog';
 import { getDivergentVariantPromptDiffFn } from '@/functions/prompt-variants';
@@ -167,16 +173,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     Set<string>
   >(() => new Set());
 
-  const [imageModelOverride, setImageModelOverride] = useState<string | null>(
-    null
-  );
-
-  // Per-scene video-model preview (#545) — the motion mirror of
-  // imageModelOverride. Transient: resets on frame switch.
-  const [videoModelOverride, setVideoModelOverride] = useState<string | null>(
-    null
-  );
-
   // Poll sequence while a motion batch is in flight so per-frame statuses stay
   // fresh. The refetchInterval fn reads from the query cache each tick to
   // avoid a circular dependency between sequence state and the poll condition.
@@ -196,10 +192,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   const isProcessing = sequence?.status === 'processing';
   const { data: style } = useStyle(sequence?.styleId ?? '');
   const styleCategory = style?.category ?? undefined;
-  const sequenceMotionModel = safeImageToVideoModel(
-    sequence?.videoModel,
-    DEFAULT_VIDEO_MODEL
-  );
   const sequenceMusicModel = safeAudioModel(
     sequence?.musicModel,
     DEFAULT_MUSIC_MODEL
@@ -407,6 +399,19 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     [frames, curSelectedFrameId]
   );
 
+  // Scene-level model selection (#909): the image/video model is owned by the
+  // selected shot's scene. Resolve it through scene → sequence → default so the
+  // prompts panel + variant preview target the scene's chosen model rather than
+  // a per-shot picker.
+  const { data: scenes } = useScenes(sequenceId);
+  const selectedSceneId = selectedFrame?.sceneId ?? null;
+  const selectedScene = useMemo(
+    () => scenes?.find((s) => s.id === selectedSceneId),
+    [scenes, selectedSceneId]
+  );
+  const sceneImageModel = resolveSceneImageModel(selectedScene, sequence);
+  const sceneVideoModel = resolveSceneVideoModel(selectedScene, sequence);
+
   // In-flight retry state (#882) for the selected frame. Image retry matters
   // before the thumbnail exists; video retry after — the image entry is cleared
   // once it completes, so preferring it is correct in both stages.
@@ -424,38 +429,20 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     );
   }, [imageVariants, curSelectedFrameId]);
 
-  // Reset model overrides when switching frames
-  useEffect(() => {
-    setImageModelOverride(null);
-    setVideoModelOverride(null);
-  }, [curSelectedFrameId]);
-
-  // Derive variant preview state from model override + variants. The
-  // sequence-level header pin (#547) sits below an explicit per-scene override
-  // but above the frame's own model, so the previewed variant + Set/Generate
-  // state track whatever the header switched to.
-  const effectiveImageModel =
-    imageModelOverride ??
-    activeImageModel ??
-    safeTextToImageModel(selectedFrame?.imageModel, DEFAULT_IMAGE_MODEL);
+  // Variant preview now tracks the scene's chosen models (#909): the prompts
+  // panel's Generate/Set state and previewed variant target the model the scene
+  // is set to render with, replacing the former per-shot override.
+  const effectiveImageModel = sceneImageModel;
 
   const variantForSelectedModel = useMemo(() => {
     if (!selectedShotVariants) return undefined;
     return selectedShotVariants.find((v) => v.model === effectiveImageModel);
   }, [selectedShotVariants, effectiveImageModel]);
 
-  // Video equivalent (#545): the selected scene's video variant for the
-  // effective video model (override → frame's own model). Excludes divergent /
-  // discarded alternates so only the primary per-model row is matched.
-  // `null` = unknown: a never-generated frame has no recorded `motionModel`, so
-  // we surface no model rather than silently asserting DEFAULT_VIDEO_MODEL
-  // (which would attribute a model the scene was never generated with).
-  const effectiveVideoModel =
-    videoModelOverride ??
-    activeVideoModel ??
-    (selectedFrame?.motionModel
-      ? safeImageToVideoModel(selectedFrame.motionModel, DEFAULT_VIDEO_MODEL)
-      : null);
+  // Video equivalent: the selected scene's video variant for the scene's chosen
+  // video model. Excludes divergent / discarded alternates so only the primary
+  // per-model row is matched.
+  const effectiveVideoModel: string | null = sceneVideoModel;
 
   const videoVariantForSelectedModel = useMemo(() => {
     if (!curSelectedFrameId) return undefined;
@@ -469,58 +456,43 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
       );
   }, [videoVariantsByFrame, curSelectedFrameId, effectiveVideoModel]);
 
-  // Per-model generation status for the selected scene (#545) — feeds the
-  // ✓/⟳/! markers in the image + video model dropdowns. Primary rows only
-  // (divergent/discarded alternates are excluded).
-  // The "set" model is the one whose variant is the frame's live primary
-  // (url match), falling back to the frame's recorded model for legacy frames
-  // with no variant row. It gets the distinct ✓-in-circle marker; other
-  // completed models show a plain ✓ (selectable, then "Set" to promote).
-  const imageModelStatuses = useMemo(() => {
-    const map = new Map<string, ModelGenerationStatus>();
-    const variants = (selectedShotVariants ?? []).filter(
-      (v) => v.divergedAt === null && v.discardedAt === null
-    );
-    const primaryUrl = selectedFrame?.thumbnailUrl ?? null;
-    const setModel = primaryUrl
-      ? (variants.find((v) => v.url === primaryUrl)?.model ??
-        selectedFrame?.imageModel ??
-        null)
-      : null;
-    for (const v of variants) {
-      map.set(v.model, v.model === setModel ? 'set' : v.status);
+  // The shots that make up the selected scene. Today every scene is a single
+  // shot (#907 1:1), but the scene-granular coverage below aggregates across
+  // these so the markers stay correct once #910 lands multi-shot scenes.
+  const selectedSceneShots = useMemo(() => {
+    if (!frames) return [];
+    if (selectedSceneId) {
+      return frames.filter((f) => f.sceneId === selectedSceneId);
     }
-    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
-    return map;
-  }, [
-    selectedShotVariants,
-    selectedFrame?.thumbnailUrl,
-    selectedFrame?.imageModel,
-  ]);
+    // Orphan shot (no scene yet) — treat the shot itself as its scene.
+    return selectedFrame ? [selectedFrame] : [];
+  }, [frames, selectedSceneId, selectedFrame]);
 
-  const videoModelStatuses = useMemo(() => {
-    const map = new Map<string, ModelGenerationStatus>();
-    if (!curSelectedFrameId) return map;
-    const variants = (
-      videoVariantsByFrame.get(curSelectedFrameId) ?? []
-    ).filter((v) => v.divergedAt === null && v.discardedAt === null);
-    const primaryUrl = selectedFrame?.videoUrl ?? null;
-    const setModel = primaryUrl
-      ? (variants.find((v) => v.url === primaryUrl)?.model ??
-        selectedFrame?.motionModel ??
-        null)
-      : null;
-    for (const v of variants) {
-      map.set(v.model, v.model === setModel ? 'set' : v.status);
-    }
-    if (setModel && !map.has(setModel)) map.set(setModel, 'set');
-    return map;
-  }, [
-    videoVariantsByFrame,
-    curSelectedFrameId,
-    selectedFrame?.videoUrl,
-    selectedFrame?.motionModel,
-  ]);
+  // Per-model generation status for the selected SCENE (#909) — feeds the
+  // ✓/⟳/! markers in the scene header model pickers. A model is the scene's
+  // "set" model when it's the scene's chosen model (sceneImage/VideoModel);
+  // other models that have a completed variant for every shot in the scene read
+  // `completed`, any in-flight reads `generating`, else `failed`/`pending`.
+  // Primary rows only (divergent/discarded alternates excluded).
+  const imageModelStatuses = useMemo(
+    () =>
+      computeSceneModelStatuses({
+        shots: selectedSceneShots,
+        variantsByFrame: imageVariantsByFrame,
+        setModel: sceneImageModel,
+      }),
+    [selectedSceneShots, imageVariantsByFrame, sceneImageModel]
+  );
+
+  const videoModelStatuses = useMemo(
+    () =>
+      computeSceneModelStatuses({
+        shots: selectedSceneShots,
+        variantsByFrame: videoVariantsByFrame,
+        setModel: sceneVideoModel,
+      }),
+    [selectedSceneShots, videoVariantsByFrame, sceneVideoModel]
+  );
 
   const { previewVariantUrl, previewVariantVideoUrl, playerBadgeMessage } =
     useMemo(() => {
@@ -783,11 +755,12 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     }
   }, [sequenceId, queryClient]);
 
-  // Handler for batch motion generation (server determines eligible frames)
+  // Handler for batch motion generation (server determines eligible frames).
+  // The video model is resolved per-scene server-side (#909), so no model is
+  // passed here — each shot renders with its scene's chosen model.
   const handleBatchMotionGeneration = useCallback(
     async ({
       includeMusic,
-      motionModel,
       musicModel,
       generateAudio,
     }: BatchGenerateMotionArgs) => {
@@ -824,7 +797,6 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
         sequence_id: sequenceId,
         include_music: includeMusic,
         eligible_frame_count: eligibleFrameIds.length,
-        motion_model: motionModel,
         music_model: includeMusic ? musicModel : undefined,
         generate_audio: generateAudio,
       });
@@ -834,14 +806,12 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
           data: {
             sequenceId,
             includeMusic,
-            model: motionModel,
             musicModel: includeMusic ? musicModel : undefined,
             generateAudio,
           },
         });
-        // Server may have updated sequence.videoModel / sequence.musicModel to
-        // the batch picks; invalidate so the header badge, footer pre-fill,
-        // and per-frame fallback all reflect the new values.
+        // Server may have updated sequence.musicModel to the batch pick;
+        // invalidate so the header badge and footer pre-fill reflect it.
         void queryClient.invalidateQueries({
           queryKey: sequenceKeys.detail(sequenceId),
         });
@@ -949,9 +919,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             }
             divergentVariants={divergentVariants}
             onCompareDivergent={(variant) => setCompareVariant(variant)}
-            initialMotionModel={sequenceMotionModel}
             initialMusicModel={sequenceMusicModel}
-            styleCategory={styleCategory}
             modelMissingFrameIds={framesMissingActiveImage}
             modelMissingLabel={activeImageModelLabel}
           />
@@ -971,9 +939,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             hideBatchButton={
               phaseConfig.autoGenerateMotion && isGenerationActive
             }
-            initialMotionModel={sequenceMotionModel}
             initialMusicModel={sequenceMusicModel}
-            styleCategory={styleCategory}
           />
         </div>
 
@@ -1007,6 +973,20 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
               wrapperClassName={PLAYER_MAX_W_BY_RATIO[aspectRatio]}
             />
           </div>
+          {/* Scene-level model pickers (#909): one look + one motion character
+              per scene, replacing the former per-shot pickers. */}
+          <SceneModelHeader
+            sequenceId={sequenceId}
+            sceneId={selectedSceneId}
+            sequence={sequence}
+            aspectRatio={aspectRatio}
+            styleCategory={styleCategory}
+            styleName={styleName}
+            recommendedImageModel={recommendedImageModel}
+            recommendedVideoModel={recommendedVideoModel}
+            imageModelStatuses={imageModelStatuses}
+            videoModelStatuses={videoModelStatuses}
+          />
           <SceneScriptPrompts
             frame={selectedFrame}
             sequenceId={sequenceId}
@@ -1019,15 +999,8 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
             aspectRatio={aspectRatio}
             variantForSelectedModel={variantForSelectedModel}
             videoVariantForSelectedModel={videoVariantForSelectedModel}
-            imageModelStatuses={imageModelStatuses}
-            videoModelStatuses={videoModelStatuses}
-            onImageModelChange={setImageModelOverride}
-            onVideoModelChange={setVideoModelOverride}
-            styleCategory={styleCategory}
-            sequenceMotionModel={sequenceMotionModel}
-            styleName={styleName}
-            recommendedImageModel={recommendedImageModel}
-            recommendedVideoModel={recommendedVideoModel}
+            sceneImageModel={sceneImageModel}
+            sceneVideoModel={sceneVideoModel}
             frameDivergentVariants={divergentVariants?.filter(
               (v) => v.shotId === curSelectedFrameId
             )}
