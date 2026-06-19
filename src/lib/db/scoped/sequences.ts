@@ -82,7 +82,7 @@ function createSequencesReadMethods(db: Database, teamId: string) {
     },
 
     /**
-     * Batched frame fetch for a list of sequences (#XXX). Replaces N parallel
+     * Batched frame fetch for a list of sequences. Replaces N parallel
      * `frames.listBySequence` round-trips from the sequences list page — the
      * fan-out saturated iOS Chrome's connection pool and crashed the
      * WebProcess once teams accumulated >~50 sequences. teamId filter is

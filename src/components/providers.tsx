@@ -1,4 +1,3 @@
-import { NavigationDiagnostics } from '@/components/observability/navigation-diagnostics';
 import { PostHogIdentify } from '@/components/observability/posthog-identify';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -122,7 +121,6 @@ export function Providers({ children, queryClient }: ProvidersProps) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <PostHogIdentify />
-          <NavigationDiagnostics />
           {realtimeEnabled ? (
             <RealtimeProvider>{children}</RealtimeProvider>
           ) : (
