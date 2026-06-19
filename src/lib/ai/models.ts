@@ -68,6 +68,13 @@ export const IMAGE_TO_VIDEO_MODELS = {
     qualityRank: 3,
     maxPromptLength: 2500,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
+    // #910: renders an entire scene's shot list in one call via the structured
+    // `multi_prompt` array (shot_type: customize); ≤15s; accepts an end frame
+    // and reference `elements` for advisory keyframes on shots 2..N.
+    supportsMultiShot: true,
+    multiShotSyntax: 'multi-prompt-array' as const,
+    supportsEndFrame: true,
+    maxDurationSeconds: 15,
   },
   minimax_hailuo_02: {
     id: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
@@ -86,8 +93,18 @@ export const IMAGE_TO_VIDEO_MODELS = {
     qualityRank: 2,
     maxPromptLength: 4096,
     performance: { estimatedGenerationTime: 20, quality: 'best' as const },
+    // #910: renders an entire scene's shot list in one call by weaving the
+    // shots into prose `Shot 1: … Shot 2: …` labels (a prompt convention, not
+    // an API param); ≤15s; accepts an end frame for an advisory final keyframe.
+    supportsMultiShot: true,
+    multiShotSyntax: 'prose-labels' as const,
+    supportsEndFrame: true,
+    maxDurationSeconds: 15,
   },
 } as const;
+
+/** Multi-shot prompt syntax a capable video model uses at render time (#910). */
+export type MultiShotSyntax = 'prose-labels' | 'multi-prompt-array';
 
 /**
  * Available models for image generation with rich metadata
@@ -242,6 +259,62 @@ export function videoModelSupportsAudio(modelKey: ImageToVideoModel): boolean {
   if ('supportsAudio' in config && typeof config.supportsAudio === 'boolean')
     return config.supportsAudio;
   return 'generate_audio' in schemaOf(modelKey).shape;
+}
+
+/**
+ * #910 — Whether a video model can render a scene's whole shot list in ONE
+ * generation. Models without the flag render N per-shot i2v calls instead.
+ */
+export function videoModelSupportsMultiShot(
+  modelKey: ImageToVideoModel
+): boolean {
+  const config = IMAGE_TO_VIDEO_MODELS[modelKey];
+  // The flag is only declared (as a literal `true`) on multi-shot models, so
+  // the presence check alone is the answer.
+  return 'supportsMultiShot' in config && config.supportsMultiShot;
+}
+
+/**
+ * #910 — The prompt syntax a multi-shot model expects (prose `Shot N:` labels
+ * for Seedance, the structured `multi_prompt` array for Kling). Null for models
+ * that don't support multi-shot rendering.
+ */
+export function videoModelMultiShotSyntax(
+  modelKey: ImageToVideoModel
+): MultiShotSyntax | null {
+  const config = IMAGE_TO_VIDEO_MODELS[modelKey];
+  if ('multiShotSyntax' in config) return config.multiShotSyntax;
+  return null;
+}
+
+/** #910 — Whether a video model accepts an `end_image_url` final keyframe. */
+export function videoModelSupportsEndFrame(
+  modelKey: ImageToVideoModel
+): boolean {
+  const config = IMAGE_TO_VIDEO_MODELS[modelKey];
+  if (
+    'supportsEndFrame' in config &&
+    typeof config.supportsEndFrame === 'boolean'
+  )
+    return config.supportsEndFrame;
+  return 'end_image_url' in schemaOf(modelKey).shape;
+}
+
+/**
+ * #910 — Maximum single-generation duration (seconds) for a video model. Used
+ * to cap a multi-shot scene render to one call. Falls back to a conservative
+ * 15s when no explicit override is set.
+ */
+export function videoModelMaxDurationSeconds(
+  modelKey: ImageToVideoModel
+): number {
+  const config = IMAGE_TO_VIDEO_MODELS[modelKey];
+  if (
+    'maxDurationSeconds' in config &&
+    typeof config.maxDurationSeconds === 'number'
+  )
+    return config.maxDurationSeconds;
+  return 15;
 }
 
 /**

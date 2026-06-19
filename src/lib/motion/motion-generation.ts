@@ -30,6 +30,26 @@ export type GenerateMotionOptions = {
    *  the model's native audio output (sfx/ambient/lip-sync). Omitting the
    *  flag lets the API schema default apply (true for audio-capable models). */
   generateAudio?: boolean;
+  /**
+   * #910 multi-shot render. For a `multi-prompt-array` model (Kling), the
+   * structured per-shot prompt list (`{ duration, prompt }`). When present the
+   * model renders the whole shot list in one call via `multi_prompt` +
+   * `shot_type: 'customize'`; `prompt` stays the single-string fallback for
+   * `prose-labels` models (Seedance) which carry the weave in `prompt` itself.
+   */
+  multiPrompt?: Array<{ duration: number; prompt: string }>;
+  /**
+   * #910 advisory final keyframe. For models that accept `end_image_url`
+   * (Seedance / Kling), the last shot's start frame anchors the tail of the
+   * generation.
+   */
+  endImageUrl?: string;
+  /**
+   * #910 advisory reference frames for shots 2..N of a multi-shot render
+   * (Kling `elements`). Shot 1 stays the i2v anchor; these guide the later
+   * shots without exact control. Ignored by models without an `elements` param.
+   */
+  elementImageUrls?: string[];
 };
 
 import { ensureExternallyFetchableUrl } from '@/lib/storage/external-url';

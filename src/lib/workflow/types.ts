@@ -20,6 +20,7 @@ import type {
 import type { AspectRatio, ImageSize } from '@/lib/constants/aspect-ratios';
 import type {
   CharacterMinimal,
+  DbSceneId,
   SequenceElementMinimal,
   SequenceLocationMinimal,
   StyleConfig,
@@ -251,6 +252,27 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    * primary video. Promotion happens later via an explicit "Set".
    */
   variantOnly?: boolean;
+  /**
+   * #910 multi-shot SCENE render. When set, this run rendered a whole scene's
+   * shot list in ONE call: the result is written to that scene's `scenes.video*`
+   * columns (and `scenes.renderStrategy='multi-shot'`) instead of a shot's
+   * `shots.video*`. `shotId` then points at the scene's shot 1 (the i2v anchor).
+   * Absent for every per-shot render → today's `shots.video*` path, untouched.
+   */
+  sceneId?: DbSceneId;
+  /**
+   * #910 Kling multi-shot structured prompt (`{ duration, prompt }` per shot).
+   * Forwarded to `multi_prompt` + `shot_type:'customize'`. Absent for prose
+   * (Seedance, which carries the weave in `prompt`) and per-shot renders.
+   */
+  multiPrompt?: Array<{ duration: number; prompt: string }>;
+  /** #910 advisory final keyframe (`end_image_url`) for a multi-shot render. */
+  endImageUrl?: string;
+  /**
+   * #910 advisory reference frames for shots 2..N of a multi-shot render
+   * (Kling `elements`). Shot 1's image stays the i2v anchor (`imageUrl`).
+   */
+  elementImageUrls?: string[];
 }
 
 /**

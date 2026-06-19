@@ -55,6 +55,28 @@ export function buildModelInput<T extends ImageToVideoModel>(
     ...(options.generateAudio !== undefined && {
       generate_audio: options.generateAudio,
     }),
+    // #910 multi-shot render pass-throughs. The transform forwards these via
+    // its loose-object `...rest`, and each model's apiSchema strips any field
+    // it doesn't declare — so a single-shot model silently ignores them.
+    //   - multi_prompt + shot_type: Kling's structured multi-shot array.
+    //   - end_image_url: advisory final keyframe (Seedance / Kling).
+    //   - elements: advisory reference frames for shots 2..N (Kling).
+    ...(options.multiPrompt &&
+      options.multiPrompt.length > 0 && {
+        multi_prompt: options.multiPrompt.map((s) => ({
+          // Kling durations are string-enum seconds.
+          duration: String(s.duration),
+          prompt: s.prompt,
+        })),
+        shot_type: 'customize' as const,
+      }),
+    ...(options.endImageUrl && { end_image_url: options.endImageUrl }),
+    ...(options.elementImageUrls &&
+      options.elementImageUrls.length > 0 && {
+        elements: options.elementImageUrls.map((url) => ({
+          frontal_image_url: url,
+        })),
+      }),
   }) as ModelOutputMap[T];
 
   const outputPrompt =

@@ -190,6 +190,26 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
       return { cost, duration };
     });
 
+    // #910: for a multi-shot SCENE render, mark the scene generating up-front so
+    // the UI shows progress on the scene unit. The per-shot dual-write below
+    // still runs (the anchor shot's variant row tracks in-flight state); the
+    // final video lands on `scenes.video*` at completion.
+    if (input.sceneId) {
+      const { sceneId } = input;
+      await step.do('set-scene-generating', async () => {
+        await scopedDb.scenes.update(
+          sceneId,
+          {
+            videoStatus: 'generating',
+            videoWorkflowRunId: workflowRunId,
+            videoError: null,
+            renderStrategy: 'multi-shot',
+          },
+          { throwOnMissing: false }
+        );
+      });
+    }
+
     // Step 1: Set status to generating and store model being used
     const { frameDeleted } = await step.do(
       'set-generating-status',
@@ -383,6 +403,11 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
             motionBucket: input.motionBucket,
             aspectRatio: input.aspectRatio,
             generateAudio: input.generateAudio,
+            // #910 multi-shot render fields (ignored on per-shot renders /
+            // models that don't declare these params — see buildModelInput).
+            multiPrompt: input.multiPrompt,
+            endImageUrl: input.endImageUrl,
+            elementImageUrls: input.elementImageUrls,
             scopedDb,
           });
           return { ok: true as const, job };
@@ -650,36 +675,74 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
 
       videoUrl = storageResult.url;
 
-      // Step 5: Update frame with video path, URL, and status — dual-writing
-      // the completed video onto the legacy columns AND this model's
-      // frame_variants row (see motion-workflow-persist).
-      await step.do('update-frame', async () => {
-        const outcome = await persistMotionCompletion({
-          scopedDb,
-          shotId,
-          model,
-          upload: { url: storageResult.url, path: storageResult.path },
-          durationMs: duration * 1000,
-          promptHash: input.prompt ? simpleHash(input.prompt) : null,
-          variantOnly: input.variantOnly,
-          emit: async (event, payload) => {
-            try {
-              await getGenerationChannel(input.sequenceId).emit(event, payload);
-            } catch (emitError) {
-              logger.error(
-                `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${shotId}:`,
-                { err: emitError }
-              );
-            }
-          },
-        });
-
-        if (outcome.status === 'frame-deleted') {
-          logger.info(
-            `[MotionWorkflow:cf] Frame ${shotId} was deleted, skipping final update`
+      // #910: multi-shot SCENE render → write the single video onto the
+      // scene's `scenes.video*` columns (the render unit is the scene) and
+      // stamp `renderStrategy='multi-shot'` so the player/export play the
+      // scene-level clip. The per-shot dual-write path below is for per-shot
+      // renders only — `sceneId` is null there, so it is untouched bit-for-bit.
+      if (input.sceneId) {
+        const { sceneId } = input;
+        await step.do('update-scene-video', async () => {
+          await scopedDb.scenes.update(
+            sceneId,
+            {
+              videoUrl: storageResult.url,
+              videoPath: storageResult.path,
+              videoStatus: 'completed',
+              videoWorkflowRunId: workflowRunId,
+              videoGeneratedAt: new Date(),
+              videoError: null,
+              renderStrategy: 'multi-shot',
+            },
+            { throwOnMissing: false }
           );
-        }
-      });
+          try {
+            await getGenerationChannel(input.sequenceId).emit(
+              'generation.video:progress',
+              { shotId, status: 'completed', model }
+            );
+          } catch (emitError) {
+            logger.error(
+              `[MotionWorkflow:cf] Failed to emit scene video completion for scene ${sceneId}:`,
+              { err: emitError }
+            );
+          }
+        });
+      } else {
+        // Step 5: Update frame with video path, URL, and status — dual-writing
+        // the completed video onto the legacy columns AND this model's
+        // frame_variants row (see motion-workflow-persist).
+        await step.do('update-frame', async () => {
+          const outcome = await persistMotionCompletion({
+            scopedDb,
+            shotId,
+            model,
+            upload: { url: storageResult.url, path: storageResult.path },
+            durationMs: duration * 1000,
+            promptHash: input.prompt ? simpleHash(input.prompt) : null,
+            variantOnly: input.variantOnly,
+            emit: async (event, payload) => {
+              try {
+                await getGenerationChannel(input.sequenceId).emit(
+                  event,
+                  payload
+                );
+              } catch (emitError) {
+                logger.error(
+                  `[MotionWorkflow:cf] Failed to emit generation.video:progress for frame ${shotId}:`,
+                  { err: emitError }
+                );
+              }
+            },
+          });
+
+          if (outcome.status === 'frame-deleted') {
+            logger.info(
+              `[MotionWorkflow:cf] Frame ${shotId} was deleted, skipping final update`
+            );
+          }
+        });
+      }
     }
 
     // Return the video URL and duration

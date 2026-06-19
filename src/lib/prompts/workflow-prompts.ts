@@ -684,43 +684,50 @@ Generate tags and prompt for a single cohesive music track that spans the entire
 ## Core Rules
 
 1. **PRESERVE EXACT INPUT**: Store user's exact words verbatim in originalScript.extract. Never modify, enhance, or rewrite.
-2. **SCENE** = single location + continuous action + unified emotional beat + ONE SHOT (single continuous camera take without cuts)
+2. **SCENE** = single location + continuous action + unified emotional beat. A scene OWNS an ordered list of SHOTS (1..5).
+3. **SHOT** = one continuous camera take: one framing, one primary action, exactly one camera move. A cut starts a new shot.
 
-## ONE SHOT RULE (Critical)
+## SCENE → SHOTS RULE (Critical)
 
-Each scene MUST be exactly ONE SHOT - a single continuous camera take with no cuts.
+A scene is a narrative unit at ONE location with a unified beat. Within it, break the action into SHOTS — each shot is a single continuous take. A short, single-take beat is a scene with ONE shot; a beat with internal cuts or multiple camera setups is a scene with MULTIPLE shots.
 
-### Split into MULTIPLE scenes when you detect:
-- "Cut to..." or "Then we see..." (explicit cut)
+### Start a NEW SHOT (within the same scene) when you detect:
+- "Cut to..." / "Then we see..." / "Now we see..." (explicit cut, same location/beat)
+- Sequential camera framings: "Wide establishing shot. Medium shot of character." (2 shots)
 - "Close-up of X. Wide shot of Y." (multiple camera setups)
-- "Camera pans left, then cuts to..." (continuous + cut = 2 scenes)
-- Different camera framings described sequentially: "Wide establishing shot. Medium shot of character." (2 scenes)
-- Time jumps within action: "He walks to door. Later, he arrives at office." (2 scenes)
+- "Camera pans left, then cuts to..." (continuous move + cut = 2 shots)
 
-### Keep as ONE scene:
+### Start a NEW SCENE when you detect:
+- A location change ("INT. OFFICE" → "EXT. STREET")
+- A time jump ("Later, he arrives at the office")
+- A distinct new emotional beat or "Meanwhile / Elsewhere / Back to"
+
+### Keep as ONE shot:
 - "Camera tracks character walking down hallway" (continuous movement, one take)
-- "Wide establishing shot of building exterior" (single static shot)
 - "Slow dolly into character's face as emotions build" (continuous camera move)
 - "Pan from window to door revealing character" (continuous pan, no cuts)
 - "Character enters frame, walks to desk, sits down" (continuous action, one shot)
 
-### Multi-Shot Detection Signals:
-Watch for these words/phrases that indicate cuts:
-- "Cut to", "Cuts to", "We cut to"
-- "Then we see", "Now we see", "Next we see"
-- "Meanwhile", "Elsewhere", "Back to"
-- Sequential camera framings: "Close-up:", "Wide shot:", "Medium shot:"
-- "INT./EXT." headers within the same action block
-- Numbered shots: "Shot 1:", "Shot 2:"
+## Shot List Authoring (per scene)
+
+For each scene, emit an ordered \`shots\` array (1..5 shots). Each shot has:
+- **shotNumber**: 1-based order within the scene.
+- **framing**: shotSize (extreme wide…extreme close-up), angle (eye level / low / high / overhead / dutch / over-the-shoulder), composition (placement, depth, focal point), subjectStartState (the still the START FRAME captures: pose, position, expression, what they hold).
+- **action**: the ONE primary action of the shot (e.g. "she turns and reaches for the door handle"). One action per shot.
+- **cameraMovement**: EXACTLY ONE move (static / pan / tilt / dolly / truck / pedestal / zoom / push-in / pull-out / orbit) paired with a pacing adverb (slow / smooth / gradual). Never stack moves.
+- **soundCue**: on-screen SFX / ambience hook (e.g. "door creak, distant traffic"), or empty string.
+- **durationSeconds**: at least 3; the scene's shots SUM to at most 15. A scene that can't fit in 15s should be split into multiple SCENES.
+
+Scene-level shared truth (location, lighting, cast, palette, style — in \`continuity\` + \`metadata\`) is authored ONCE per scene and applies to every shot; do NOT repeat it inside each shot.
 
 ## Scene Detection
 
-Detect boundaries using:
+Detect scene boundaries using:
 - Explicit markers: "SCENE 1:", "INT.", "EXT.", "FADE IN:"
 - Screenplay headings: "INT. LOCATION - TIME"
 - Structural breaks: double line breaks, location/time changes
 - Action shifts: establishing → character enters
-- **Camera cuts or framing changes** (see ONE SHOT RULE above)
+- Numbered shots ("Shot 1:", "Shot 2:") and sequential framings become SHOTS within the scene (see SCENE → SHOTS RULE above)
 
 ## Dialogue Extraction
 
@@ -731,11 +738,11 @@ Recognize formats:
 
 Extract with character name (null if unknown) and exact text.
 
-## Timing
+## Timing (per shot)
 
 - Dialogue: ~150 words/minute
-- Simple action: 2-3s | Moderate: 3-5s | Complex: 5-8s
-- Quick cuts: 1-2s | Contemplative: 3-6s
+- Simple action: 3s | Moderate: 3-5s | Complex: 5-8s
+- Each shot is at least 3s; a scene's shots sum to at most 15s.
 
 ## Character Bible
 
@@ -799,7 +806,7 @@ Preserve UPPERCASE tokens verbatim in originalScript.extract — do NOT lowercas
     },
     {
       role: 'user',
-      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags. Also extract a complete character bible, location bible, and element bible.
+      content: `Analyze the script within the USER_SCRIPT tags and split it into logical scenes using the aspect ratio specified in the ASPECT_RATIO tags. For each scene, author its ordered shot list (1..5 shots) per the SCENE → SHOTS RULE. Also extract a complete character bible, location bible, and element bible.
 
 <ASPECT_RATIO>
 {{aspectRatio}}

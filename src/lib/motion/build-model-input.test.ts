@@ -193,4 +193,59 @@ describe('buildModelInput', () => {
       expect(result.aspect_ratio).toBe('auto');
     });
   });
+
+  // #910 multi-shot render pass-throughs.
+  describe('multi-shot render pass-throughs', () => {
+    it('forwards multi_prompt + shot_type for Kling', () => {
+      const result = build('kling_v3_pro', {
+        multiPrompt: [
+          { duration: 4, prompt: 'shot one' },
+          { duration: 6, prompt: 'shot two' },
+        ],
+      });
+      // Kling durations are string-enum seconds.
+      expect(result.multi_prompt).toEqual([
+        { duration: '4', prompt: 'shot one' },
+        { duration: '6', prompt: 'shot two' },
+      ]);
+      expect(result.shot_type).toBe('customize');
+    });
+
+    it('forwards end_image_url and elements for Kling', () => {
+      const result = build('kling_v3_pro', {
+        endImageUrl: 'https://example.com/end.jpg',
+        elementImageUrls: ['https://example.com/ref2.jpg'],
+      });
+      expect(result.end_image_url).toBe('https://example.com/end.jpg');
+      expect(result.elements).toEqual([
+        { frontal_image_url: 'https://example.com/ref2.jpg' },
+      ]);
+    });
+
+    it('forwards end_image_url for Seedance', () => {
+      const result = build('seedance_v2', {
+        endImageUrl: 'https://example.com/end.jpg',
+      });
+      expect(result.end_image_url).toBe('https://example.com/end.jpg');
+    });
+
+    it('strips multi-shot fields for a single-shot model (Grok)', () => {
+      const result = build('grok_imagine_video_1_5', {
+        multiPrompt: [{ duration: 4, prompt: 'shot one' }],
+        endImageUrl: 'https://example.com/end.jpg',
+        elementImageUrls: ['https://example.com/ref2.jpg'],
+      });
+      expect(result).not.toHaveProperty('multi_prompt');
+      expect(result).not.toHaveProperty('shot_type');
+      expect(result).not.toHaveProperty('end_image_url');
+      expect(result).not.toHaveProperty('elements');
+    });
+
+    it('omits multi-shot fields entirely when not requested', () => {
+      const result = build('kling_v3_pro');
+      expect(result).not.toHaveProperty('multi_prompt');
+      expect(result).not.toHaveProperty('end_image_url');
+      expect(result).not.toHaveProperty('elements');
+    });
+  });
 });
