@@ -190,7 +190,7 @@ export type SceneSplitWorkflowInput = SequenceWorkflowContext & {
 export type SceneSplitWorkflowResult = {
   scenes: Scene[];
   title: string;
-  frameMapping: Array<{ sceneId: string; shotId: string }>;
+  shotMapping: ShotMapping;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];
   elementBible: ElementBibleEntry[];
@@ -419,7 +419,13 @@ export interface CharacterBibleWorkflowInput extends SequenceWorkflowContext {
   styleConfig?: StyleConfig;
 }
 
-type FrameMapping = Array<{ sceneId: string; shotId: string }>;
+/**
+ * Maps each analysis scene (the LLM-assigned `Scene.sceneId` string carried in
+ * the analysis output) to the DB shot row created for it. `analysisSceneId` is
+ * deliberately NOT the new `scenes.id` ULID (see DbSceneId in schema/scenes.ts)
+ * — both are strings, so the distinct name guards against confusing them.
+ */
+type ShotMapping = Array<{ analysisSceneId: string; shotId: string }>;
 
 export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   scenes: Scene[];
@@ -429,8 +435,8 @@ export interface VisualPromptWorkflowInput extends SequenceWorkflowContext {
   elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
-  /** Maps sceneId to shotId for DB persistence after visual prompt generation */
-  frameMapping?: FrameMapping;
+  /** Maps analysis sceneId to shotId for DB persistence after visual prompt generation */
+  shotMapping?: ShotMapping;
 }
 
 export interface VisualPromptSceneWorkflowInput extends SequenceWorkflowContext {
@@ -462,7 +468,7 @@ export interface MotionPromptWorkflowInput extends SequenceWorkflowContext {
   elementBible?: ElementBibleEntry[];
   styleConfig: StyleConfig;
   analysisModelId: AnalysisModelId;
-  frameMapping?: FrameMapping;
+  shotMapping?: ShotMapping;
   /**
    * Rendered starting-frame image URL per scene (`sceneId` → primary
    * `thumbnailUrl`), captured at trigger time so the per-scene motion-prompt
@@ -844,7 +850,7 @@ export interface ShotImagesWorkflowInput extends SequenceWorkflowContext {
   locationsWithSheets: SequenceLocationMinimal[];
   /** User-uploaded elements (logos, products) for reference-image consistency */
   elements?: SequenceElementMinimal[];
-  frameMapping: FrameMapping;
+  shotMapping: ShotMapping;
   imageModel?: TextToImageModel;
   /** Multiple image models for variant generation (first is primary) */
   imageModels?: TextToImageModel[];
@@ -877,7 +883,7 @@ export interface ShotImagesWorkflowResult {
  */
 export interface MotionMusicPromptsWorkflowInput extends SequenceWorkflowContext {
   scenesWithVisualPrompts: Scene[];
-  frameMapping: FrameMapping;
+  shotMapping: ShotMapping;
   aspectRatio: AspectRatio;
   characterBible: CharacterBibleEntry[];
   locationBible: LocationBibleEntry[];

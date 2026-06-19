@@ -102,7 +102,7 @@ export class ShotImagesWorkflow extends OpenStoryWorkflowEntrypoint<ShotImagesWo
       charactersWithSheets,
       locationsWithSheets,
       elements: elementsFromInput = [],
-      frameMapping,
+      shotMapping,
       imageModel,
       imageModels: imageModelsInput,
       aspectRatio,
@@ -201,8 +201,8 @@ export class ShotImagesWorkflow extends OpenStoryWorkflowEntrypoint<ShotImagesWo
           );
         }
 
-        const matchedFrame = frameMapping.find(
-          (f) => f.sceneId === scene.sceneId
+        const matchedFrame = shotMapping.find(
+          (f) => f.analysisSceneId === scene.sceneId
         );
 
         const characterRefs = buildCharacterReferenceImages(
