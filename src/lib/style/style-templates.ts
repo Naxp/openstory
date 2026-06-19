@@ -595,7 +595,7 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     version: null,
     usageCount: null,
     recommendedImageModel: 'gpt_image_2',
-    recommendedVideoModel: 'seedance_v2',
+    recommendedVideoModel: 'grok_imagine_video_1_5',
     defaultAspectRatio: '9:16',
     useCases: ['lifestyle', 'social-vertical', 'b-roll'],
   },
