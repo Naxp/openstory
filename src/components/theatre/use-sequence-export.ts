@@ -15,7 +15,9 @@ import {
   listSequenceExportsFn,
   requestSequenceExportUploadUrlFn,
 } from '@/functions/sequence-exports';
+import { useScenes } from '@/hooks/use-scenes';
 import { useShotsBySequence } from '@/hooks/use-shots';
+import { resolvePlayableClips } from '@/lib/sequence/resolve-playable-clips';
 import { putToR2 } from '@/lib/utils/upload';
 import {
   exportSequence,
@@ -47,6 +49,7 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
   const posthog = usePostHog();
   const queryClient = useQueryClient();
   const { data: frames } = useShotsBySequence(sequence.id);
+  const { data: sceneRows } = useScenes(sequence.id);
 
   const { data: exports } = useQuery({
     queryKey: sequenceExportKeys.list(sequence.id),
@@ -63,17 +66,20 @@ export function useSequenceExport(sequence: Sequence): SequenceExportState {
       if (!frames || frames.length === 0) {
         throw new Error('This sequence has no frames yet.');
       }
-      const scenes = frames
-        .filter((f): f is typeof f & { videoUrl: string } =>
-          Boolean(f.videoUrl)
-        )
-        .map((f) => ({ orderIndex: f.orderIndex, videoUrl: f.videoUrl }));
+      // #910: collapse multi-shot scenes to one scene-video clip; per-shot
+      // scenes keep their own shot clips. `total`/`ready` count render UNITS so
+      // the "still generating" guard is correct for multi-shot sequences.
+      const {
+        clips: scenes,
+        ready: readyUnits,
+        total: totalUnits,
+      } = resolvePlayableClips(frames, sceneRows ?? []);
       if (scenes.length === 0) {
         throw new Error('No scene videos are ready yet.');
       }
-      if (scenes.length !== frames.length) {
+      if (readyUnits !== totalUnits) {
         throw new Error(
-          `${frames.length - scenes.length} of ${frames.length} scenes are still generating.`
+          `${totalUnits - readyUnits} of ${totalUnits} scenes are still generating.`
         );
       }
 

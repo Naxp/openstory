@@ -786,6 +786,16 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
   /** Per-frame motion inputs (ordered by scene) */
   shots: Array<{
     shotId: string;
+    /**
+     * #910 — the REAL `scenes.id` ULID this shot belongs to, and its 1-based
+     * order within the scene. When a scene has >1 shot AND the resolved video
+     * model supports multi-shot, the batch renders all the scene's shots in ONE
+     * call (writing `scenes.video*`). Absent (or a single-shot scene, or a
+     * non-multi-shot model) ⇒ today's per-shot render. Grouping is ALWAYS by
+     * this `sceneDbId` ULID — never by `metadata.sceneId`.
+     */
+    sceneDbId?: string | null;
+    shotNumber?: number | null;
     imageUrl: string;
     /**
      * Prompt assembled for the primary model. Used directly for single-model

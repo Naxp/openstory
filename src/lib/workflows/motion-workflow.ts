@@ -761,6 +761,22 @@ export class MotionWorkflow extends OpenStoryWorkflowEntrypoint<MotionWorkflowIn
     const input = event.payload;
     const model = input.model || DEFAULT_VIDEO_MODEL;
 
+    // #910: a multi-shot SCENE render records its failure on the scene row.
+    if (input.sceneId) {
+      try {
+        await scopedDb.scenes.update(
+          input.sceneId,
+          { videoStatus: 'failed', videoError: error },
+          { throwOnMissing: false }
+        );
+      } catch (updateErr) {
+        logger.error(
+          `[MotionWorkflow:cf] Failed to record scene video failure for scene ${input.sceneId}:`,
+          { err: updateErr }
+        );
+      }
+    }
+
     // Motion is always sequence-scoped (every trigger sets both ids), and the
     // dual-write needs sequenceId for the frame_variants row — so gate on both.
     if (input.shotId && input.sequenceId) {

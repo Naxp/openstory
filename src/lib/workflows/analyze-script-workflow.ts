@@ -607,6 +607,25 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         totalDuration += scene.metadata?.durationSeconds || 5;
       }
 
+      // #910: load the persisted shots so each batch entry carries its real
+      // `scenes.id` ULID + `shotNumber`. motion-batch groups by THIS ULID (never
+      // the per-shot `metadata.sceneId` token) to decide multi-shot vs per-shot.
+      const shotGroupingById = await step.do(
+        'load-shot-grouping',
+        async (): Promise<
+          Record<string, { sceneDbId: string | null; shotNumber: number }>
+        > => {
+          if (!sequenceId) return {};
+          const rows = await scopedDb.shots.listBySequence(sequenceId);
+          return Object.fromEntries(
+            rows.map((r) => [
+              r.id,
+              { sceneDbId: r.sceneId ?? null, shotNumber: r.shotNumber ?? 1 },
+            ])
+          );
+        }
+      );
+
       const batchFrames = completeScenes.flatMap((scene, index) => {
         const motionPromptData = scene.prompts?.motion;
         if (!motionPromptData?.fullPrompt) {
@@ -630,11 +649,16 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         const matchedFrame = shotMapping.find(
           (f) => f.analysisSceneId === scene.sceneId
         );
+        const shotId = matchedFrame?.shotId ?? '';
+        const grouping = shotGroupingById[shotId];
 
         const characterTags = scene.continuity?.characterTags;
 
         return {
-          shotId: matchedFrame?.shotId ?? '',
+          shotId,
+          // Real scene ULID + shot order for multi-shot grouping in the batch.
+          sceneDbId: grouping?.sceneDbId ?? null,
+          shotNumber: grouping?.shotNumber ?? 1,
           imageUrl,
           // Primary-model prompt (fallback / single-model). `motion-batch`
           // re-assembles per model from `motionPrompt` for the alternates.

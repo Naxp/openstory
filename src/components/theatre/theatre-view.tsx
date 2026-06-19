@@ -17,8 +17,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { SequencePlayer } from '@/components/theatre/sequence-player';
 import { useSequenceExport } from '@/components/theatre/use-sequence-export';
+import { useScenes } from '@/hooks/use-scenes';
 import { useShotsBySequence } from '@/hooks/use-shots';
 import { useSetSequenceMusic } from '@/hooks/use-sequences';
+import { resolvePlayableClips } from '@/lib/sequence/resolve-playable-clips';
 import type { ExportProgress } from '@/lib/sequence-player/export';
 import type { Sequence } from '@/types/database';
 import { Download, Film, Link, Loader2, Share2 } from 'lucide-react';
@@ -33,15 +35,22 @@ type TheatreViewProps = {
 export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
   const posthog = usePostHog();
   const { data: frames } = useShotsBySequence(sequence.id);
+  const { data: sceneRows } = useScenes(sequence.id);
   const sequenceExport = useSequenceExport(sequence);
   const setMusicEnabled = useSetSequenceMusic(sequence.id);
 
-  const scenes = useMemo(() => {
-    if (!frames) return [];
-    return frames
-      .filter((f): f is typeof f & { videoUrl: string } => Boolean(f.videoUrl))
-      .map((f) => ({ orderIndex: f.orderIndex, videoUrl: f.videoUrl }));
-  }, [frames]);
+  // #910: a multi-shot scene contributes ONE clip from `scenes.video*`; every
+  // other shot contributes its own `shots.video*`. `resolvePlayableClips`
+  // collapses both into one ordered clip list + a ready/total count (a legacy
+  // per-shot sequence is unchanged).
+  const {
+    clips: scenes,
+    ready: readyUnits,
+    total: totalUnits,
+  } = useMemo(
+    () => resolvePlayableClips(frames ?? [], sceneRows ?? []),
+    [frames, sceneRows]
+  );
 
   const shareUrl = sequenceExport.latestExportUrl;
 
@@ -82,7 +91,7 @@ export const TheatreView: React.FC<TheatreViewProps> = ({ sequence }) => {
     return <Skeleton className="aspect-video w-full" />;
   }
 
-  const allScenesReady = scenes.length === frames.length;
+  const allScenesReady = readyUnits === totalUnits;
   if (!allScenesReady || scenes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16">
