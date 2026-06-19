@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { useSequences } from './use-sequences';
-import { frameKeys } from './use-frames';
-import { getFramesFn } from '@/functions/frames';
-import type { Sequence, Frame } from '@/types/database';
+import { shotKeys } from './use-shots';
+import { getShotsFn } from '@/functions/shots';
+import type { Sequence, Shot } from '@/types/database';
 
-export type SequenceWithFrames = Sequence & {
-  frames: Frame[];
+export type SequenceWithShots = Sequence & {
+  shots: Shot[];
   // Present only when fetched via the admin/support endpoint. Optional on the
   // base type so components render a single CreatorIdentity regardless of source.
   creatorName?: string | null;
@@ -14,22 +14,22 @@ export type SequenceWithFrames = Sequence & {
 };
 
 /**
- * Fetches all sequences and their frames in parallel.
+ * Fetches all sequences and their shots in parallel.
  * Returns sequences as soon as they resolve so the UI can render rows
- * progressively; frames are reported via `framesLoadingMap` per sequence.
+ * progressively; shots are reported via `shotsLoadingMap` per sequence.
  */
-export function useSequencesWithFrames() {
+export function useSequencesWithShots() {
   const {
     data: sequences,
     isLoading: seqLoading,
     error: seqError,
   } = useSequences();
 
-  const framesQueries = useQueries({
+  const shotsQueries = useQueries({
     queries: (sequences || []).map((seq: Sequence) => ({
-      queryKey: frameKeys.list(seq.id),
-      queryFn: async (): Promise<Frame[]> => {
-        const data = await getFramesFn({ data: { sequenceId: seq.id } });
+      queryKey: shotKeys.list(seq.id),
+      queryFn: async (): Promise<Shot[]> => {
+        const data = await getShotsFn({ data: { sequenceId: seq.id } });
         return data;
       },
       staleTime: 5 * 60 * 1000,
@@ -37,30 +37,30 @@ export function useSequencesWithFrames() {
     })),
   });
 
-  const data = useMemo<SequenceWithFrames[]>(() => {
+  const data = useMemo<SequenceWithShots[]>(() => {
     if (!sequences) return [];
 
     return sequences.map((seq: Sequence, i: number) => ({
       ...seq,
-      frames: framesQueries[i]?.data ?? [],
+      shots: shotsQueries[i]?.data ?? [],
     }));
-  }, [sequences, framesQueries]);
+  }, [sequences, shotsQueries]);
 
-  const framesLoadingMap = useMemo<Record<string, boolean>>(() => {
+  const shotsLoadingMap = useMemo<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {};
     (sequences ?? []).forEach((seq, i) => {
-      const q = framesQueries[i];
+      const q = shotsQueries[i];
       map[seq.id] = Boolean(q?.isLoading);
     });
     return map;
-  }, [sequences, framesQueries]);
+  }, [sequences, shotsQueries]);
 
-  const error = seqError || framesQueries.find((q) => q.error)?.error;
+  const error = seqError || shotsQueries.find((q) => q.error)?.error;
 
   return {
     data,
     isLoading: seqLoading,
-    framesLoadingMap,
+    shotsLoadingMap,
     error,
   };
 }
