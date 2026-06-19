@@ -28,18 +28,22 @@ import {
 } from '@/lib/ai/llm-client';
 import { PREVIEW_IMAGE_MODEL } from '@/lib/ai/models';
 import { getContextWindow } from '@/lib/ai/models.config';
+import type { Scene } from '@/lib/ai/scene-analysis.schema';
 import {
-  type SceneSplittingResult,
-  sceneSplittingResultSchema,
-} from '@/lib/ai/response-schemas';
+  type SceneWithShotsResult,
+  sceneWithShotsResultSchema,
+} from '@/lib/ai/shot-list.schema';
 import {
-  createStreamingSceneParser,
-  type SceneSplittingScene,
-} from '@/lib/ai/streaming-scene-parser';
+  createStreamingShotListParser,
+  type ShotListStreamedScene,
+} from '@/lib/ai/streaming-shot-list-parser';
 import type { Microdollars } from '@/lib/billing/money';
 import type { TokenUsage } from '@tanstack/ai';
 import { deductWorkflowCredits } from '@/lib/billing/workflow-deduction';
-import { buildSceneInserts } from '@/lib/ai/scene-persistence';
+import {
+  buildSceneInserts,
+  buildShotInsertsForScene,
+} from '@/lib/ai/scene-persistence';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { NewShot } from '@/lib/db/schema';
 import type { ScopedDb } from '@/lib/db/scoped';
@@ -70,18 +74,27 @@ const LOG_TAGS = [STEP_NAME, `phase-${PHASE.number}`, 'analysis'];
 const LOG_METADATA = { phase: PHASE.number, phaseName: PHASE.name };
 
 /**
- * Shape produced by the streaming step (post JSON round-trip). Mirrors the
- * QStash `streamResult` value — note `projectMetadata` is preserved so the
- * reconcile step can extract the title, and `shotMapping` reflects only the
- * shots written inline during streaming.
+ * Shape produced by the streaming step (post JSON round-trip).
+ *
+ * #910: the LLM now emits scenes that OWN a `shots[]` array
+ * (`sceneWithShotsResultSchema`). `analysisScenes` carries the full structured
+ * shot list — the `persist-scenes` step is the single source of truth that
+ * expands it into per-shot `shots` rows. `projectMetadata` is preserved so the
+ * persist step can extract the title.
  */
 type StreamResult = {
-  scenes: SceneSplittingResult['scenes'];
-  projectMetadata: SceneSplittingResult['projectMetadata'];
-  shotMapping: Array<{ analysisSceneId: string; shotId: string }>;
-  characterBible: SceneSplittingResult['characterBible'];
-  locationBible: SceneSplittingResult['locationBible'];
-  elementBible: SceneSplittingResult['elementBible'];
+  analysisScenes: SceneWithShotsResult['scenes'];
+  projectMetadata: SceneWithShotsResult['projectMetadata'];
+  characterBible: SceneWithShotsResult['characterBible'];
+  locationBible: SceneWithShotsResult['locationBible'];
+  elementBible: SceneWithShotsResult['elementBible'];
+  /**
+   * analysisSceneId → the representative shot id created live during the stream.
+   * `persist-scenes` reuses it as the scene's shot 1 so the streamed preview
+   * thumbnail survives the canonical rebuild; absent for any scene the stream
+   * didn't reach (a replay reconstructs them).
+   */
+  streamedShotByScene: Record<string, string>;
   /** Provider-reported cost for the LLM call, billed after reconciliation. */
   llmCostMicros: Microdollars;
 };
@@ -153,21 +166,24 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           }
         );
 
-        const parser = createStreamingSceneParser();
-        const shotMapping: Array<{ analysisSceneId: string; shotId: string }> =
-          [];
+        const parser = createStreamingShotListParser();
+        // Representative shot per analysis scene, created live so scene tiles +
+        // preview images appear during the stream. `persist-scenes` reconciles
+        // this into the canonical per-shot rows (shot 1 reuses the streamed
+        // representative, shots 2..N are added) from the validated shot list.
+        const streamedShotByScene = new Map<string, string>();
         let finalText = '';
         let chunkCount = 0;
-        let prevScene: SceneSplittingScene | undefined = undefined;
+        let prevScene: ShotListStreamedScene | undefined = undefined;
         let prevFrameId: string | undefined = undefined;
-        let parsedResult: SceneSplittingResult | undefined;
+        let parsedResult: SceneWithShotsResult | undefined;
         let capturedUsage: TokenUsage | undefined;
 
-        for await (const chunk of callLLMStream<SceneSplittingResult>({
+        for await (const chunk of callLLMStream<SceneWithShotsResult>({
           model: modelId,
           messages,
           max_tokens: Math.floor(getContextWindow(modelId) * 0.65),
-          responseSchema: sceneSplittingResultSchema,
+          responseSchema: sceneWithShotsResultSchema,
           apiKey: llmKeyInfo,
           reasoning: PROMPT_REASONING,
           observationName: LOG_NAME,
@@ -187,7 +203,7 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
 
           if (chunkCount % 20 === 0) {
             logger.info(
-              `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] chunk #${chunkCount} | ${finalText.length} chars | ${shotMapping.length} shots so far`
+              `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] chunk #${chunkCount} | ${finalText.length} chars | ${streamedShotByScene.size} scenes so far`
             );
           }
 
@@ -218,20 +234,17 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
 
             if (ev.type === 'scene:updated') {
               logger.info(
-                // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} title updated: "${ev.scene.metadata?.title}" (chunk #${chunkCount})`
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} title updated: "${ev.scene.metadata.title}" (chunk #${chunkCount})`
               );
 
               if (sequenceId) {
                 await scopedDb.shots.upsert({
                   sequenceId,
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  description: ev.scene.originalScript?.extract || '',
+                  description: ev.scene.originalScript.extract || '',
                   orderIndex: ev.index,
                   metadata: ev.scene,
                   durationMs: Math.round(
-                    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    (ev.scene.metadata?.durationSeconds || 3) * 1000
+                    (ev.scene.metadata.durationSeconds || 3) * 1000
                   ),
                   thumbnailStatus: 'generating',
                   videoStatus: 'pending',
@@ -243,20 +256,16 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                 {
                   sceneId: ev.scene.sceneId,
                   sceneNumber: ev.scene.sceneNumber,
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  title: ev.scene.metadata?.title || 'Untitled Scene',
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  scriptExtract: ev.scene.originalScript?.extract || '',
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  durationSeconds: ev.scene.metadata?.durationSeconds || 3,
+                  title: ev.scene.metadata.title || 'Untitled Scene',
+                  scriptExtract: ev.scene.originalScript.extract || '',
+                  durationSeconds: ev.scene.metadata.durationSeconds || 3,
                 }
               );
             }
 
             if (ev.type === 'scene') {
               logger.info(
-                // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} complete: "${ev.scene.metadata?.title}" (chunk #${chunkCount}, ${finalText.length} chars)`
+                `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Scene ${ev.index + 1} complete: "${ev.scene.metadata.title}" (chunk #${chunkCount}, ${finalText.length} chars)`
               );
 
               await getGenerationChannel(sequenceId).emit(
@@ -264,38 +273,30 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                 {
                   sceneId: ev.scene.sceneId,
                   sceneNumber: ev.scene.sceneNumber,
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  title: ev.scene.metadata?.title || 'Untitled Scene',
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  scriptExtract: ev.scene.originalScript?.extract || '',
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  durationSeconds: ev.scene.metadata?.durationSeconds || 3,
+                  title: ev.scene.metadata.title || 'Untitled Scene',
+                  scriptExtract: ev.scene.originalScript.extract || '',
+                  durationSeconds: ev.scene.metadata.durationSeconds || 3,
                 }
               );
 
               if (sequenceId) {
                 const frame = await scopedDb.shots.upsert({
                   sequenceId,
-                  // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                  description: ev.scene.originalScript?.extract || '',
+                  description: ev.scene.originalScript.extract || '',
                   orderIndex: ev.index,
                   metadata: ev.scene,
                   durationMs: Math.round(
-                    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    (ev.scene.metadata?.durationSeconds || 3) * 1000
+                    (ev.scene.metadata.durationSeconds || 3) * 1000
                   ),
                   thumbnailStatus: 'generating',
                   videoStatus: 'pending',
                 } satisfies NewShot);
 
                 logger.info(
-                  `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Frame created: ${frame.id} for scene "${ev.scene.sceneId}"`
+                  `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Representative shot created: ${frame.id} for scene "${ev.scene.sceneId}"`
                 );
 
-                shotMapping.push({
-                  analysisSceneId: ev.scene.sceneId,
-                  shotId: frame.id,
-                });
+                streamedShotByScene.set(ev.scene.sceneId, frame.id);
 
                 await getGenerationChannel(sequenceId).emit(
                   'generation.shot:created',
@@ -307,10 +308,8 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
                 );
                 if (prevScene && prevFrameId) {
                   const sceneText =
-                    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    prevScene.originalScript?.extract ??
-                    // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                    prevScene.metadata?.title ??
+                    prevScene.originalScript.extract ||
+                    prevScene.metadata.title ||
                     'A cinematic scene';
                   const prompt = buildPreviewPrompt(sceneText, styleConfig);
 
@@ -352,10 +351,8 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         // Trigger preview for the last scene (the loop only triggers N-1).
         if (prevScene && prevFrameId && sequenceId) {
           const sceneText =
-            // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-            prevScene.originalScript?.extract ??
-            // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-            prevScene.metadata?.title ??
+            prevScene.originalScript.extract ||
+            prevScene.metadata.title ||
             'A cinematic scene';
           const prompt = buildPreviewPrompt(sceneText, styleConfig);
 
@@ -386,13 +383,17 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
           throw new NonRetryableError(
             `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Stream ended without a validated structured-output payload. ` +
               `chunks=${chunkCount} chars=${finalText.length} ` +
-              `streamedScenes=${shotMapping.length} model=${modelId}. ` +
+              `streamedScenes=${streamedShotByScene.size} model=${modelId}. ` +
               `Likely cause: provider did not honor responseFormat:json_schema.`
           );
         }
         const parsed = parsedResult;
+        const totalShots = parsed.scenes.reduce(
+          (sum, s) => sum + s.shots.length,
+          0
+        );
         logger.info(
-          `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Complete | ${chunkCount} chunks | ${parsed.scenes.length} scenes | ${finalText.length} chars`
+          `[SceneSplitWorkflow:cf] [Stream:${LOG_NAME}] Complete | ${chunkCount} chunks | ${parsed.scenes.length} scenes | ${totalShots} shots | ${finalText.length} chars`
         );
 
         // JSON round-trip: the inferred shape contains Zod discriminated
@@ -400,12 +401,12 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
         // `Rpc.Serializable<T>` typecheck. The value is JSON-clean at
         // runtime; stringify on the way out, parse on the way in.
         const streamResult: StreamResult = {
-          scenes: parsed.scenes,
+          analysisScenes: parsed.scenes,
           projectMetadata: parsed.projectMetadata,
-          shotMapping,
           characterBible: parsed.characterBible,
           locationBible: parsed.locationBible,
           elementBible: parsed.elementBible,
+          streamedShotByScene: Object.fromEntries(streamedShotByScene),
           llmCostMicros: llmCostFromUsage(capturedUsage, modelId),
         };
         return JSON.stringify(streamResult);
@@ -415,110 +416,176 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
     // inside the step, but if CF's step-cache persisted something corrupt
     // we fail loud here instead of silently downstream.
     const streamResult: StreamResult = JSON.parse(streamResultJson);
-    if (
-      !Array.isArray(streamResult.scenes) ||
-      !Array.isArray(streamResult.shotMapping)
-    ) {
+    if (!Array.isArray(streamResult.analysisScenes)) {
       throw new NonRetryableError(
         'scene-splitting-stream returned a malformed result from cache',
         'WorkflowValidationError'
       );
     }
 
-    // Step 3: Reconcile — ensure all frames exist (handles cached step replay).
-    const reconcileJson = await step.do(
-      'reconcile-frames',
+    // ----------------------------------------------------------------------
+    // Step 3 (#910): persist scenes + per-shot rows as the single source of
+    // truth, and build the FLAT per-shot downstream payload.
+    //
+    // Each analysis scene owns a `shots[]` list. We expand it via
+    // `buildShotInsertsForScene` into N `shots` rows, each carrying a UNIQUE
+    // `metadata.sceneId` token (`<analysisSceneId>#<shotNumber>`, or the bare id
+    // for a single-shot scene). The downstream chain (visual-prompt / image /
+    // motion) stays one-unit-per-element and keeps keying on `metadata.sceneId`
+    // unchanged — a single-shot scene is byte-for-byte the same as before.
+    //
+    // The streamed representative shot is reused as each scene's shot 1 (so its
+    // live preview thumbnail survives); shots 2..N are created fresh. Stale
+    // shots from a prior run / extra streamed rows are pruned. Idempotent on
+    // replay: scenes + shots are rebuilt from the validated `analysisScenes`.
+    // ----------------------------------------------------------------------
+    const resolvedTitle = streamResult.projectMetadata.title || 'Untitled';
+
+    const persistJson = await step.do(
+      'persist-scenes',
       async (): Promise<string> => {
-        const { scenes, projectMetadata } = streamResult;
-        // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-        const resolvedTitle = projectMetadata?.title || 'Untitled';
+        // Build the flat per-shot downstream payload from the validated shot
+        // list. `deriveShotScenes` (inside buildShotInsertsForScene) is the one
+        // place visual+motion prompts are derived (#908).
+        const flatScenes: Scene[] = [];
+        const shotMapping: SceneSplitWorkflowResult['shotMapping'] = [];
 
         if (!sequenceId) {
+          // No persistence target (anonymous preview path) — still expand the
+          // shot list so downstream gets per-shot units, with empty shotIds.
+          for (const analysisScene of streamResult.analysisScenes) {
+            const inserts = buildShotInsertsForScene({
+              sequenceId: 'preview',
+              // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- preview path has no real scene row; id is unused without a sequence
+              sceneId: '' as never,
+              scene: analysisScene,
+              styleConfig,
+              baseOrderIndex: 0,
+            });
+            for (const ins of inserts) {
+              if (ins.metadata) flatScenes.push(ins.metadata);
+            }
+          }
           return JSON.stringify({
-            scenes,
+            scenes: flatScenes,
             title: resolvedTitle,
-            shotMapping: streamResult.shotMapping,
+            shotMapping,
             characterBible: streamResult.characterBible,
             locationBible: streamResult.locationBible,
             elementBible: streamResult.elementBible,
           } satisfies SceneSplitWorkflowResult);
         }
 
-        // Bulk upsert all frames to catch any missed during streaming
-        // (e.g., a retry replays the streaming step's cached result without
-        // re-firing its inline side effects).
-        const frameInserts = scenes.map(
-          (scene, index) =>
-            ({
-              sequenceId,
-              // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-              description: scene.originalScript?.extract || '',
-              orderIndex: index,
-              metadata: scene,
-              durationMs: Math.round(
-                // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard
-                (scene.metadata?.durationSeconds || 3) * 1000
-              ),
-              thumbnailStatus: 'generating',
-              videoStatus: 'pending',
-            }) satisfies NewShot
+        // Rebuild scenes (only ever written here). Shots are reconciled in
+        // place: each scene's shot 1 reuses the streamed representative id so
+        // its live preview thumbnail survives; shots 2..N are created fresh;
+        // any pre-existing shot not kept (a prior run, or extra streamed rows
+        // when the final shot count shrank) is pruned at the end. Avoiding a
+        // blanket delete keeps the representative rows — and their previews —
+        // alive across the rebuild and across CF step replays.
+        await scopedDb.scenes.deleteBySequence(sequenceId);
+
+        const existingShots = await scopedDb.shots.listBySequence(sequenceId);
+        const existingShotIds = new Set(existingShots.map((s) => s.id));
+        const keptShotIds = new Set<string>();
+
+        const sceneInserts = buildSceneInserts(
+          sequenceId,
+          streamResult.analysisScenes
         );
+        const sceneRows = await scopedDb.scenes.createBulk(sceneInserts);
 
-        const reconciledFrames = await scopedDb.shots.bulkUpsert(frameInserts);
-        const reconciledMapping = reconciledFrames.map((f) => ({
-          // oxlint-disable-next-line typescript-eslint/no-unnecessary-condition -- runtime guard: metadata is JSONB, can be null despite Drizzle types
-          analysisSceneId: f.metadata?.sceneId || '',
-          shotId: f.id,
-        }));
+        let orderIndex = 0;
+        for (const [
+          sceneIndex,
+          analysisScene,
+        ] of streamResult.analysisScenes.entries()) {
+          const sceneRow = sceneRows[sceneIndex];
+          if (!sceneRow) continue;
 
-        // Ensure title and workflow are set (status stays 'processing'
-        // until storyboard-workflow completes all phases).
+          const inserts = buildShotInsertsForScene({
+            sequenceId,
+            sceneId: sceneRow.id,
+            scene: analysisScene,
+            styleConfig,
+            baseOrderIndex: orderIndex,
+          });
+          orderIndex += inserts.length;
+
+          // Reuse the streamed representative shot id (if it still exists) for
+          // shot 1 so its live preview thumbnail survives the rebuild.
+          const representativeId =
+            streamResult.streamedShotByScene[analysisScene.sceneId];
+
+          for (const [i, ins] of inserts.entries()) {
+            const reuseId =
+              i === 0 &&
+              representativeId &&
+              existingShotIds.has(representativeId)
+                ? representativeId
+                : undefined;
+            const shot = reuseId
+              ? ((await scopedDb.shots.update(reuseId, ins, {
+                  throwOnMissing: false,
+                })) ?? (await scopedDb.shots.create(ins)))
+              : await scopedDb.shots.create(ins);
+
+            keptShotIds.add(shot.id);
+            if (ins.metadata) flatScenes.push(ins.metadata);
+            shotMapping.push({
+              // The per-shot unique token is the downstream key.
+              analysisSceneId: ins.metadata?.sceneId ?? analysisScene.sceneId,
+              shotId: shot.id,
+            });
+
+            await getGenerationChannel(sequenceId).emit(
+              'generation.shot:created',
+              {
+                shotId: shot.id,
+                sceneId: analysisScene.sceneId,
+                orderIndex: ins.orderIndex,
+              }
+            );
+          }
+        }
+
+        // Prune any leftover shots not part of the canonical rebuild.
+        for (const stale of existingShots) {
+          if (!keptShotIds.has(stale.id)) {
+            await scopedDb.shots.delete(stale.id);
+          }
+        }
+
         await scopedDb.sequences.updateTitle(sequenceId, resolvedTitle);
         await scopedDb.sequences.updateWorkflow(
           sequenceId,
           'analyze-script-shorter-prompts-batch-size-1'
         );
 
-        // Emit frame:created for any frames the streaming step didn't cover.
-        const streamedSceneIds = new Set(
-          streamResult.shotMapping.map((f) => f.analysisSceneId)
-        );
-        for (const { analysisSceneId: sId, shotId } of reconciledMapping) {
-          if (!streamedSceneIds.has(sId)) {
-            const scene = scenes.find((s) => s.sceneId === sId);
-            await getGenerationChannel(sequenceId).emit(
-              'generation.shot:created',
-              {
-                shotId,
-                sceneId: sId,
-                orderIndex: scene?.sceneNumber ? scene.sceneNumber - 1 : 0,
-              }
-            );
-          }
-        }
-
         return JSON.stringify({
-          scenes,
+          scenes: flatScenes,
           title: resolvedTitle,
-          shotMapping: reconciledMapping,
+          shotMapping,
           characterBible: streamResult.characterBible,
           locationBible: streamResult.locationBible,
           elementBible: streamResult.elementBible,
         } satisfies SceneSplitWorkflowResult);
       }
     );
-    const reconciled: SceneSplitWorkflowResult = JSON.parse(reconcileJson);
+    const reconciled: SceneSplitWorkflowResult = JSON.parse(persistJson);
     if (
       !Array.isArray(reconciled.scenes) ||
       !Array.isArray(reconciled.shotMapping)
     ) {
       throw new NonRetryableError(
-        'reconcile-frames returned a malformed result from cache',
+        'persist-scenes returned a malformed result from cache',
         'WorkflowValidationError'
       );
     }
 
     // Step 4: Reconcile element bible → update firstMention on existing rows.
+    // `firstMention.sceneId` references the ORIGINAL analysis scene id (not the
+    // per-shot token), which the element-bible entries carry verbatim.
     if (sequenceId && reconciled.elementBible.length > 0) {
       await step.do('reconcile-element-bible', async () => {
         for (const entry of reconciled.elementBible) {
@@ -532,49 +599,6 @@ export class SceneSplitWorkflow extends OpenStoryWorkflowEntrypoint<SceneSplitWo
             text: entry.firstMention.text,
             lineNumber: entry.firstMention.lineNumber,
           });
-        }
-      });
-    }
-
-    // Step 4b (#908): persist a `scenes` row per analysis scene and link each
-    // shot to it via `shots.sceneId`. Analysis currently emits shot-sized
-    // scenes (one shot per scene), so this writes a 1:1 scenes↔shots mapping —
-    // the same shape #907's backfill produced for existing sequences, now
-    // populated at analysis time for NEW sequences too. Scene-level fields
-    // (location / time of day / story beat / continuity / music design /
-    // original script) are stored on the scene row; the shot's `metadata` keeps
-    // the full Scene object unchanged so every downstream read path is
-    // untouched. The structured multi-shot shot list + per-shot prompt
-    // derivation (src/lib/ai/shot-list.{schema,derive}.ts) is wired into the
-    // render chain in #910 — this step is the additive persistence half.
-    //
-    // Idempotent on replay: delete-then-recreate within the step (scenes are
-    // only ever written here, so a full rewrite is safe and avoids the missing
-    // scenes-upsert).
-    if (sequenceId && reconciled.scenes.length > 0) {
-      await step.do('persist-scenes', async () => {
-        await scopedDb.scenes.deleteBySequence(sequenceId);
-
-        const sceneInserts = buildSceneInserts(sequenceId, reconciled.scenes);
-        const sceneRows = await scopedDb.scenes.createBulk(sceneInserts);
-
-        // Link each shot to its scene row by analysisSceneId → orderIndex.
-        // shotMapping is analysisSceneId-keyed; scenes are order-aligned to
-        // `reconciled.scenes`, so map analysisSceneId → its index → scene row.
-        const sceneRowByAnalysisId = new Map(
-          reconciled.scenes.map((scene, index) => [
-            scene.sceneId,
-            sceneRows[index],
-          ])
-        );
-        for (const { analysisSceneId, shotId } of reconciled.shotMapping) {
-          const sceneRow = sceneRowByAnalysisId.get(analysisSceneId);
-          if (!sceneRow) continue;
-          await scopedDb.shots.update(
-            shotId,
-            { sceneId: sceneRow.id, shotNumber: 1 },
-            { throwOnMissing: false }
-          );
         }
       });
     }

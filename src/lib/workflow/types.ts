@@ -20,6 +20,7 @@ import type {
 import type { AspectRatio, ImageSize } from '@/lib/constants/aspect-ratios';
 import type {
   CharacterMinimal,
+  DbSceneId,
   SequenceElementMinimal,
   SequenceLocationMinimal,
   StyleConfig,
@@ -251,6 +252,27 @@ export interface MotionWorkflowInput extends SequenceWorkflowContext {
    * primary video. Promotion happens later via an explicit "Set".
    */
   variantOnly?: boolean;
+  /**
+   * #910 multi-shot SCENE render. When set, this run rendered a whole scene's
+   * shot list in ONE call: the result is written to that scene's `scenes.video*`
+   * columns (and `scenes.renderStrategy='multi-shot'`) instead of a shot's
+   * `shots.video*`. `shotId` then points at the scene's shot 1 (the i2v anchor).
+   * Absent for every per-shot render → today's `shots.video*` path, untouched.
+   */
+  sceneId?: DbSceneId;
+  /**
+   * #910 Kling multi-shot structured prompt (`{ duration, prompt }` per shot).
+   * Forwarded to `multi_prompt` + `shot_type:'customize'`. Absent for prose
+   * (Seedance, which carries the weave in `prompt`) and per-shot renders.
+   */
+  multiPrompt?: Array<{ duration: number; prompt: string }>;
+  /** #910 advisory final keyframe (`end_image_url`) for a multi-shot render. */
+  endImageUrl?: string;
+  /**
+   * #910 advisory reference frames for shots 2..N of a multi-shot render
+   * (Kling `elements`). Shot 1's image stays the i2v anchor (`imageUrl`).
+   */
+  elementImageUrls?: string[];
 }
 
 /**
@@ -764,6 +786,16 @@ export interface BatchMotionMusicWorkflowInput extends SequenceWorkflowContext {
   /** Per-frame motion inputs (ordered by scene) */
   shots: Array<{
     shotId: string;
+    /**
+     * #910 — the REAL `scenes.id` ULID this shot belongs to, and its 1-based
+     * order within the scene. When a scene has >1 shot AND the resolved video
+     * model supports multi-shot, the batch renders all the scene's shots in ONE
+     * call (writing `scenes.video*`). Absent (or a single-shot scene, or a
+     * non-multi-shot model) ⇒ today's per-shot render. Grouping is ALWAYS by
+     * this `sceneDbId` ULID — never by `metadata.sceneId`.
+     */
+    sceneDbId?: string | null;
+    shotNumber?: number | null;
     imageUrl: string;
     /**
      * Prompt assembled for the primary model. Used directly for single-model

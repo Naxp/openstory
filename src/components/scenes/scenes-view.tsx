@@ -412,6 +412,25 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
   const sceneImageModel = resolveSceneImageModel(selectedScene, sequence);
   const sceneVideoModel = resolveSceneVideoModel(selectedScene, sequence);
 
+  // #910: when the selected scene was rendered as ONE multi-shot video
+  // (`renderStrategy='multi-shot'`), the clip lives on the SCENE row, not the
+  // shots — play `scenes.videoUrl` for any shot in that scene. A null/per-shot
+  // renderStrategy (every legacy + per-shot scene) leaves this null, so the
+  // player keeps using each shot's own `videoUrl` exactly as before.
+  const multiShotSceneVideoUrl = useMemo(
+    () =>
+      selectedScene?.renderStrategy === 'multi-shot' &&
+      selectedScene.videoStatus === 'completed' &&
+      selectedScene.videoUrl
+        ? selectedScene.videoUrl
+        : null,
+    [
+      selectedScene?.renderStrategy,
+      selectedScene?.videoStatus,
+      selectedScene?.videoUrl,
+    ]
+  );
+
   // In-flight retry state (#882) for the selected frame. Image retry matters
   // before the thumbnail exists; video retry after — the image entry is cleared
   // once it completes, so preferring it is correct in both stages.
@@ -953,7 +972,11 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
               onSelectShot={setSelectedFrameId}
               selectedTab={selectedTab}
               overrideImageUrl={previewVariantUrl}
-              overrideVideoUrl={previewVariantVideoUrl}
+              // Variant preview (explicit user pick) wins; otherwise play the
+              // scene-level multi-shot clip when this scene rendered as one.
+              overrideVideoUrl={
+                previewVariantVideoUrl ?? multiShotSceneVideoUrl
+              }
               badgeMessage={playerBadgeMessage}
               modelMismatchLabel={
                 selectedTab === 'scene-variants' &&

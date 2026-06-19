@@ -21,14 +21,24 @@
  *     rather than a silently-skipped child), `Promise.allSettled` on await
  *     so a single bad frame doesn't kill the rest of the batch. */
 
+import {
+  DEFAULT_VIDEO_MODEL,
+  type ImageToVideoModel,
+  videoModelMaxDurationSeconds,
+} from '@/lib/ai/models';
 import { resolveAudioModels } from '@/lib/ai/resolve-audio-models';
+import { dbSceneId, type DbSceneId } from '@/lib/db/schema';
 import type { ScopedDb } from '@/lib/db/scoped';
 import { assembleMotionPrompt } from '@/lib/motion/assemble-motion-prompt';
+import { assembleMultiShotMotion } from '@/lib/motion/assemble-multishot-motion';
 import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
-import { buildMotionJobs } from '@/lib/workflows/motion-batch-jobs';
+import {
+  groupShotsForRender,
+  type RenderShot,
+} from '@/lib/workflows/motion-batch-jobs';
 import type {
   BatchMotionMusicWorkflowInput,
   MotionWorkflowInput,
@@ -38,6 +48,9 @@ import type {
 } from '@/lib/workflow/types';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { getLogger } from '@/lib/observability/logger';
+
+/** One shot in the batch payload — the element type of the input `shots[]`. */
+type BatchShot = BatchMotionMusicWorkflowInput['shots'][number];
 
 const logger = getLogger(['openstory', 'workflow', 'motion-batch']);
 
@@ -71,65 +84,181 @@ export class MotionBatchWorkflow extends OpenStoryWorkflowEntrypoint<BatchMotion
     }
 
     // Step 1: Fan out motion workflows + optional music workflow in parallel.
-    // Multi-model video (#545): one MOTION_WORKFLOW child per (frame, model)
-    // — the motion analog of frame-images' per-(scene, model) fan-out (see
-    // `buildMotionJobs` for the resolution/dedupe rules). The first model is
-    // primary (its output also lands in the legacy `frames.video*` columns);
-    // the rest are alternates in `frame_variants`. Pattern 3 spawns + awaits
-    // each child via `spawnAndAwaitChild`; Promise.allSettled lets a single
-    // failing (frame, model) not poison the rest of the batch.
-    const motionJobs = buildMotionJobs(input.shots, input.videoModels);
+    //
+    // Multi-model video (#545): one fan-out per model. Within each model we
+    // GROUP the shots by their real `scenes.id` ULID (#910): a multi-shot scene
+    // on a multi-shot-capable model renders in ONE call (writing `scenes.video*`
+    // + `renderStrategy='multi-shot'`); every other case stays per-shot (the
+    // #545 behaviour — first model primary → legacy `frames.video*`, the rest
+    // alternates). Pattern 3 spawns + awaits each child; Promise.allSettled lets
+    // a single failing unit not poison the rest of the batch.
+    const models: ImageToVideoModel[] =
+      input.videoModels && input.videoModels.length > 0
+        ? [...new Set(input.videoModels)]
+        : [];
 
-    const motionAwaits = motionJobs.map(({ shot, shotIndex, model }) => {
-      // Per-model prompt: re-assemble from the structured motion prompt when
-      // present so audio-capable models get dialogue/audio sections, falling
-      // back to the pre-assembled `prompt` for manual single-model paths.
-      const prompt = shot.motionPrompt
-        ? assembleMotionPrompt({
-            motionPrompt: shot.motionPrompt,
+    const motionAwaits: Array<Promise<MotionWorkflowResult>> = [];
+    const motionJobLabels: string[] = [];
+
+    // Per-shot model fallback when no top-level videoModels were given.
+    const modelForShot = (shot: BatchShot): ImageToVideoModel =>
+      shot.model ?? DEFAULT_VIDEO_MODEL;
+
+    // The effective per-model lists: top-level models apply to every shot;
+    // otherwise each shot uses its own model (single-model paths).
+    const perModelShots: Array<{
+      model: ImageToVideoModel;
+      shots: BatchShot[];
+    }> =
+      models.length > 0
+        ? models.map((model) => ({ model, shots: [...input.shots] }))
+        : [...new Set(input.shots.map(modelForShot))].map((model) => ({
             model,
-            characterTags: shot.characterTags,
-          })
-        : shot.prompt;
+            shots: input.shots.filter((s) => modelForShot(s) === model),
+          }));
 
-      const motionBody: MotionWorkflowInput = {
-        userId: input.userId,
-        teamId: input.teamId,
-        shotId: shot.shotId,
-        sequenceId,
-        imageUrl: shot.imageUrl,
-        prompt,
-        model,
-        duration: shot.duration,
-        fps: shot.fps,
-        motionBucket: shot.motionBucket,
-        aspectRatio: shot.aspectRatio,
-        generateAudio: shot.generateAudio,
-        userEditedPrompt: shot.userEditedPrompt,
-        // Add-model (#547) batches generate alternates only — the child must
-        // not write the legacy `frames.video*` columns.
-        variantOnly: input.variantOnly,
-      };
+    for (const { model, shots } of perModelShots) {
+      // Group this model's shots by real scene ULID; pick strategy from the
+      // model's capability profile. Shots with no `sceneDbId` (legacy / manual)
+      // group as loose per-shot units (groupShotsForRender handles this).
+      const renderShots: RenderShot<BatchShot>[] = shots.map((shot) => ({
+        ...shot,
+        sceneDbId: shot.sceneDbId ?? null,
+        shotNumber: shot.shotNumber ?? 1,
+      }));
+      const units = groupShotsForRender(renderShots, model);
 
-      return spawnAndAwaitChild<MotionWorkflowInput, MotionWorkflowResult>(
-        step,
-        {
-          binding: this.env.MOTION_WORKFLOW,
-          parentBindingName: 'MOTION_BATCH_WORKFLOW',
-          parentInstanceId,
-          // The model token keeps sibling-model children from colliding on the
-          // global CF instance id (mirrors frame-images' childId scheme).
-          childId: `motion:${sequenceId}:${shot.shotId}:${model}`,
-          childPayload: motionBody,
-          spawnStepName: `spawn-motion-${shotIndex}-${model}`,
-          awaitStepName: `await-motion-${shotIndex}-${model}`,
-          // Must exceed the child's own budget: motion polls fal for up to
-          // 30 minutes (MAX_BATCHES in motion-workflow.ts) plus submit/
-          // compress/persist steps and notify lag under a burst.
-          timeout: '45 minutes',
+      for (const unit of units) {
+        if (unit.strategy === 'multi-shot') {
+          // ONE call rendering the whole scene's shot list.
+          const ordered = unit.shots;
+          const anchor = ordered[0];
+          if (!anchor) continue;
+
+          const assembly = assembleMultiShotMotion({
+            model,
+            shots: ordered.map((s) => ({
+              shotNumber: s.shotNumber,
+              // Structured prompt is required for multi-shot weave; fall back to
+              // the pre-assembled string wrapped as a bare prompt if absent.
+              motionPrompt: s.motionPrompt ?? {
+                fullPrompt: s.prompt,
+                components: {
+                  cameraMovement: '',
+                  startPosition: '',
+                  endPosition: '',
+                  durationSeconds: s.duration ?? 5,
+                  speed: 'smooth',
+                  smoothness: 'smooth',
+                  subjectTracking: '',
+                  equipment: '',
+                },
+                parameters: {
+                  durationSeconds: s.duration ?? 5,
+                  fps: 24,
+                  motionAmount: 'medium',
+                  cameraControl: { pan: 0, tilt: 0, zoom: 1, movement: '' },
+                },
+                dialogue: null,
+                audio: null,
+              },
+              durationSeconds: s.duration ?? 5,
+            })),
+            characterTags: anchor.characterTags,
+            maxDurationSeconds: videoModelMaxDurationSeconds(model),
+          });
+          // assembly is non-null: groupShotsForRender only yields a multi-shot
+          // unit for a multi-shot-capable model.
+          if (!assembly) continue;
+
+          const sceneId: DbSceneId = dbSceneId(unit.sceneDbId);
+          const motionBody: MotionWorkflowInput = {
+            userId: input.userId,
+            teamId: input.teamId,
+            // Anchor shot 1 drives the i2v start frame + realtime emits.
+            shotId: anchor.shotId,
+            sceneId,
+            sequenceId,
+            imageUrl: anchor.imageUrl,
+            // prose-labels models carry the weave in `prompt`; multi-prompt-array
+            // models carry it in `multiPrompt` (and `prompt` is unused).
+            prompt: assembly.syntax === 'prose-labels' ? assembly.prompt : '',
+            multiPrompt:
+              assembly.syntax === 'multi-prompt-array'
+                ? assembly.multiPrompt
+                : undefined,
+            // Advisory: last shot's start frame as the end keyframe; shots 2..N
+            // start frames as reference elements (Kling).
+            endImageUrl: ordered[ordered.length - 1]?.imageUrl,
+            elementImageUrls: ordered.slice(1).map((s) => s.imageUrl),
+            model,
+            duration: assembly.totalDurationSeconds,
+            aspectRatio: anchor.aspectRatio,
+            generateAudio: anchor.generateAudio,
+            variantOnly: input.variantOnly,
+          };
+
+          motionJobLabels.push(`scene ${unit.sceneDbId} (${model})`);
+          motionAwaits.push(
+            spawnAndAwaitChild<MotionWorkflowInput, MotionWorkflowResult>(
+              step,
+              {
+                binding: this.env.MOTION_WORKFLOW,
+                parentBindingName: 'MOTION_BATCH_WORKFLOW',
+                parentInstanceId,
+                childId: `motion-scene:${sequenceId}:${unit.sceneDbId}:${model}`,
+                childPayload: motionBody,
+                spawnStepName: `spawn-motion-scene-${unit.sceneDbId}-${model}`,
+                awaitStepName: `await-motion-scene-${unit.sceneDbId}-${model}`,
+                timeout: '45 minutes',
+              }
+            )
+          );
+          continue;
         }
-      );
-    });
+
+        // per-shot unit (today's behaviour).
+        const shot = unit.shot;
+        const prompt = shot.motionPrompt
+          ? assembleMotionPrompt({
+              motionPrompt: shot.motionPrompt,
+              model,
+              characterTags: shot.characterTags,
+            })
+          : shot.prompt;
+
+        const motionBody: MotionWorkflowInput = {
+          userId: input.userId,
+          teamId: input.teamId,
+          shotId: shot.shotId,
+          sequenceId,
+          imageUrl: shot.imageUrl,
+          prompt,
+          model,
+          duration: shot.duration,
+          fps: shot.fps,
+          motionBucket: shot.motionBucket,
+          aspectRatio: shot.aspectRatio,
+          generateAudio: shot.generateAudio,
+          userEditedPrompt: shot.userEditedPrompt,
+          variantOnly: input.variantOnly,
+        };
+
+        motionJobLabels.push(`shot ${shot.shotId} (${model})`);
+        motionAwaits.push(
+          spawnAndAwaitChild<MotionWorkflowInput, MotionWorkflowResult>(step, {
+            binding: this.env.MOTION_WORKFLOW,
+            parentBindingName: 'MOTION_BATCH_WORKFLOW',
+            parentInstanceId,
+            childId: `motion:${sequenceId}:${shot.shotId}:${model}`,
+            childPayload: motionBody,
+            spawnStepName: `spawn-motion-${shot.shotId}-${model}`,
+            awaitStepName: `await-motion-${shot.shotId}-${model}`,
+            timeout: '45 minutes',
+          })
+        );
+      }
+    }
 
     // Multi-model audio (#546): one MUSIC_WORKFLOW child per selected model,
     // each reusing the same prompt/tags/duration and writing its own primary
@@ -191,12 +320,11 @@ export class MotionBatchWorkflow extends OpenStoryWorkflowEntrypoint<BatchMotion
     for (let i = 0; i < motionResults.length; i++) {
       const r = motionResults[i];
       if (r?.status === 'rejected') {
-        const job = motionJobs[i];
         // Include the reason in the message itself — structured `err` fields
         // don't reliably survive into the log body (the June 7 run produced
         // bare "Motion failed for frame …:" lines with no cause attached).
         logger.warn(
-          `[MotionBatchWorkflow:cf] Motion failed for frame ${job?.shot.shotId ?? '(unknown)'} model ${job?.model ?? '(unknown)'}: ${String(r.reason)}`,
+          `[MotionBatchWorkflow:cf] Motion failed for ${motionJobLabels[i] ?? '(unknown)'}: ${String(r.reason)}`,
           {
             err: r.reason,
           }

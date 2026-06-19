@@ -92,8 +92,6 @@ export const sceneSplittingResultSchema = z.object({
   }),
 });
 
-export type SceneSplittingResult = z.infer<typeof sceneSplittingResultSchema>;
-
 /**
  * Phase 2: Character Extraction
  */

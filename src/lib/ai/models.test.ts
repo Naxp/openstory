@@ -8,6 +8,10 @@ import {
   isValidTextToImageModel,
   safeImageToVideoModel,
   safeTextToImageModel,
+  videoModelMaxDurationSeconds,
+  videoModelMultiShotSyntax,
+  videoModelSupportsEndFrame,
+  videoModelSupportsMultiShot,
 } from './models';
 
 describe('Model Validation', () => {
@@ -119,6 +123,37 @@ describe('Model Validation', () => {
         // TypeScript should infer maybeModel as ImageToVideoModel here
         const model = maybeModel;
         expect(IMAGE_TO_VIDEO_MODELS[model]).toBeDefined();
+      }
+    });
+  });
+
+  // #910 — multi-shot capability flags on IMAGE_TO_VIDEO_MODELS.
+  describe('multi-shot capability flags', () => {
+    it('marks Seedance 2.0 as a prose-labels multi-shot model', () => {
+      expect(videoModelSupportsMultiShot('seedance_v2')).toBe(true);
+      expect(videoModelMultiShotSyntax('seedance_v2')).toBe('prose-labels');
+      expect(videoModelSupportsEndFrame('seedance_v2')).toBe(true);
+      expect(videoModelMaxDurationSeconds('seedance_v2')).toBe(15);
+    });
+
+    it('marks Kling v3 Pro as a multi-prompt-array multi-shot model', () => {
+      expect(videoModelSupportsMultiShot('kling_v3_pro')).toBe(true);
+      expect(videoModelMultiShotSyntax('kling_v3_pro')).toBe(
+        'multi-prompt-array'
+      );
+      expect(videoModelSupportsEndFrame('kling_v3_pro')).toBe(true);
+      expect(videoModelMaxDurationSeconds('kling_v3_pro')).toBe(15);
+    });
+
+    it('treats single-shot models as per-shot only', () => {
+      for (const model of [
+        'grok_imagine_video_1_5',
+        'veo3_1',
+        'minimax_hailuo_02',
+        'ltx_2_3_pro',
+      ] as const) {
+        expect(videoModelSupportsMultiShot(model)).toBe(false);
+        expect(videoModelMultiShotSyntax(model)).toBeNull();
       }
     });
   });

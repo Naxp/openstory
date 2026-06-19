@@ -1,9 +1,22 @@
 /**
- * Streaming Scene Parser
+ * Streaming Shot-List Parser (#910)
+ * ============================================================================
  *
- * Incrementally extracts complete scenes from a partial JSON stream.
- * Uses @tanstack/ai's parsePartialJSON to parse incomplete LLM output
- * and emits events as new scenes become fully parseable.
+ * The shot-list analysis pass (#908 schema) emits scenes that each own a
+ * `shots[]` array. This parser is the streaming sibling of
+ * `streaming-scene-parser.ts`: it incrementally extracts SCENE-level tiles from
+ * the partial JSON stream so the UI can show scenes as they arrive.
+ *
+ * It deliberately only surfaces SCENE-level fields (title / script extract /
+ * duration / continuity). The per-shot rows are NOT built from the stream —
+ * they are derived from the final, fully-validated `SceneWithShotsResult` in the
+ * workflow's persist step (`deriveShotScenes`). Mid-stream a scene's `shots[]`
+ * is usually incomplete, and the live tile only needs scene-level data, so
+ * keeping shots out of the stream avoids parsing half-formed shot objects.
+ *
+ * Mirrors the lenient-completion strategy of `streaming-scene-parser.ts`:
+ * `originalScript` + `metadata` are required KEYS (a scene missing either is
+ * "not complete yet") with defaulted contents.
  */
 
 import { parsePartialJSON } from '@tanstack/ai';
@@ -16,24 +29,6 @@ import {
   locationBibleEntrySchema,
 } from './scene-analysis.schema';
 
-/**
- * Lenient, default-filling scene schema for streaming completeness detection.
- *
- * The canonical scene-analysis schemas are now STRICT (no `.catch()`) so they
- * compile to a tight structured-output grammar (see the note in
- * `scene-analysis.schema.ts`). But this parser runs against PARTIAL mid-stream
- * JSON: it must accept a scene as soon as its `originalScript` / `metadata`
- * keys appear and COMPLETE the not-yet-streamed fields with defaults, so a
- * scene can be shown — and upserted as a full `Scene` — before its trailing
- * fields arrive. We therefore keep the lenient `.catch()` defaults LOCAL here
- * rather than re-introducing them into the strict schemas. The resulting
- * output type still matches `Scene` (every field present), so emitted scenes
- * remain assignable for `frames.upsert`.
- *
- * `originalScript` and `metadata` are required KEYS (a scene missing either is
- * "not complete yet"), but their contents are defaulted — matching the prior
- * `.catch()`-driven behaviour and the parser's tests.
- */
 const lenientOriginalScript = z.object({
   extract: z.string().catch(''),
   dialogue: z.array(dialogueLineSchema).catch([]),
@@ -47,15 +42,11 @@ const lenientMetadata = z.object({
   storyBeat: z.string().catch(''),
 });
 
-// Scene-split now emits `continuity` per scene (membership moved upstream, #867).
-// It often streams in after `originalScript`/`metadata`, so every field defaults
-// — a scene is still "complete enough" to preview before its continuity lands,
-// and the strict reconcile parse carries the final value onto the frame.
 const lenientContinuity = z
   .object({
     characterTags: z.array(z.string()).catch([]),
     environmentTag: z.string().catch(''),
-    elementTags: z.array(z.string()).nullish().catch(null),
+    elementTags: z.array(z.string()).catch([]),
     colorPalette: z.string().catch(''),
     lightingSetup: z.string().catch(''),
     styleTag: z.string().catch(''),
@@ -63,13 +54,18 @@ const lenientContinuity = z
   .catch({
     characterTags: [],
     environmentTag: '',
-    elementTags: null,
+    elementTags: [],
     colorPalette: '',
     lightingSetup: '',
     styleTag: '',
   });
 
-const sceneSplittingSceneSchema = z.object({
+/**
+ * Scene-level shape for streaming tiles. `shots` is intentionally NOT parsed
+ * here — it is allowed to be absent/partial mid-stream and is rebuilt from the
+ * final validated result downstream.
+ */
+const shotListSceneSchema = z.object({
   sceneId: z.string(),
   sceneNumber: z.number(),
   originalScript: lenientOriginalScript,
@@ -77,20 +73,17 @@ const sceneSplittingSceneSchema = z.object({
   continuity: lenientContinuity,
 });
 
-type SceneSplittingScene = z.infer<typeof sceneSplittingSceneSchema>;
+export type ShotListStreamedScene = z.infer<typeof shotListSceneSchema>;
 
-export type StreamedSceneEvent =
+export type StreamedShotListEvent =
   | { type: 'title'; title: string }
-  | { type: 'scene'; scene: SceneSplittingScene; index: number }
-  | { type: 'scene:updated'; scene: SceneSplittingScene; index: number }
+  | { type: 'scene'; scene: ShotListStreamedScene; index: number }
+  | { type: 'scene:updated'; scene: ShotListStreamedScene; index: number }
   | { type: 'characterBible'; bible: CharacterBibleEntry[] }
   | { type: 'locationBible'; bible: LocationBibleEntry[] };
 
-/**
- * Strip markdown code fences that some models wrap around JSON output.
- * Handles ```json, ```, and leading/trailing whitespace.
- */
-export function stripCodeFences(text: string): string {
+/** Strip markdown code fences some models wrap around JSON output. */
+function stripCodeFences(text: string): string {
   return text.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
 }
 
@@ -98,11 +91,6 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-/**
- * Parse each array element against `schema`, keeping only the ones that fully
- * validate. Used for mid-stream bible arrays where the trailing entry is often
- * still partial — we emit the entries that have completed so far.
- */
 function collectComplete<T>(items: unknown[], schema: z.ZodType<T>): T[] {
   const out: T[] = [];
   for (const item of items) {
@@ -112,7 +100,7 @@ function collectComplete<T>(items: unknown[], schema: z.ZodType<T>): T[] {
   return out;
 }
 
-export function createStreamingSceneParser() {
+export function createStreamingShotListParser() {
   let lastEmittedSceneCount = 0;
   let titleEmitted = false;
   let characterBibleEmitted = false;
@@ -120,19 +108,13 @@ export function createStreamingSceneParser() {
   let emittedTitles: Map<number, string> = new Map();
 
   return {
-    /**
-     * Feed accumulated LLM text and get back any new events since last feed.
-     * Returns an empty array if no new scenes or title are available.
-     */
-    feed(accumulated: string): StreamedSceneEvent[] {
-      const events: StreamedSceneEvent[] = [];
+    feed(accumulated: string): StreamedShotListEvent[] {
+      const events: StreamedShotListEvent[] = [];
 
       const raw = parsePartialJSON(stripCodeFences(accumulated));
       if (raw === undefined) return events;
-
       if (!isRecord(raw)) return events;
 
-      // Check for title
       if (!titleEmitted) {
         const pm = raw.projectMetadata;
         if (
@@ -145,13 +127,12 @@ export function createStreamingSceneParser() {
         }
       }
 
-      // Check for new complete scenes
       const scenes = raw.scenes;
       if (!Array.isArray(scenes)) return events;
 
-      // Check for updates to previously emitted scenes
+      // Updates to previously emitted scenes (title fills in late).
       for (let i = 0; i < lastEmittedSceneCount && i < scenes.length; i++) {
-        const result = sceneSplittingSceneSchema.safeParse(scenes[i]);
+        const result = shotListSceneSchema.safeParse(scenes[i]);
         if (result.success) {
           const currentTitle = result.data.metadata.title || '';
           if (currentTitle !== emittedTitles.get(i)) {
@@ -165,22 +146,18 @@ export function createStreamingSceneParser() {
         }
       }
 
+      // Newly complete scenes.
       for (let i = lastEmittedSceneCount; i < scenes.length; i++) {
-        const result = sceneSplittingSceneSchema.safeParse(scenes[i]);
+        const result = shotListSceneSchema.safeParse(scenes[i]);
         if (result.success) {
           emittedTitles.set(i, result.data.metadata.title || '');
           events.push({ type: 'scene', scene: result.data, index: i });
           lastEmittedSceneCount = i + 1;
         } else {
-          // Stop at first incomplete scene — subsequent ones can't be complete yet
           break;
         }
       }
 
-      // Check for character bible (streams after scenes). The canonical entry
-      // schema is strict, so we collect only the entries that have fully
-      // streamed (dropping a trailing partial one) rather than requiring the
-      // whole array to validate — this keeps the eager mid-stream emit.
       if (!characterBibleEmitted && Array.isArray(raw.characterBible)) {
         const complete = collectComplete(
           raw.characterBible,
@@ -192,7 +169,6 @@ export function createStreamingSceneParser() {
         }
       }
 
-      // Check for location bible (streams after scenes)
       if (!locationBibleEmitted && Array.isArray(raw.locationBible)) {
         const complete = collectComplete(
           raw.locationBible,
@@ -207,7 +183,6 @@ export function createStreamingSceneParser() {
       return events;
     },
 
-    /** Reset parser state (useful for testing). */
     reset() {
       lastEmittedSceneCount = 0;
       titleEmitted = false;
