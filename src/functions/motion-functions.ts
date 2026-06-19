@@ -13,8 +13,10 @@ import {
   safeImageToVideoModel,
 } from '@/lib/ai/models';
 import { estimateVideoCost } from '@/lib/billing/cost-estimation';
-import { multiplyMicros } from '@/lib/billing/money';
+import { addMicros, ZERO_MICROS } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
+import { dbSceneId } from '@/lib/db/schema';
+import { resolveSceneVideoModel } from '@/lib/model/resolve-scene-model';
 import { resolveFrameDuration } from '@/lib/motion/resolve-frame-duration';
 import { snapDuration } from '@/lib/motion/motion-generation';
 import { generateMotionSchema } from '@/lib/schemas/frame.schemas';
@@ -45,8 +47,13 @@ export const generateShotMotionFn = createServerFn({ method: 'POST' })
       throw new Error('Frame has no thumbnail to generate motion from');
     }
 
+    // Model resolution is scene-level (#909): an explicit override wins,
+    // otherwise the shot's scene chooses, falling back to the sequence default.
+    const scene = frame.sceneId
+      ? await context.scopedDb.scenes.getById(dbSceneId(frame.sceneId))
+      : null;
     const model = safeImageToVideoModel(
-      data.model || frame.motionModel || sequence.videoModel,
+      data.model || resolveSceneVideoModel(scene, sequence),
       DEFAULT_VIDEO_MODEL
     );
 
@@ -158,35 +165,48 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
       throw new Error('No eligible frames for motion generation');
     }
 
-    const batchModel = data.model ?? DEFAULT_VIDEO_MODEL;
-    const batchDuration = snapDuration(data.duration, batchModel);
+    // Model resolution is scene-level (#909): each shot renders with its
+    // scene's chosen video model (scene → sequence default). `data.model`, when
+    // present, is a sequence-wide override ("generate all" secondary action).
+    const scenes = await context.scopedDb.scenes.listBySequence(sequence.id);
+    const sceneById = new Map(scenes.map((s) => [s.id, s]));
+    const modelForFrame = (frame: (typeof eligibleFrames)[number]) =>
+      safeImageToVideoModel(
+        data.model ??
+          resolveSceneVideoModel(
+            frame.sceneId ? sceneById.get(dbSceneId(frame.sceneId)) : null,
+            sequence
+          ),
+        DEFAULT_VIDEO_MODEL
+      );
 
-    await requireCredits(
-      context.scopedDb,
-      multiplyMicros(
-        estimateVideoCost(batchModel, batchDuration),
-        eligibleFrames.length
-      ),
-      {
-        errorMessage: `Insufficient credits for batch motion generation (${eligibleFrames.length} frames)`,
-      }
-    );
+    // Per-frame cost: each shot may use a different scene model, so sum the
+    // estimate across the eligible shots rather than multiplying one price.
+    const totalCost = eligibleFrames.reduce((sum, frame) => {
+      const model = modelForFrame(frame);
+      return addMicros(
+        sum,
+        estimateVideoCost(model, snapDuration(data.duration, model))
+      );
+    }, ZERO_MICROS);
+
+    await requireCredits(context.scopedDb, totalCost, {
+      errorMessage: `Insufficient credits for batch motion generation (${eligibleFrames.length} frames)`,
+    });
 
     const includeMusic =
       (data.includeMusic ?? false) && sequence.musicStatus !== 'generating';
 
-    // Persist the batch model picks so the sequence header chip, future batch
-    // sessions, and storyboard regen reflect what the user just chose.
-    const videoModelChanged = data.model && data.model !== sequence.videoModel;
+    // Persist the music model pick so the header chip + future sessions reflect
+    // it. The video model is no longer a batch-level pick (it lives per scene).
     const musicModelChanged =
       includeMusic &&
       data.musicModel &&
       data.musicModel !== sequence.musicModel;
-    if (videoModelChanged || musicModelChanged) {
+    if (musicModelChanged) {
       await context.scopedDb.sequences.update({
         id: sequence.id,
-        ...(videoModelChanged ? { videoModel: data.model } : {}),
-        ...(musicModelChanged ? { musicModel: data.musicModel } : {}),
+        musicModel: data.musicModel,
       });
     }
 
@@ -218,10 +238,7 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
       sequenceId: sequence.id,
       includeMusic,
       shots: eligibleFrames.map((frame) => {
-        const frameModel = safeImageToVideoModel(
-          data.model || frame.motionModel || sequence.videoModel,
-          DEFAULT_VIDEO_MODEL
-        );
+        const frameModel = modelForFrame(frame);
         return {
           shotId: frame.id,
           imageUrl: frame.thumbnailUrl ?? '',

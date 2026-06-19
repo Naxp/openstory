@@ -15,11 +15,16 @@ import {
   estimateStoryboardCost,
   estimateVideoCost,
 } from '@/lib/billing/cost-estimation';
-import { addMicros, multiplyMicros, ZERO_MICROS } from '@/lib/billing/money';
+import { addMicros, ZERO_MICROS } from '@/lib/billing/money';
 import { requireCredits } from '@/lib/billing/preflight';
 import { aspectRatioToImageSize } from '@/lib/constants/aspect-ratios';
 import type { ScopedDb } from '@/lib/db/scoped';
+import { dbSceneId } from '@/lib/db/schema';
 import type { Character, Sequence } from '@/lib/db/schema';
+import {
+  resolveSceneImageModel,
+  resolveSceneVideoModel,
+} from '@/lib/model/resolve-scene-model';
 import { analyzeFailures } from '@/lib/failures/failure-analysis';
 import { resolveMotionPrompt } from '@/lib/motion/resolve-motion-prompt';
 import { buildCharacterReferenceImages } from '@/lib/prompts/character-prompt';
@@ -142,14 +147,21 @@ export async function executeSmartRetry(context: SmartRetryContext) {
   const retried: string[] = [];
   let totalCost = ZERO_MICROS;
 
-  const imageModel = safeTextToImageModel(
-    sequence.imageModel,
-    DEFAULT_IMAGE_MODEL
-  );
-  const videoModel = safeImageToVideoModel(
-    sequence.videoModel,
-    DEFAULT_VIDEO_MODEL
-  );
+  // Model resolution is scene-level (#909): each failed shot retries with its
+  // scene's chosen model (scene → sequence default), keyed off the scene render
+  // unit rather than one sequence-wide model.
+  const scenes = await context.scopedDb.scenes.listBySequence(sequence.id);
+  const sceneById = new Map(scenes.map((s) => [s.id, s]));
+  const imageModelForFrame = (frame: (typeof frames)[number]) =>
+    resolveSceneImageModel(
+      frame.sceneId ? sceneById.get(dbSceneId(frame.sceneId)) : null,
+      sequence
+    );
+  const videoModelForFrame = (frame: (typeof frames)[number]) =>
+    resolveSceneVideoModel(
+      frame.sceneId ? sceneById.get(dbSceneId(frame.sceneId)) : null,
+      sequence
+    );
 
   // Collect failed items and estimate costs
   const failedImageFrames = frames.filter(
@@ -161,28 +173,24 @@ export async function executeSmartRetry(context: SmartRetryContext) {
   const hasMusicFailure =
     sequence.musicStatus === 'failed' && sequence.musicPrompt;
 
-  // Calculate total cost
-  if (failedImageFrames.length > 0) {
+  // Calculate total cost — each frame may use a different scene model, so sum
+  // per-frame rather than multiplying one price.
+  for (const frame of failedImageFrames) {
     totalCost = addMicros(
       totalCost,
-      estimateImageCost(
-        imageModel,
-        sequence.aspectRatio,
-        failedImageFrames.length
-      )
+      estimateImageCost(imageModelForFrame(frame), sequence.aspectRatio, 1)
     );
   }
 
   if (failedMotionFrames.length > 0) {
     const { snapDuration } = await import('@/lib/motion/motion-generation');
-    const duration = snapDuration(undefined, videoModel);
-    totalCost = addMicros(
-      totalCost,
-      multiplyMicros(
-        estimateVideoCost(videoModel, duration),
-        failedMotionFrames.length
-      )
-    );
+    for (const frame of failedMotionFrames) {
+      const model = videoModelForFrame(frame);
+      totalCost = addMicros(
+        totalCost,
+        estimateVideoCost(model, snapDuration(undefined, model))
+      );
+    }
   }
 
   // Single credit check for all retries
@@ -220,7 +228,7 @@ export async function executeSmartRetry(context: SmartRetryContext) {
         userId: user.id,
         teamId,
         prompt,
-        model: imageModel,
+        model: imageModelForFrame(frame),
         imageSize: aspectRatioToImageSize(sequence.aspectRatio),
         numImages: 1,
         shotId: frame.id,
@@ -243,14 +251,15 @@ export async function executeSmartRetry(context: SmartRetryContext) {
     for (const frame of failedMotionFrames) {
       if (!frame.thumbnailUrl) continue;
 
+      const frameVideoModel = videoModelForFrame(frame);
       const workflowInput: MotionWorkflowInput = {
         userId: user.id,
         teamId,
         shotId: frame.id,
         sequenceId: sequence.id,
         imageUrl: frame.thumbnailUrl,
-        prompt: resolveMotionPrompt(frame, videoModel),
-        model: videoModel,
+        prompt: resolveMotionPrompt(frame, frameVideoModel),
+        model: frameVideoModel,
         aspectRatio: sequence.aspectRatio,
         duration: frame.durationMs ? frame.durationMs / 1000 : undefined,
       };

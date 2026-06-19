@@ -145,6 +145,9 @@ function makeContext(sequence: Sequence, frames: Shot[]) {
   const listWithSheets = vi.fn(async () => []);
   const stub = {
     shots: { listBySequence },
+    // No scene overrides in these tests → frames inherit the sequence model
+    // (#909 scene-level resolution falls back to the sequence default).
+    scenes: { listBySequence: vi.fn(async () => []) },
     characters: { listWithSheets },
     sequence: vi.fn(() => ({ updateStatus, updateMusicFields })),
   };

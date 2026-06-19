@@ -142,6 +142,8 @@ const meta: Meta<typeof SceneScriptPrompts> = {
     regeneratingMotion: new Set<string>(),
     regeneratingSceneVariants: new Set<string>(),
     onRegenerateStart: fn(),
+    sceneImageModel: 'nano_banana_2',
+    sceneVideoModel: 'seedance_v2',
   },
   decorators: [
     (Story) => (
