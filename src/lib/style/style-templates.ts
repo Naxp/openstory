@@ -875,7 +875,9 @@ export const DEFAULT_STYLE_TEMPLATES: StyleTemplateEntry[] = [
     version: null,
     usageCount: null,
     recommendedImageModel: 'gpt_image_2',
-    recommendedVideoModel: 'seedance_v2',
+    // Grok over Seedance: Seedance's content checker flags the sensual close-up
+    // still this style renders; Grok animates it cleanly (#801 hover clips).
+    recommendedVideoModel: 'grok_imagine_video_1_5',
     defaultAspectRatio: '9:16',
     useCases: ['product', 'lifestyle'],
   },

@@ -39,6 +39,9 @@
  *   [styleNameOrSlug]   Only this style (matched by exact name OR slug).
  *   --prompts-only      Generate + print the motion prompts, skip video (cheap
  *                       way to eyeball/tune liveliness before burning credits).
+ *   --model=<key>       Override the video model for every style in this run
+ *                       (e.g. --model=grok_imagine_video_1_5) — handy to retry a
+ *                       style whose still one model's content checker flags.
  *   --concurrency=N     Parallel styles in flight (default 4).
  *
  * Every run (both modes) saves the generated motion prompts to
@@ -54,6 +57,7 @@ import { PROMPT_REASONING } from '@/lib/ai/llm-client';
 import {
   DEFAULT_VIDEO_MODEL,
   IMAGE_TO_VIDEO_MODELS,
+  isValidImageToVideoModel,
   safeImageToVideoModel,
   type ImageToVideoModel,
 } from '@/lib/ai/models';
@@ -82,8 +86,9 @@ import { toVisionImageSource } from '@/lib/storage/external-url';
 import { styleSlug } from '@/lib/style/style-slug';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { chat } from '@tanstack/ai';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 
 /** Square, silent, 5-second clip — the hover-tile spec. */
 const DURATION_SECONDS = 5;
@@ -191,24 +196,55 @@ const THUMBNAIL_SCENES: Record<string, string> = {
 
 const DEFAULT_THUMBNAIL_SCENE = 'character';
 
-/** Where the generated motion prompts are saved for review/tuning. */
+/**
+ * The generated motion prompts are saved for review/tuning: a readable `.md`
+ * plus a `.json` that is the merge source of truth (so a single-style retry
+ * updates just that style instead of clobbering the whole set).
+ */
 const PROMPTS_FILE = path.join(OUTPUT_DIR, '_hover-prompts.md');
+const PROMPTS_JSON = path.join(OUTPUT_DIR, '_hover-prompts.json');
 
 type StyleTemplate = (typeof DEFAULT_STYLE_TEMPLATES)[number];
 
-/** One style's generated motion prompt, collected for the saved review file. */
-type PromptRecord = {
-  slug: string;
-  name: string;
-  scene: string;
-  model: string;
-  assembled: string;
-};
+const promptRecordSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  scene: z.string(),
+  model: z.string(),
+  assembled: z.string(),
+});
 
-/** Write all generated prompts to a single readable markdown file. */
+/** One style's generated motion prompt, collected for the saved review file. */
+type PromptRecord = z.infer<typeof promptRecordSchema>;
+
+/** Prior records from the JSON store, or [] when absent/unreadable. */
+async function readExistingRecords(): Promise<PromptRecord[]> {
+  try {
+    const parsed = z
+      .array(promptRecordSchema)
+      .safeParse(JSON.parse(await readFile(PROMPTS_JSON, 'utf8')));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Merge this run's prompts into the saved set (new run wins per slug) and write
+ * both the JSON store and a readable markdown file. Merging means a one-style
+ * retry no longer wipes the other styles' prompts.
+ */
 async function writePromptsFile(records: PromptRecord[]): Promise<void> {
-  const sorted = [...records].sort((a, b) => a.name.localeCompare(b.name));
-  const body = sorted
+  const bySlug = new Map<string, PromptRecord>();
+  for (const r of await readExistingRecords()) bySlug.set(r.slug, r);
+  for (const r of records) bySlug.set(r.slug, r);
+  const merged = [...bySlug.values()].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
+  await writeFile(PROMPTS_JSON, JSON.stringify(merged, null, 2));
+
+  const body = merged
     .map(
       (r) =>
         `## ${r.name}\n\n- scene: \`${r.scene}\`\n- model: ${r.model}\n\n${r.assembled}\n`
@@ -216,7 +252,7 @@ async function writePromptsFile(records: PromptRecord[]): Promise<void> {
     .join('\n---\n\n');
   await writeFile(
     PROMPTS_FILE,
-    `# Hover motion prompts\n\n${records.length} style(s).\n\n${body}`
+    `# Hover motion prompts\n\n${merged.length} style(s).\n\n${body}`
   );
 }
 
@@ -473,17 +509,19 @@ async function processStyle(
   style: StyleTemplate,
   llmKey: LlmKeyInfo,
   promptsOnly: boolean,
-  collector: PromptRecord[]
+  collector: PromptRecord[],
+  modelOverride: ImageToVideoModel | null
 ): Promise<void> {
   const slug = styleSlug(style.name);
   const scene = sceneFor(style);
   const visionUrl = visionSourceUrl(style);
   const motionUrl = motionSourceUrl(style);
 
-  const model = safeImageToVideoModel(
-    style.recommendedVideoModel,
-    DEFAULT_VIDEO_MODEL
-  );
+  // --model wins over the template's recommendation (used to retry a style on a
+  // different video model, e.g. when one model's content checker flags a still).
+  const model =
+    modelOverride ??
+    safeImageToVideoModel(style.recommendedVideoModel, DEFAULT_VIDEO_MODEL);
   const snappedDuration = snapDuration(DURATION_SECONDS, model);
 
   console.log(
@@ -565,6 +603,18 @@ async function main(): Promise<void> {
       DEFAULT_CONCURRENCY
   );
 
+  let modelOverride: ImageToVideoModel | null = null;
+  const modelArg = args.find((a) => a.startsWith('--model='))?.split('=')[1];
+  if (modelArg) {
+    if (!isValidImageToVideoModel(modelArg)) {
+      console.error(
+        `❌ Unknown --model "${modelArg}". Options: ${Object.keys(IMAGE_TO_VIDEO_MODELS).join(', ')}`
+      );
+      process.exit(1);
+    }
+    modelOverride = modelArg;
+  }
+
   const llmKey = getPlatformLlmKey();
   if (!llmKey) {
     console.error(
@@ -597,7 +647,7 @@ async function main(): Promise<void> {
   const { failures } = await mapWithConcurrency(
     [...styles],
     concurrency,
-    (style) => processStyle(style, llmKey, promptsOnly, prompts)
+    (style) => processStyle(style, llmKey, promptsOnly, prompts, modelOverride)
   );
 
   if (prompts.length > 0) {
