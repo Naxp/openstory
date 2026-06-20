@@ -2,10 +2,14 @@ import { StyleSampleVideoSchema } from '@/lib/db/schema/libraries';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { describe, expect, it } from 'vitest';
 import {
+  beatsToScript,
   BESPOKE_SCRIPTS,
   briefForStyle,
   buildSampleVideos,
+  CANONICAL_SCRIPT_OVERRIDES,
+  CATEGORY_BRIEFS,
   CANONICAL_TARGET_SECONDS,
+  STYLE_BRIEF_OVERRIDES,
   heroStyleSlugs,
   isHeroStyle,
   sampleVideoUrl,
@@ -87,6 +91,54 @@ describe('hero styles', () => {
   });
 });
 
+describe('canonical script overrides', () => {
+  const templateSlugs = new Set(
+    DEFAULT_STYLE_TEMPLATES.map((s) => styleSlug(s.name))
+  );
+
+  it('every override slug maps to a real template name', () => {
+    for (const slug of Object.keys(CANONICAL_SCRIPT_OVERRIDES)) {
+      expect(templateSlugs.has(slug), slug).toBe(true);
+    }
+  });
+
+  it('every override has a non-empty script', () => {
+    for (const [slug, override] of Object.entries(CANONICAL_SCRIPT_OVERRIDES)) {
+      expect(override.enhancedScript.length, slug).toBeGreaterThan(50);
+    }
+  });
+});
+
+describe('style brief overrides', () => {
+  const templateSlugs = new Set(
+    DEFAULT_STYLE_TEMPLATES.map((s) => styleSlug(s.name))
+  );
+
+  it('every override slug maps to a real template name', () => {
+    for (const slug of Object.keys(STYLE_BRIEF_OVERRIDES)) {
+      expect(templateSlugs.has(slug), slug).toBe(true);
+    }
+  });
+
+  it('every override has a non-empty brief', () => {
+    for (const [slug, brief] of Object.entries(STYLE_BRIEF_OVERRIDES)) {
+      expect(brief.length, slug).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('beatsToScript', () => {
+  it('flattens beats into numbered shot prose', () => {
+    const script = beatsToScript([
+      { id: 'a', imagePrompt: 'A red ball.', motionPrompt: 'It rolls.' },
+      { id: 'b', imagePrompt: 'A blue cube.', motionPrompt: 'It spins.' },
+    ]);
+    expect(script).toBe(
+      'Shot 1: A red ball. It rolls.\n\nShot 2: A blue cube. It spins.'
+    );
+  });
+});
+
 describe('briefForStyle', () => {
   it('resolves a non-empty brief for every template category (no silent default)', () => {
     for (const style of DEFAULT_STYLE_TEMPLATES) {
@@ -96,6 +148,25 @@ describe('briefForStyle', () => {
   });
 
   it('throws on an unmapped category', () => {
-    expect(() => briefForStyle({ category: 'not-a-real-category' })).toThrow();
+    expect(() =>
+      briefForStyle({ name: 'Mystery Style', category: 'not-a-real-category' })
+    ).toThrow();
+  });
+
+  it('gives every film-genre style its own brief or script (the shared film brief made action have no action)', () => {
+    const filmStyles = DEFAULT_STYLE_TEMPLATES.filter(
+      (s) => s.category === 'film'
+    );
+    expect(filmStyles.length).toBeGreaterThan(0);
+    for (const style of filmStyles) {
+      const slug = styleSlug(style.name);
+      const hasOwnBrief =
+        briefForStyle(style) !== CATEGORY_BRIEFS['film'] ||
+        slug in CANONICAL_SCRIPT_OVERRIDES;
+      expect(
+        hasOwnBrief,
+        `${style.name} falls back to the generic film brief`
+      ).toBe(true);
+    }
   });
 });

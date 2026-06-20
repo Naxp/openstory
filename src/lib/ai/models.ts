@@ -209,7 +209,7 @@ export type TextToImageModel = keyof typeof IMAGE_MODELS;
 type ImageModelConfig = (typeof IMAGE_MODELS)[TextToImageModel];
 type TextToImageModelId = ImageModelConfig['id'];
 
-export const DEFAULT_IMAGE_MODEL: TextToImageModel = 'nano_banana_2';
+export const DEFAULT_IMAGE_MODEL: TextToImageModel = 'gpt_image_2';
 
 /** Model used for fast preview image generation */
 export const PREVIEW_IMAGE_MODEL: TextToImageModel = 'flux_2_turbo';
