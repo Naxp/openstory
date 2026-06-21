@@ -16,7 +16,11 @@ import {
   type Style,
 } from '@/lib/db/schema';
 import { relations } from '@/lib/db/schema/relations';
-import { createPublicStylesReadMethods } from '@/lib/db/scoped/styles';
+import {
+  createPublicStylesReadMethods,
+  createStylesMethods,
+} from '@/lib/db/scoped/styles';
+import { ValidationError } from '@/lib/errors';
 import { createClient, type Client } from '@libsql/client';
 import { asc, desc, eq, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
@@ -290,5 +294,70 @@ describe('createStylesMethods.create — new schema fields round-trip', () => {
     expect(fetched?.recommendedImageModel).toBe('flux_pro');
     expect(fetched?.recommendedVideoModel).toBe('wan_i2v');
     expect(fetched?.defaultAspectRatio).toBe('16:9');
+  });
+});
+
+// Uses the REAL createStylesMethods (not the inline mirror) so the slug guard
+// is exercised. The slug is derived from the name, so collisions are
+// case/punctuation/whitespace-insensitive.
+describe('createStylesMethods slug uniqueness (#956)', () => {
+  it('rejects a new style whose slug collides with a public style', async () => {
+    const methods = createStylesMethods(db, team.id, userRow.id);
+    await methods.create({
+      name: 'Cinematic Noir',
+      config: baseConfig,
+      isPublic: true,
+    });
+    await expect(
+      methods.create({ name: 'cinematic  noir!', config: baseConfig })
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('rejects a new style whose slug collides with another style in the same team', async () => {
+    const methods = createStylesMethods(db, team.id, userRow.id);
+    await methods.create({ name: 'My Style', config: baseConfig });
+    await expect(
+      methods.create({ name: 'MY  style', config: baseConfig })
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('allows a distinct slug', async () => {
+    const methods = createStylesMethods(db, team.id, userRow.id);
+    await methods.create({ name: 'Alpha', config: baseConfig });
+    await expect(
+      methods.create({ name: 'Beta', config: baseConfig })
+    ).resolves.toBeDefined();
+  });
+
+  it("does not collide with another team's PRIVATE style (slug is unique within team ∪ public only)", async () => {
+    const teamB = { id: generateId(), name: 'T2', slug: 't2' };
+    await db.insert(teams).values([teamB]);
+
+    await createStylesMethods(db, team.id, userRow.id).create({
+      name: 'Shared',
+      config: baseConfig, // private to team A
+    });
+    await expect(
+      createStylesMethods(db, teamB.id, userRow.id).create({
+        name: 'Shared',
+        config: baseConfig,
+      })
+    ).resolves.toBeDefined();
+  });
+
+  it('rename rejects a colliding name but allows renaming a style against its own slug', async () => {
+    const methods = createStylesMethods(db, team.id, userRow.id);
+    const first = await methods.create({ name: 'First', config: baseConfig });
+    const second = await methods.create({ name: 'Second', config: baseConfig });
+
+    await expect(
+      methods.update(second.id, { name: 'first' })
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    // excludeId skips the row being renamed, so a same-slug variant of its own
+    // name is allowed.
+    await expect(
+      methods.update(first.id, { name: 'First!' })
+    ).resolves.toBeDefined();
   });
 });
