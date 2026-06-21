@@ -3,7 +3,7 @@
 ## Last reviewed
 
 - Date: 2026-06-21
-- Scope: phase 2 local adapter validation tests + seam-safe desktop/runtime launch preparation
+- Scope: phase 2 desktop migration cutover readiness and local bootstrap hardening, then Phase 3 launch prep
 - Auditor: Codex
 
 ## Project structure
@@ -23,6 +23,9 @@
     - `lib/auth/` authentication wiring
   - `src/components/` React/shadcn UI layer
   - `src/workers/` worker bootstrap helpers and integrations
+- `vite.config.desktop.ts` (desktop-only Vite config and local output target)
+- `src/server-desktop.ts` (desktop request entrypoint without Worker exports)
+- `src-tauri/` Tauri shell project (Rust host + config)
 - `scripts/` developer CLI utilities and environment/bootstrap scripts
 - `drizzle/` Drizzle schemas and generated SQL migrations
 - `e2e/` Playwright end-to-end suites
@@ -50,7 +53,14 @@
   - `audits/2026-06-21-0003-desktop-migration-phase2-local-adapters-audit.md`
   - `tasks/0004-desktop-migration-phase2-local-adapter-tests.md`
   - `audits/2026-06-21-0004-desktop-migration-phase2-local-adapter-tests-audit.md`
+- `tasks/0005-desktop-migration-phase2-desktop-shell.md`
+- `audits/2026-06-21-0005-desktop-migration-phase2-desktop-shell-audit.md`
 - Migration integrity checks: `scripts/check-migrations.ts`.
+- Local cutover evidence package: `docs/desktop-migration/desktop-migration-blueprint.md`, `tasks/0007-desktop-migration-phase2-cutover-readiness.md`, `audits/2026-06-21-0007-desktop-migration-phase2-cutover-readiness-audit.md`.
+- Local bootstrap evidence extension: `tasks/0008-desktop-migration-phase2-local-file-bootstrap.md`, `audits/2026-06-21-0008-desktop-migration-phase2-local-file-bootstrap-audit.md`, `scripts/migrate-local-file-db.ts`.
+- Phase boundary:
+  - Phase 1 and Phase 2 runtime adapter work are complete and governance-tracked.
+  - Phase 3 is now explicitly in-flight and begins with local desktop launch validation and end-to-end package validation.
 
 ## Notes
 
@@ -59,3 +69,5 @@
 - Local workflow-run state is now persisted to disk in phase 2 so local runtime can recover in-flight/local metadata after restart.
 - Phase 2 now has explicit local runtime coverage for runtime-mode detection and local realtime fan-out/history behavior.
 - This pass does not remove Cloudflare runtime; it establishes the local adapter compatibility baseline needed before full desktop runtime cutover in phase 3.
+- Phase 3 now has local desktop shell scaffolding and local request entry in `src/server-desktop.ts`, with desktop-specific Vite output in `dist-desktop`.
+- Desktop bootstrap hardening (phase 2): `src/server-desktop.ts` now runs local seed/reconcile initialization in a non-blocking path and explicitly bypasses Vite runtime endpoints so `/@vite/client` and similar requests are no longer held up on startup.

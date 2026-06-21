@@ -20,3 +20,28 @@
   - Goal: add explicit unit coverage for local fallback behavior in runtime-mode and local realtime messaging paths
   - Audit: `audits/2026-06-21-0004-desktop-migration-phase2-local-adapter-tests-audit.md`
   - Task file: `tasks/0004-desktop-migration-phase2-local-adapter-tests.md`
+- 0005-desktop-migration-phase2-desktop-shell
+  - Status: completed
+  - Goal: add a desktop-only Vite runtime entry, local server bootstrap, and Tauri shell scaffold
+  - Audit: `audits/2026-06-21-0005-desktop-migration-phase2-desktop-shell-audit.md`
+  - Task file: `tasks/0005-desktop-migration-phase2-desktop-shell.md`
+- 0006-desktop-migration-phase2-runtime-stability
+  - Status: completed
+  - Goal: un-break desktop server startup by hardening LogTape configuration under repeated SSR entry initialization
+  - Audit: `audits/2026-06-21-0006-desktop-migration-phase2-runtime-stability-audit.md`
+  - Task file: `tasks/0006-desktop-migration-phase2-runtime-stability.md`
+- 0007-desktop-migration-phase2-cutover-readiness
+  - Status: completed
+  - Goal: freeze Phase 2 artifacts into a formal cutover-ready handoff package before launching Phase 3 execution
+  - Audit: `audits/2026-06-21-0007-desktop-migration-phase2-cutover-readiness-audit.md`
+  - Task file: `tasks/0007-desktop-migration-phase2-cutover-readiness.md`
+- 0008-desktop-migration-phase2-local-file-bootstrap
+  - Status: completed
+  - Goal: make local desktop boot deterministic by hardening local file DB migration bootstrap and consolidating desktop runtime scripts.
+  - Audit: `audits/2026-06-21-0008-desktop-migration-phase2-local-file-bootstrap-audit.md`
+  - Task file: `tasks/0008-desktop-migration-phase2-local-file-bootstrap.md`
+- 0009-desktop-migration-phase2-desktop-bootstrap-unblock
+  - Status: completed
+  - Goal: prevent desktop Vite dev endpoints from hanging during local startup bootstrap by decoupling seed/reconcile setup from request blocking.
+  - Audit: `audits/2026-06-21-0009-desktop-migration-phase2-bootstrap-unblock-audit.md`
+  - Task file: `tasks/0009-desktop-migration-phase2-desktop-bootstrap-unblock.md`

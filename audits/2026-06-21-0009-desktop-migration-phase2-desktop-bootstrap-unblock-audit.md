@@ -1,0 +1,28 @@
+# Audit: 2026-06-21 - 0009-desktop-migration-phase2-desktop-bootstrap-unblock
+
+- Date: 2026-06-21
+- Task: `tasks/0009-desktop-migration-phase2-desktop-bootstrap-unblock.md`
+- Files reviewed:
+  - `src/server-desktop.ts`
+  - `tasks/TASK_INDEX.md`
+  - `Audits_index.md`
+  - `changelog.md`
+  - `Repo_map.md`
+  - `Agents.md`
+- Findings:
+  - `src/server-desktop.ts` awaited `ensureSeededOnce()` on every non-`/r2/` request, which blocked `/@vite/client` and `/` responses during local Vite startup when seed initialization took longer than expected.
+  - Vite dev asset/runtime endpoints are not safe blocking points and should bypass startup work that can include local DB/template synchronization.
+  - `ensureSystemTemplatesSeeded()` uses local libSQL state and can retry on failure; this must not be used as a request-time gate for static dev endpoints.
+- Risks:
+  - Background bootstrap means first render may occur while seed is still in progress; expected behavior for local development as seed runs asynchronously.
+  - If local DB schema is missing entirely, functional routes may still fail later until migration/bootstrap catches up.
+- Decisions:
+  - Decouple seed/reconcile startup from request response path in `src/server-desktop.ts` by switching to fire-and-forget bootstrap for non-asset routes.
+  - Add explicit skip for `/r2/`, `/@*`, `/assets/`, and favicon requests.
+  - Keep interval-based reconcile startup once any non-skipped route is requested.
+- Implementation notes:
+  - Updated `src/server-desktop.ts` to call `ensureSeededOnce()` without awaiting the response path for desktop requests that are not bootstrap-bypass paths.
+  - Added `shouldSkipDesktopBootstrap()` and preserved reconciler startup once per process boot.
+  - Updated `tasks/TASK_INDEX.md`, `Audits_index.md`, `Repo_map.md`, and `changelog.md` to reflect task completion.
+- Freshness status:
+  - fresh
