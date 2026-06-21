@@ -97,16 +97,32 @@ export const ScriptView: FC<{
   loading?: boolean;
   onSuccess?: (sequenceIds: string[]) => void;
   onCancel?: () => void;
-}> = ({ teamId, sequence, loading = false, onSuccess, flat, onCancel }) => {
-  // Local content state - undefined until user makes an edit
+  /** Seed the composer's initial script/style — used by the new-sequence page
+   *  to prefill from a sample style (`?style=<id>`). Takes precedence over the
+   *  saved draft for the initial value; remount (via `key`) to re-seed. */
+  initialScript?: string;
+  initialStyleId?: string;
+}> = ({
+  teamId,
+  sequence,
+  loading = false,
+  onSuccess,
+  flat,
+  onCancel,
+  initialScript,
+  initialStyleId,
+}) => {
+  // Local content state - undefined until user makes an edit. A `initial*` seed
+  // (sample-style prefill) wins over the stored sequence for the first value.
   const [contentState, setContentState] = useState<{
     script: string | null | undefined;
     styleId: string | null;
   }>({
-    script: sequence?.script,
-    styleId: sequence?.styleId || null,
+    script: initialScript ?? sequence?.script,
+    styleId: initialStyleId ?? sequence?.styleId ?? null,
   });
   const { script, styleId } = contentState;
+
   const setScript = (v: string | null | undefined) =>
     setContentState((s) => ({ ...s, script: v }));
   const setStyleId = (v: string | null) =>
@@ -283,10 +299,12 @@ export const ScriptView: FC<{
   const recommendedVideoModel = selectedStyle?.recommendedVideoModel ?? null;
   const recommendedAspectRatio = selectedStyle?.defaultAspectRatio ?? null;
 
-  // Sync draft state when creating new sequences (not editing)
+  // Sync draft state when creating new sequences (not editing). An explicit
+  // sample-style seed (`initialScript`) is the user's just-now intent, so it
+  // wins — skip restoring the older saved draft over it.
   const hasSyncedDraftRef = React.useRef(false);
   useEffect(() => {
-    if (isEditing || loading) {
+    if (isEditing || loading || initialScript) {
       hasSyncedDraftRef.current = false;
       return;
     }
@@ -311,7 +329,7 @@ export const ScriptView: FC<{
       }
       hasSyncedDraftRef.current = true;
     }
-  }, [isEditing, loading, draftLoaded, draft]);
+  }, [isEditing, loading, draftLoaded, draft, initialScript]);
 
   // Sync state with savedSettings when creating new sequences (not when editing)
   // Use a ref to track if we've already synced to avoid loops

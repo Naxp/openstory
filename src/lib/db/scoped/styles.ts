@@ -6,7 +6,9 @@
 import type { Database } from '@/lib/db/client';
 import type { NewStyle, Style } from '@/lib/db/schema';
 import { styles } from '@/lib/db/schema';
-import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
+import { ValidationError } from '@/lib/errors';
+import { styleSlug } from '@/lib/style/style-slug';
+import { and, asc, desc, eq, ne, or, sql } from 'drizzle-orm';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -15,6 +17,42 @@ const logger = getLogger(['openstory', 'db', 'styles']);
 type StylesListOptions = {
   orderBy?: 'popular' | 'sortOrder';
 };
+
+/**
+ * A style's URL/asset slug is derived from its name (`styleSlug`) and is the key
+ * the `?style=<slug>` composer prefill (and every style asset path) resolves on.
+ * A team only ever sees its own styles plus public ones, so the slug must be
+ * unique within that union — otherwise a slug would be ambiguous for that
+ * account. Enforced here (no DB constraint can express "unique across this team
+ * ∪ all public") on create + rename. `excludeId` skips the row being renamed.
+ *
+ * This guards against the future where teams can author styles; public styles
+ * are seeded with already-unique names.
+ */
+async function assertSlugAvailable(
+  db: Database,
+  teamId: string,
+  name: string,
+  excludeId?: string
+): Promise<void> {
+  const slug = styleSlug(name);
+  const visible = await db
+    .select({ id: styles.id, name: styles.name })
+    .from(styles)
+    .where(
+      and(
+        or(eq(styles.teamId, teamId), eq(styles.isPublic, true)),
+        excludeId ? ne(styles.id, excludeId) : undefined
+      )
+    );
+  const clash = visible.find((s) => styleSlug(s.name) === slug);
+  if (clash) {
+    throw new ValidationError(
+      `A style named “${clash.name}” already exists, which would share the URL slug “${slug}”. Choose a more distinct name.`,
+      { slug, conflictsWith: clash.name }
+    );
+  }
+}
 
 function createStylesReadMethods(db: Database, teamId: string) {
   return {
@@ -70,6 +108,7 @@ export function createStylesMethods(
     create: async (
       data: Omit<NewStyle, 'teamId' | 'createdBy'>
     ): Promise<Style> => {
+      await assertSlugAvailable(db, teamId, data.name);
       const result = await db
         .insert(styles)
         .values({ ...data, teamId, createdBy: userId })
@@ -85,6 +124,9 @@ export function createStylesMethods(
       styleId: string,
       data: Partial<Omit<Style, 'id' | 'teamId' | 'createdAt' | 'createdBy'>>
     ): Promise<Style | undefined> => {
+      if (data.name !== undefined) {
+        await assertSlugAvailable(db, teamId, data.name, styleId);
+      }
       const result = await db
         .update(styles)
         .set(data)

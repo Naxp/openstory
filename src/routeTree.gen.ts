@@ -40,6 +40,7 @@ import { Route as AppTalentIndexRouteImport } from './routes/_app/talent/index'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSequencesIndexRouteImport } from './routes/_app/sequences/index'
 import { Route as AppLocationsIndexRouteImport } from './routes/_app/locations/index'
+import { Route as AppGalleryIndexRouteImport } from './routes/_app/gallery/index'
 import { Route as ApiV1SequencesRouteImport } from './routes/api/v1/sequences'
 import { Route as ApiV1OpenapiDotjsonRouteImport } from './routes/api/v1/openapi[.]json'
 import { Route as ApiTestVerifyRouteImport } from './routes/api/test/verify'
@@ -228,6 +229,11 @@ const AppSequencesIndexRoute = AppSequencesIndexRouteImport.update({
 const AppLocationsIndexRoute = AppLocationsIndexRouteImport.update({
   id: '/locations/',
   path: '/locations/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppGalleryIndexRoute = AppGalleryIndexRouteImport.update({
+  id: '/gallery/',
+  path: '/gallery/',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const ApiV1SequencesRoute = ApiV1SequencesRouteImport.update({
@@ -469,6 +475,7 @@ export interface FileRoutesByFullPath {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/gallery/': typeof AppGalleryIndexRoute
   '/locations/': typeof AppLocationsIndexRoute
   '/sequences/': typeof AppSequencesIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
@@ -534,6 +541,7 @@ export interface FileRoutesByTo {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/gallery': typeof AppGalleryIndexRoute
   '/locations': typeof AppLocationsIndexRoute
   '/sequences': typeof AppSequencesIndexRoute
   '/settings': typeof AppSettingsIndexRoute
@@ -605,6 +613,7 @@ export interface FileRoutesById {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/_app/gallery/': typeof AppGalleryIndexRoute
   '/_app/locations/': typeof AppLocationsIndexRoute
   '/_app/sequences/': typeof AppSequencesIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
@@ -674,6 +683,7 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/gallery/'
     | '/locations/'
     | '/sequences/'
     | '/settings/'
@@ -739,6 +749,7 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/gallery'
     | '/locations'
     | '/sequences'
     | '/settings'
@@ -809,6 +820,7 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/_app/gallery/'
     | '/_app/locations/'
     | '/_app/sequences/'
     | '/_app/settings/'
@@ -1071,6 +1083,13 @@ declare module '@tanstack/react-router' {
       path: '/locations'
       fullPath: '/locations/'
       preLoaderRoute: typeof AppLocationsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/gallery/': {
+      id: '/_app/gallery/'
+      path: '/gallery'
+      fullPath: '/gallery/'
+      preLoaderRoute: typeof AppGalleryIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/api/v1/sequences': {
@@ -1400,6 +1419,7 @@ interface AppRouteRouteChildren {
   AppLocationsLocationIdRoute: typeof AppLocationsLocationIdRoute
   AppSequencesNewRoute: typeof AppSequencesNewRoute
   AppTalentIdRoute: typeof AppTalentIdRoute
+  AppGalleryIndexRoute: typeof AppGalleryIndexRoute
   AppLocationsIndexRoute: typeof AppLocationsIndexRoute
   AppSequencesIndexRoute: typeof AppSequencesIndexRoute
   AppTalentIndexRoute: typeof AppTalentIndexRoute
@@ -1413,6 +1433,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppLocationsLocationIdRoute: AppLocationsLocationIdRoute,
   AppSequencesNewRoute: AppSequencesNewRoute,
   AppTalentIdRoute: AppTalentIdRoute,
+  AppGalleryIndexRoute: AppGalleryIndexRoute,
   AppLocationsIndexRoute: AppLocationsIndexRoute,
   AppSequencesIndexRoute: AppSequencesIndexRoute,
   AppTalentIndexRoute: AppTalentIndexRoute,

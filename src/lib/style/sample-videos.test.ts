@@ -2,14 +2,16 @@ import { StyleSampleVideoSchema } from '@/lib/db/schema/libraries';
 import { DEFAULT_STYLE_TEMPLATES } from '@/lib/style/style-templates';
 import { describe, expect, it } from 'vitest';
 import {
+  briefForStyle,
+  CATEGORY_BRIEFS,
+  STYLE_BRIEF_OVERRIDES,
+} from './brief-for-style';
+import {
   beatsToScript,
   BESPOKE_SCRIPTS,
-  briefForStyle,
   buildSampleVideos,
   CANONICAL_SCRIPT_OVERRIDES,
-  CATEGORY_BRIEFS,
   CANONICAL_TARGET_SECONDS,
-  STYLE_BRIEF_OVERRIDES,
   heroStyleSlugs,
   isHeroStyle,
   sampleVideoUrl,
