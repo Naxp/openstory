@@ -9,7 +9,7 @@ import { useUser } from '@/hooks/use-user';
 import { briefForStyle } from '@/lib/style/brief-for-style';
 import { styleSlug } from '@/lib/style/style-slug';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { Route as ScenesRoute } from '@/routes/_app/sequences/$id/scenes';
 
@@ -59,42 +59,31 @@ function NewSequencePage() {
   const { data: user } = useUser();
 
   // Sample-style prefill (#956): the showcase/gallery "Try this style" links
-  // carry `?style=<slug>` (the same human-readable slug the style's assets live
-  // under). Resolve it to a style, snapshot its one-liner brief + id into local
-  // state, then immediately strip the param. Snapshotting (rather than reading
-  // the param on every render) means a later reload or in-place login can't
-  // re-seed over the user's edits — the saved draft owns persistence from then
-  // on. The brief is derived here so the URL only carries the slug; settings
-  // (models, aspect ratio) follow once the style is selected.
+  // carry `?style=<slug>` (the slug the style's assets live under) + `#compose`
+  // (so the router scrolls to the composer). Derive the seed straight from the
+  // param during render — no effect, no state to keep in sync. The brief is
+  // resolved from the style here so the URL only needs the slug; settings
+  // (models, aspect ratio) follow once the style is selected. Remounting the
+  // composer (`key`) on a new seed lets the `initialScript`/`initialStyleId`
+  // props re-seed it — and take precedence over a stale draft (see ScriptView).
   const { data: styles } = useStyles();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [seed, setSeed] = useState<{ script: string; styleId: string } | null>(
-    null
-  );
-  useEffect(() => {
-    if (!styleParam || !styles) return;
-    const match = styles.find((s) => styleSlug(s.name) === styleParam);
-    if (match) {
-      try {
-        setSeed({
-          script: briefForStyle({
-            name: match.name,
-            category: match.category,
-          }),
-          styleId: match.id,
-        });
-        scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      } catch {
-        // Unmapped style — leave the composer blank rather than seed nothing.
-      }
+  const seedStyle = styleParam
+    ? styles?.find((s) => styleSlug(s.name) === styleParam)
+    : undefined;
+  let seedScript: string | undefined;
+  if (seedStyle) {
+    try {
+      seedScript = briefForStyle({
+        name: seedStyle.name,
+        category: seedStyle.category,
+      });
+    } catch {
+      // Unmapped style — leave the composer blank rather than seed nothing.
+      seedScript = undefined;
     }
-    // Clear the param whether or not it resolved, so it can't re-fire on reload.
-    void navigate({ to: Route.to, search: {}, replace: true });
-  }, [styleParam, styles, navigate]);
+  }
+  const composerKey = seedStyle ? `seed:${seedStyle.id}` : 'blank';
 
-  // Remount the composer when a seed lands so a same-page click (showcase below
-  // the composer) re-initialises it from the chosen style.
-  const composerKey = seed ? `seed:${seed.styleId}` : 'blank';
   const { needsBillingSetup, hasFalKey, hasOpenRouterKey, stripeEnabled } =
     useBillingGate();
   const [billingOpen, setBillingOpen] = useState(false);
@@ -150,8 +139,8 @@ function NewSequencePage() {
             key={composerKey}
             loading={false}
             onSuccess={handleSuccess}
-            initialScript={seed?.script}
-            initialStyleId={seed?.styleId}
+            initialScript={seedScript}
+            initialStyleId={seedStyle?.id}
           />
         </PageContainer>
       </div>
@@ -159,7 +148,7 @@ function NewSequencePage() {
   }
 
   return (
-    <div ref={scrollRef} className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto">
       {billingGate}
       <PageContainer maxWidth="narrow" padding="spacious">
         <div className="flex flex-col items-center gap-4">
@@ -168,13 +157,17 @@ function NewSequencePage() {
             Tell your whole story
           </h1>
         </div>
-        <ScriptView
-          key={composerKey}
-          loading={false}
-          onSuccess={handleSuccess}
-          initialScript={seed?.script}
-          initialStyleId={seed?.styleId}
-        />
+        {/* `#compose` target: the "Try" links navigate here so the router
+            scrolls the composer into view (scrollRestoration handles it). */}
+        <div id="compose" className="scroll-mt-4">
+          <ScriptView
+            key={composerKey}
+            loading={false}
+            onSuccess={handleSuccess}
+            initialScript={seedScript}
+            initialStyleId={seedStyle?.id}
+          />
+        </div>
         <SampleVideoShowcase />
       </PageContainer>
     </div>

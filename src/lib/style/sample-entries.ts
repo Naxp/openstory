@@ -49,45 +49,35 @@ function styleHasBrief(style: Style): boolean {
 }
 
 /**
- * Flatten styles into displayable sample entries.
- * - `canonical`: one representative clip per style (the canonical sample, else
- *   the lowest-order one) — used by the curated logged-out showcase.
- * - `all`: every sample across every style, ordered, mixed aspect ratios —
- *   used by the gallery page.
+ * Flatten styles into one displayable sample entry per style — the style's
+ * bespoke showcase clip when it has one, otherwise its canonical sample (else
+ * the lowest-order clip). Used by both the gallery and the logged-out showcase.
  *
- * Styles with no sample videos are skipped.
+ * Styles arrive already ordered by the query (`sortOrder`, then name), so the
+ * gallery/showcase order is the styles' own order. Styles with no sample videos
+ * are skipped.
  */
-export function buildSampleEntries(
-  styles: Style[],
-  mode: 'canonical' | 'all'
-): SampleEntry[] {
+export function buildSampleEntries(styles: Style[]): SampleEntry[] {
   const entries: SampleEntry[] = [];
   for (const style of styles) {
     const samples = style.sampleVideos ?? [];
     if (samples.length === 0) continue;
     const ordered = [...samples].sort((a, b) => a.order - b.order);
-    const aspectRatio = aspectRatioOf(style);
-    const hasBrief = styleHasBrief(style);
-    const slug = styleSlug(style.name);
+    const video =
+      ordered.find((s) => s.kind === 'bespoke') ??
+      ordered.find((s) => s.kind === 'canonical') ??
+      ordered[0];
+    if (!video) continue;
 
-    const chosen =
-      mode === 'all'
-        ? ordered
-        : [ordered.find((s) => s.kind === 'canonical') ?? ordered[0]].filter(
-            (s): s is StyleSampleVideo => s !== undefined
-          );
-
-    for (const video of chosen) {
-      entries.push({
-        key: `${style.id}:${video.kind}`,
-        styleId: style.id,
-        styleName: style.name,
-        slug,
-        video,
-        aspectRatio,
-        hasBrief,
-      });
-    }
+    entries.push({
+      key: `${style.id}:${video.kind}`,
+      styleId: style.id,
+      styleName: style.name,
+      slug: styleSlug(style.name),
+      video,
+      aspectRatio: aspectRatioOf(style),
+      hasBrief: styleHasBrief(style),
+    });
   }
   return entries;
 }

@@ -1,6 +1,4 @@
 import { PageContainer } from '@/components/layout/page-container';
-import { PageDescription } from '@/components/typography/page-description';
-import { PageHeader } from '@/components/typography/page-header';
 import { SampleVideoCard } from '@/components/style/sample-video-showcase';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,18 +14,12 @@ export const Route = createFileRoute('/_app/gallery/')({
 
 function GalleryPage() {
   const { data: styles, isPending } = useStyles();
-  const entries = buildSampleEntries(styles ?? [], 'all');
+  const entries = buildSampleEntries(styles ?? []);
 
   return (
     <div className="h-full overflow-auto">
       <PageContainer>
         <h1 className="sr-only">Gallery</h1>
-        <PageHeader>
-          <PageDescription>
-            Sample videos generated across every style — each from a one-line
-            idea. Click “Try this style” to start a sequence from it.
-          </PageDescription>
-        </PageHeader>
 
         {isPending ? (
           // Masonry columns mirror the final layout's mixed aspect ratios.

@@ -24,32 +24,33 @@ function sample(
 }
 
 describe('buildSampleEntries', () => {
-  it('canonical mode: one entry per style, preferring the canonical sample', () => {
+  it('shows one entry per style, preferring the bespoke clip when present', () => {
     const styles = [
       makeStyle({
         id: 's1',
         name: 'Cinematic Noir',
         category: 'commercial',
-        sampleVideos: [sample('bespoke', 1), sample('canonical', 0)],
+        sampleVideos: [sample('canonical', 0), sample('bespoke', 1)],
       }),
     ];
-    const entries = buildSampleEntries(styles, 'canonical');
+    const entries = buildSampleEntries(styles);
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.video.kind).toBe('canonical');
-    expect(entries[0]?.key).toBe('s1:canonical');
+    expect(entries[0]?.video.kind).toBe('bespoke');
+    expect(entries[0]?.key).toBe('s1:bespoke');
     expect(entries[0]?.slug).toBe('cinematic-noir');
   });
 
-  it('all mode: every sample, ordered by `order`', () => {
+  it('falls back to the canonical clip when there is no bespoke', () => {
     const styles = [
       makeStyle({
         id: 's1',
         category: 'commercial',
-        sampleVideos: [sample('bespoke', 1), sample('canonical', 0)],
+        sampleVideos: [sample('canonical', 0)],
       }),
     ];
-    const entries = buildSampleEntries(styles, 'all');
-    expect(entries.map((e) => e.video.kind)).toEqual(['canonical', 'bespoke']);
+    const entries = buildSampleEntries(styles);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.video.kind).toBe('canonical');
   });
 
   it('skips styles with no sample videos', () => {
@@ -61,7 +62,7 @@ describe('buildSampleEntries', () => {
         sampleVideos: [sample('canonical', 0)],
       }),
     ];
-    const entries = buildSampleEntries(styles, 'all');
+    const entries = buildSampleEntries(styles);
     expect(entries.map((e) => e.styleId)).toEqual(['s2']);
   });
 
@@ -80,7 +81,7 @@ describe('buildSampleEntries', () => {
         sampleVideos: [sample('canonical', 0)],
       }),
     ];
-    const entries = buildSampleEntries(styles, 'all');
+    const entries = buildSampleEntries(styles);
     expect(entries.find((e) => e.styleId === 'p')?.aspectRatio).toBe('9:16');
     expect(entries.find((e) => e.styleId === 'd')?.aspectRatio).toBe('16:9');
   });
@@ -98,7 +99,7 @@ describe('buildSampleEntries', () => {
       category: 'not-a-real-category',
       sampleVideos: [sample('canonical', 0)],
     });
-    const entries = buildSampleEntries([withBrief, noBrief], 'all');
+    const entries = buildSampleEntries([withBrief, noBrief]);
     expect(entries.find((e) => e.styleId === 'b')?.hasBrief).toBe(true);
     expect(entries.find((e) => e.styleId === 'n')?.hasBrief).toBe(false);
   });

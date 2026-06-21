@@ -11,9 +11,10 @@ import {
   type SampleEntry,
 } from '@/lib/style/sample-entries';
 import { cn } from '@/lib/utils';
+import { Route as GalleryRoute } from '@/routes/_app/gallery/index';
 import { Route as NewSequenceRoute } from '@/routes/_app/sequences/new';
 import { Link } from '@tanstack/react-router';
-import { Wand2 } from 'lucide-react';
+import { ArrowRight, Wand2 } from 'lucide-react';
 import { useCallback, useRef } from 'react';
 
 /** Max styles to feature in the curated showcase so it stays a teaser, not a dump. */
@@ -43,15 +44,19 @@ export const SampleVideoShowcase: React.FC = () => {
     );
   }
 
-  const entries = buildSampleEntries(styles ?? [], 'canonical').slice(
-    0,
-    MAX_STYLES
-  );
+  const entries = buildSampleEntries(styles ?? []).slice(0, MAX_STYLES);
   if (entries.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-4">
       <ShowcaseHeading />
+      <Link
+        to={GalleryRoute.to}
+        className="inline-flex items-center justify-center gap-1 self-center text-sm font-medium text-muted-foreground hover:text-foreground"
+      >
+        Browse the full gallery
+        <ArrowRight className="size-4" />
+      </Link>
       <div className="grid grid-cols-2 items-start gap-4 md:grid-cols-3">
         {entries.map((entry) => (
           <SampleVideoCard key={entry.key} entry={entry} />
@@ -133,6 +138,7 @@ export const SampleVideoCard: React.FC<{ entry: SampleEntry }> = ({
           <Link
             to={NewSequenceRoute.to}
             search={{ style: entry.slug }}
+            hash="compose"
             aria-label={`Try the ${entry.styleName} style`}
           >
             <Wand2 className="size-3.5" />
