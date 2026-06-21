@@ -18,20 +18,32 @@ import {
 } from '@/components/ui/sidebar';
 import { useLowBalanceWarning } from '@/hooks/use-low-balance-warning';
 import { SITE_CONFIG } from '@/lib/marketing/constants';
+import { Route as galleryRoute } from '@/routes/_app/gallery/index';
 import { Route as locationsRoute } from '@/routes/_app/locations/index';
 import { Route as sequencesRoute } from '@/routes/_app/sequences/index';
 import { Route as sequencesNewRoute } from '@/routes/_app/sequences/new';
+import { Route as stylesRoute } from '@/routes/_app/styles/index';
 import { Route as talentRoute } from '@/routes/_app/talent/index';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
-import { LifeBuoy, MapPin, Plus, Users, Video } from 'lucide-react';
+import {
+  Clapperboard,
+  LifeBuoy,
+  MapPin,
+  Palette,
+  Plus,
+  Users,
+  Video,
+} from 'lucide-react';
 import { CreditBalancePill } from './credit-balance-pill';
 import { UserSidebarFooter } from './user-sidebar-footer';
 
 const navLinks = [
   { to: sequencesRoute.to, label: 'Sequences', icon: Video },
+  { to: stylesRoute.to, label: 'Styles', icon: Palette },
   { to: talentRoute.to, label: 'Talent', icon: Users },
   { to: locationsRoute.to, label: 'Locations', icon: MapPin },
+  { to: galleryRoute.to, label: 'Gallery', icon: Clapperboard },
 ] as const;
 
 export function AppSidebar() {

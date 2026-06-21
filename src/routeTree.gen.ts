@@ -37,9 +37,11 @@ import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/rou
 import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as ApiV1IndexRouteImport } from './routes/api/v1/index'
 import { Route as AppTalentIndexRouteImport } from './routes/_app/talent/index'
+import { Route as AppStylesIndexRouteImport } from './routes/_app/styles/index'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSequencesIndexRouteImport } from './routes/_app/sequences/index'
 import { Route as AppLocationsIndexRouteImport } from './routes/_app/locations/index'
+import { Route as AppGalleryIndexRouteImport } from './routes/_app/gallery/index'
 import { Route as ApiV1SequencesRouteImport } from './routes/api/v1/sequences'
 import { Route as ApiV1OpenapiDotjsonRouteImport } from './routes/api/v1/openapi[.]json'
 import { Route as ApiTestVerifyRouteImport } from './routes/api/test/verify'
@@ -215,6 +217,11 @@ const AppTalentIndexRoute = AppTalentIndexRouteImport.update({
   path: '/talent/',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppStylesIndexRoute = AppStylesIndexRouteImport.update({
+  id: '/styles/',
+  path: '/styles/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -228,6 +235,11 @@ const AppSequencesIndexRoute = AppSequencesIndexRouteImport.update({
 const AppLocationsIndexRoute = AppLocationsIndexRouteImport.update({
   id: '/locations/',
   path: '/locations/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppGalleryIndexRoute = AppGalleryIndexRouteImport.update({
+  id: '/gallery/',
+  path: '/gallery/',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const ApiV1SequencesRoute = ApiV1SequencesRouteImport.update({
@@ -469,9 +481,11 @@ export interface FileRoutesByFullPath {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/gallery/': typeof AppGalleryIndexRoute
   '/locations/': typeof AppLocationsIndexRoute
   '/sequences/': typeof AppSequencesIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/styles/': typeof AppStylesIndexRoute
   '/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -534,9 +548,11 @@ export interface FileRoutesByTo {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/gallery': typeof AppGalleryIndexRoute
   '/locations': typeof AppLocationsIndexRoute
   '/sequences': typeof AppSequencesIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/styles': typeof AppStylesIndexRoute
   '/talent': typeof AppTalentIndexRoute
   '/api/v1': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -605,9 +621,11 @@ export interface FileRoutesById {
   '/api/test/verify': typeof ApiTestVerifyRoute
   '/api/v1/openapi.json': typeof ApiV1OpenapiDotjsonRoute
   '/api/v1/sequences': typeof ApiV1SequencesRouteWithChildren
+  '/_app/gallery/': typeof AppGalleryIndexRoute
   '/_app/locations/': typeof AppLocationsIndexRoute
   '/_app/sequences/': typeof AppSequencesIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/styles/': typeof AppStylesIndexRoute
   '/_app/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
   '/_app/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -674,9 +692,11 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/gallery/'
     | '/locations/'
     | '/sequences/'
     | '/settings/'
+    | '/styles/'
     | '/talent/'
     | '/api/v1/'
     | '/sequences/$id/elements'
@@ -739,9 +759,11 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/gallery'
     | '/locations'
     | '/sequences'
     | '/settings'
+    | '/styles'
     | '/talent'
     | '/api/v1'
     | '/sequences/$id/elements'
@@ -809,9 +831,11 @@ export interface FileRouteTypes {
     | '/api/test/verify'
     | '/api/v1/openapi.json'
     | '/api/v1/sequences'
+    | '/_app/gallery/'
     | '/_app/locations/'
     | '/_app/sequences/'
     | '/_app/settings/'
+    | '/_app/styles/'
     | '/_app/talent/'
     | '/api/v1/'
     | '/_app/sequences/$id/elements'
@@ -1052,6 +1076,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTalentIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/_app/styles/': {
+      id: '/_app/styles/'
+      path: '/styles'
+      fullPath: '/styles/'
+      preLoaderRoute: typeof AppStylesIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/_app/settings/': {
       id: '/_app/settings/'
       path: '/'
@@ -1071,6 +1102,13 @@ declare module '@tanstack/react-router' {
       path: '/locations'
       fullPath: '/locations/'
       preLoaderRoute: typeof AppLocationsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/gallery/': {
+      id: '/_app/gallery/'
+      path: '/gallery'
+      fullPath: '/gallery/'
+      preLoaderRoute: typeof AppGalleryIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/api/v1/sequences': {
@@ -1400,8 +1438,10 @@ interface AppRouteRouteChildren {
   AppLocationsLocationIdRoute: typeof AppLocationsLocationIdRoute
   AppSequencesNewRoute: typeof AppSequencesNewRoute
   AppTalentIdRoute: typeof AppTalentIdRoute
+  AppGalleryIndexRoute: typeof AppGalleryIndexRoute
   AppLocationsIndexRoute: typeof AppLocationsIndexRoute
   AppSequencesIndexRoute: typeof AppSequencesIndexRoute
+  AppStylesIndexRoute: typeof AppStylesIndexRoute
   AppTalentIndexRoute: typeof AppTalentIndexRoute
 }
 
@@ -1413,8 +1453,10 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppLocationsLocationIdRoute: AppLocationsLocationIdRoute,
   AppSequencesNewRoute: AppSequencesNewRoute,
   AppTalentIdRoute: AppTalentIdRoute,
+  AppGalleryIndexRoute: AppGalleryIndexRoute,
   AppLocationsIndexRoute: AppLocationsIndexRoute,
   AppSequencesIndexRoute: AppSequencesIndexRoute,
+  AppStylesIndexRoute: AppStylesIndexRoute,
   AppTalentIndexRoute: AppTalentIndexRoute,
 }
 

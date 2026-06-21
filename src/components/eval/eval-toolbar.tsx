@@ -48,6 +48,7 @@ type EvalToolbarProps = {
   onViewModeChange: (mode: ViewMode) => void;
   filters: FilterState;
   onFiltersChange: (filters: FilterState) => void;
+  styleOptions: FilterSelectOption[];
   sortCriteria: SortCriteria[];
   onSortChange: (criteria: SortCriteria[]) => void;
   supportMode?: boolean;
@@ -72,6 +73,7 @@ const countActiveFilters = (filters: FilterState): number => {
   if (filters.analysisModel) count++;
   if (filters.imageModel) count++;
   if (filters.aspectRatio) count++;
+  if (filters.styleId) count++;
   if (filters.dateFrom) count++;
   if (filters.dateTo) count++;
   return count;
@@ -189,6 +191,7 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
   onViewModeChange,
   filters,
   onFiltersChange,
+  styleOptions,
   sortCriteria,
   onSortChange,
   supportMode,
@@ -254,6 +257,13 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
     });
   };
 
+  const handleStyleChange = (value: string) => {
+    onFiltersChange({
+      ...filters,
+      styleId: value === 'all' ? null : value,
+    });
+  };
+
   const clearFilters = () => {
     onFiltersChange({
       search: '',
@@ -262,6 +272,7 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
       analysisModel: null,
       imageModel: null,
       aspectRatio: null,
+      styleId: null,
     });
   };
 
@@ -451,6 +462,16 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
                 triggerClassName="h-11"
               />
 
+              <FilterSelect
+                id="mobile-style"
+                label="Style"
+                value={filters.styleId || 'all'}
+                onValueChange={handleStyleChange}
+                options={styleOptions}
+                placeholder="Style"
+                triggerClassName="h-11"
+              />
+
               {isAdmin && (
                 <div className="flex flex-col gap-3 border-t pt-3">
                   <div className="flex items-center justify-between gap-2">
@@ -545,6 +566,13 @@ export const EvalToolbar: React.FC<EvalToolbarProps> = ({
             options={aspectRatioOptions}
             placeholder="Aspect Ratio"
             triggerClassName="w-36"
+          />
+          <FilterSelect
+            value={filters.styleId || 'all'}
+            onValueChange={handleStyleChange}
+            options={styleOptions}
+            placeholder="Style"
+            triggerClassName="w-44"
           />
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" onClick={clearFilters}>

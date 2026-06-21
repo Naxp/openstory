@@ -9,6 +9,7 @@ import {
 } from '@/hooks/use-sequences-with-frames';
 import { useAdminAllSequencesWithFrames } from '@/hooks/use-admin-support';
 import { useTeamDivergentSequenceVariants } from '@/hooks/use-sequence-variants';
+import { useStyles } from '@/hooks/use-styles';
 import { isSystemAdminFn } from '@/functions/gift-tokens';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
@@ -50,6 +51,7 @@ export type FilterState = {
   analysisModel: string | null;
   imageModel: string | null;
   aspectRatio: AspectRatio | null;
+  styleId: string | null;
 };
 
 export type SortCriteria = {
@@ -64,6 +66,7 @@ const defaultFilters: FilterState = {
   analysisModel: null,
   imageModel: null,
   aspectRatio: null,
+  styleId: null,
 };
 
 type EvalViewProps = {
@@ -101,6 +104,17 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     supportMode ? filters.search : undefined
   );
 
+  // Styles let search match a style's name and resolve ids → names for the
+  // filter dropdown. The list covers the team's styles plus public ones.
+  const { data: styles } = useStyles();
+  const styleNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const style of styles ?? []) {
+      map.set(style.id, style.name);
+    }
+    return map;
+  }, [styles]);
+
   const sequences: SequenceWithFrames[] = supportMode
     ? adminData.data
     : ownData.data;
@@ -109,6 +123,22 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     ? adminData.framesLoadingMap
     : ownData.framesLoadingMap;
   const error = supportMode ? adminData.error : ownData.error;
+
+  // Only offer styles that actually appear in the loaded sequences — listing
+  // every team/public style would clutter the filter with options that match
+  // nothing. Fall back to the raw styleId when a name isn't resolvable (e.g. a
+  // cross-team style in support mode) so the option still filters correctly.
+  const styleOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const seq of sequences) {
+      if (!seq.styleId || seen.has(seq.styleId)) continue;
+      seen.set(seq.styleId, styleNameById.get(seq.styleId) ?? seq.styleId);
+    }
+    const options = [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return [{ value: 'all', label: 'All Styles' }, ...options];
+  }, [sequences, styleNameById]);
 
   // Team-scoped divergence flags so own-data rows show a "variants available"
   // dot. In support mode rows belong to other teams, so the flag is irrelevant.
@@ -137,9 +167,17 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
         sequences,
         filters,
         sortCriteria,
-        effectiveHideInternal ? internalDomains : []
+        effectiveHideInternal ? internalDomains : [],
+        styleNameById
       ),
-    [sequences, filters, sortCriteria, effectiveHideInternal, internalDomains]
+    [
+      sequences,
+      filters,
+      sortCriteria,
+      effectiveHideInternal,
+      internalDomains,
+      styleNameById,
+    ]
   );
 
   const handleLoadMore = supportMode
@@ -169,6 +207,7 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
         onViewModeChange={setViewMode}
         filters={filters}
         onFiltersChange={setFilters}
+        styleOptions={styleOptions}
         sortCriteria={sortCriteria}
         onSortChange={setSortCriteria}
         supportMode={supportMode}
@@ -245,7 +284,8 @@ function applyFiltersAndSort(
   sequences: SequenceWithFrames[],
   filters: FilterState,
   sortCriteria: SortCriteria[],
-  hideDomains: string[]
+  hideDomains: string[],
+  styleNameById: Map<string, string>
 ): SequenceWithFrames[] {
   let result = [...sequences];
 
@@ -264,6 +304,9 @@ function applyFiltersAndSort(
     const searchLower = filters.search.toLowerCase();
     result = result.filter((s) => {
       if (s.title.toLowerCase().includes(searchLower)) return true;
+      const styleName = s.styleId ? styleNameById.get(s.styleId) : undefined;
+      if (styleName && styleName.toLowerCase().includes(searchLower))
+        return true;
       const { name, email } = getCreatorIdentity(s);
       if (name && name.toLowerCase().includes(searchLower)) return true;
       if (email && email.toLowerCase().includes(searchLower)) return true;
@@ -290,6 +333,10 @@ function applyFiltersAndSort(
 
   if (filters.aspectRatio) {
     result = result.filter((s) => s.aspectRatio === filters.aspectRatio);
+  }
+
+  if (filters.styleId) {
+    result = result.filter((s) => s.styleId === filters.styleId);
   }
 
   // Apply multi-criteria sort
