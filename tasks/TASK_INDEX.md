@@ -10,3 +10,13 @@
   - Goal: define a 3-phase Tauri desktop migration blueprint and complete phase-1 mapping/setup artifacts
   - Audit: `audits/2026-06-21-0002-desktop-migration-blueprint-audit.md`
   - Task file: `tasks/0002-desktop-migration-blueprint-and-phase1-setup.md`
+- 0003-desktop-migration-phase2-local-adapters
+  - Status: completed
+  - Goal: add local-runtime seam adapters for workflows/realtime/email/storage/db bootstrap so local desktop startup can proceed without Cloudflare bindings
+  - Audit: `audits/2026-06-21-0003-desktop-migration-phase2-local-adapters-audit.md`
+  - Task file: `tasks/0003-desktop-migration-phase2-local-adapters.md`
+- 0004-desktop-migration-phase2-local-adapter-tests
+  - Status: completed
+  - Goal: add explicit unit coverage for local fallback behavior in runtime-mode and local realtime messaging paths
+  - Audit: `audits/2026-06-21-0004-desktop-migration-phase2-local-adapter-tests-audit.md`
+  - Task file: `tasks/0004-desktop-migration-phase2-local-adapter-tests.md`
