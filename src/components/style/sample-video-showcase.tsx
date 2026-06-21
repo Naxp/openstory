@@ -1,5 +1,13 @@
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VideoPlayer } from '@/components/motion/video-player';
 import { useStyles } from '@/hooks/use-styles';
 import { getAspectRatioClassName } from '@/lib/constants/aspect-ratios';
 import {
@@ -15,7 +23,7 @@ import { Route as GalleryRoute } from '@/routes/_app/gallery/index';
 import { Route as NewSequenceRoute } from '@/routes/_app/sequences/new';
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Wand2 } from 'lucide-react';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 /** Max styles to feature in the curated showcase so it stays a teaser, not a dump. */
 const MAX_STYLES = 9;
@@ -81,14 +89,18 @@ export const SampleVideoCard: React.FC<{ entry: SampleEntry }> = ({
   entry,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [open, setOpen] = useState(false);
 
   // Resting state is a cheap Cloudflare-extracted poster frame (~36KB jpg) and
   // `preload="none"`, so the page paints without fetching a single video byte.
   // The downscaled clip (Cloudflare `mode=video`, ~6× smaller than the master)
   // is only fetched + played on hover. Touch devices that fire no hover keep
-  // showing the poster — a tap on the card plays it.
+  // showing the poster. Clicking the card opens a dialog with a full player
+  // (controls + sound). The dialog uses a larger downscale so it's sharp at
+  // size without paying for the full master clip.
   const poster = videoPosterUrl(entry.video.url);
   const src = optimizedVideoUrl(entry.video.url);
+  const playerSrc = optimizedVideoUrl(entry.video.url, 1280);
 
   const play = useCallback(() => {
     const el = videoRef.current;
@@ -105,47 +117,93 @@ export const SampleVideoCard: React.FC<{ entry: SampleEntry }> = ({
   }, []);
 
   return (
-    <div
-      className={cn(
-        'group relative w-full overflow-hidden rounded-lg border bg-muted',
-        getAspectRatioClassName(entry.aspectRatio)
-      )}
-      onMouseEnter={play}
-      onMouseLeave={stop}
-    >
-      <video
-        ref={videoRef}
-        src={src}
-        poster={poster}
-        className="absolute inset-0 h-full w-full object-cover"
-        muted
-        loop
-        playsInline
-        preload="none"
-        aria-label={`${entry.styleName} sample video`}
-        onClick={play}
-      />
-      <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-background/70 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
-        {entry.styleName}
-      </span>
-      {entry.hasBrief && (
-        <Button
-          asChild
-          size="sm"
-          variant="secondary"
-          className="absolute bottom-2 right-2 gap-1.5 opacity-90 backdrop-blur-sm transition-opacity group-hover:opacity-100"
-        >
-          <Link
-            to={NewSequenceRoute.to}
-            search={{ style: entry.slug }}
-            hash="compose"
-            aria-label={`Try the ${entry.styleName} style`}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <div
+        className={cn(
+          'group relative w-full overflow-hidden rounded-lg border bg-muted',
+          getAspectRatioClassName(entry.aspectRatio)
+        )}
+        onMouseEnter={play}
+        onMouseLeave={stop}
+      >
+        <video
+          ref={videoRef}
+          src={src}
+          poster={poster}
+          className="absolute inset-0 h-full w-full object-cover"
+          muted
+          loop
+          playsInline
+          preload="none"
+          aria-hidden="true"
+        />
+        {/* Full-card click target that opens the player dialog. Layered over the
+            preview video; the style label and Try button render after it so they
+            stay on top and keep their own behaviour. */}
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Play the ${entry.styleName} sample video`}
+            className="absolute inset-0 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          />
+        </DialogTrigger>
+        <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-background/70 px-2 py-0.5 text-xs font-medium backdrop-blur-sm">
+          {entry.styleName}
+        </span>
+        {entry.hasBrief && (
+          <Button
+            asChild
+            size="sm"
+            variant="secondary"
+            className="absolute bottom-2 right-2 gap-1.5 opacity-90 backdrop-blur-sm transition-opacity group-hover:opacity-100"
           >
-            <Wand2 className="size-3.5" />
-            Try
-          </Link>
-        </Button>
-      )}
-    </div>
+            <Link
+              to={NewSequenceRoute.to}
+              search={{ style: entry.slug }}
+              hash="compose"
+              aria-label={`Try the ${entry.styleName} style`}
+            >
+              <Wand2 className="size-3.5" />
+              Try
+            </Link>
+          </Button>
+        )}
+      </div>
+      <DialogContent className="max-w-3xl gap-3 sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{entry.styleName}</DialogTitle>
+        </DialogHeader>
+        {/* Mounted only while open so no video bytes load until the dialog is
+            actually shown, and playback resets on close. VideoPlayer forces a
+            full-width aspect-ratio box, so cap the width per aspect ratio — a
+            tall 9:16 clip would otherwise derive a height that overflows the
+            viewport. The cap keeps the derived height within ~75vh. */}
+        {open && (
+          <VideoPlayer
+            src={playerSrc}
+            posterSrc={poster}
+            aspectRatio={entry.aspectRatio}
+            autoPlay
+            className={cn(
+              'mx-auto overflow-hidden rounded-lg',
+              entry.aspectRatio === '9:16' && 'max-w-[42vh]',
+              entry.aspectRatio === '1:1' && 'max-w-[75vh]'
+            )}
+          />
+        )}
+        {entry.hasBrief && (
+          <Button asChild className="gap-1.5">
+            <Link
+              to={NewSequenceRoute.to}
+              search={{ style: entry.slug }}
+              hash="compose"
+            >
+              <Wand2 className="size-4" />
+              Try the {entry.styleName} style
+            </Link>
+          </Button>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 };
