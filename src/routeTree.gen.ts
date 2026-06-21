@@ -37,6 +37,7 @@ import { Route as AppSettingsRouteRouteImport } from './routes/_app/settings/rou
 import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as ApiV1IndexRouteImport } from './routes/api/v1/index'
 import { Route as AppTalentIndexRouteImport } from './routes/_app/talent/index'
+import { Route as AppStylesIndexRouteImport } from './routes/_app/styles/index'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
 import { Route as AppSequencesIndexRouteImport } from './routes/_app/sequences/index'
 import { Route as AppLocationsIndexRouteImport } from './routes/_app/locations/index'
@@ -214,6 +215,11 @@ const ApiV1IndexRoute = ApiV1IndexRouteImport.update({
 const AppTalentIndexRoute = AppTalentIndexRouteImport.update({
   id: '/talent/',
   path: '/talent/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppStylesIndexRoute = AppStylesIndexRouteImport.update({
+  id: '/styles/',
+  path: '/styles/',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
@@ -479,6 +485,7 @@ export interface FileRoutesByFullPath {
   '/locations/': typeof AppLocationsIndexRoute
   '/sequences/': typeof AppSequencesIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/styles/': typeof AppStylesIndexRoute
   '/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -545,6 +552,7 @@ export interface FileRoutesByTo {
   '/locations': typeof AppLocationsIndexRoute
   '/sequences': typeof AppSequencesIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/styles': typeof AppStylesIndexRoute
   '/talent': typeof AppTalentIndexRoute
   '/api/v1': typeof ApiV1IndexRoute
   '/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -617,6 +625,7 @@ export interface FileRoutesById {
   '/_app/locations/': typeof AppLocationsIndexRoute
   '/_app/sequences/': typeof AppSequencesIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/styles/': typeof AppStylesIndexRoute
   '/_app/talent/': typeof AppTalentIndexRoute
   '/api/v1/': typeof ApiV1IndexRoute
   '/_app/sequences/$id/elements': typeof AppSequencesIdElementsRoute
@@ -687,6 +696,7 @@ export interface FileRouteTypes {
     | '/locations/'
     | '/sequences/'
     | '/settings/'
+    | '/styles/'
     | '/talent/'
     | '/api/v1/'
     | '/sequences/$id/elements'
@@ -753,6 +763,7 @@ export interface FileRouteTypes {
     | '/locations'
     | '/sequences'
     | '/settings'
+    | '/styles'
     | '/talent'
     | '/api/v1'
     | '/sequences/$id/elements'
@@ -824,6 +835,7 @@ export interface FileRouteTypes {
     | '/_app/locations/'
     | '/_app/sequences/'
     | '/_app/settings/'
+    | '/_app/styles/'
     | '/_app/talent/'
     | '/api/v1/'
     | '/_app/sequences/$id/elements'
@@ -1062,6 +1074,13 @@ declare module '@tanstack/react-router' {
       path: '/talent'
       fullPath: '/talent/'
       preLoaderRoute: typeof AppTalentIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/_app/styles/': {
+      id: '/_app/styles/'
+      path: '/styles'
+      fullPath: '/styles/'
+      preLoaderRoute: typeof AppStylesIndexRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/_app/settings/': {
@@ -1422,6 +1441,7 @@ interface AppRouteRouteChildren {
   AppGalleryIndexRoute: typeof AppGalleryIndexRoute
   AppLocationsIndexRoute: typeof AppLocationsIndexRoute
   AppSequencesIndexRoute: typeof AppSequencesIndexRoute
+  AppStylesIndexRoute: typeof AppStylesIndexRoute
   AppTalentIndexRoute: typeof AppTalentIndexRoute
 }
 
@@ -1436,6 +1456,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppGalleryIndexRoute: AppGalleryIndexRoute,
   AppLocationsIndexRoute: AppLocationsIndexRoute,
   AppSequencesIndexRoute: AppSequencesIndexRoute,
+  AppStylesIndexRoute: AppStylesIndexRoute,
   AppTalentIndexRoute: AppTalentIndexRoute,
 }
 

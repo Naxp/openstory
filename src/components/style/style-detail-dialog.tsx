@@ -1,0 +1,237 @@
+import { AppImage } from '@/components/ui/app-image';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
+import {
+  DEFAULT_ASPECT_RATIO,
+  getAspectRatioClassName,
+  type AspectRatio,
+} from '@/lib/constants/aspect-ratios';
+import {
+  optimizedVideoUrl,
+  videoPosterUrl,
+} from '@/lib/media/cloudflare-video';
+import {
+  styleCanonicalVideoUrl,
+  styleCategoryLabel,
+  stylePreviewImageUrls,
+} from '@/lib/style/style-assets';
+import { cn } from '@/lib/utils';
+import type { Style } from '@/types/database';
+import type { FC } from 'react';
+import { useState } from 'react';
+import { getStyleGradient } from './style-gradient';
+
+type StyleDetailDialogProps = {
+  style: Style | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+function aspectRatioOf(style: Style): AspectRatio {
+  switch (style.defaultAspectRatio) {
+    case '9:16':
+      return '9:16';
+    case '1:1':
+      return '1:1';
+    case '16:9':
+      return '16:9';
+    default:
+      return DEFAULT_ASPECT_RATIO;
+  }
+}
+
+/** A still that removes itself if the source 404s (some older styles render
+ * fewer than three scenes), so the row never shows a broken image box. */
+const PreviewStill: FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <div className="relative aspect-square overflow-hidden rounded-md bg-muted">
+      <AppImage
+        src={src}
+        alt={alt}
+        layout="fullWidth"
+        className="h-full w-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+};
+
+const ConfigRow: FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex flex-col gap-0.5">
+    <dt className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      {label}
+    </dt>
+    <dd className="text-sm leading-relaxed">{value}</dd>
+  </div>
+);
+
+/**
+ * Read-only detail view for a style: its canonical sample video, the three
+ * preview stills, description, and the full visual config (mood, lighting,
+ * camera, palette, reference films, tags). Opened from the styles page card.
+ */
+export const StyleDetailDialog: FC<StyleDetailDialogProps> = ({
+  style,
+  open,
+  onOpenChange,
+}) => {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[90vh] max-w-[95vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
+        {style && <StyleDetailContent style={style} />}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const StyleDetailContent: FC<{ style: Style }> = ({ style }) => {
+  const canonicalUrl = styleCanonicalVideoUrl(style);
+  const videoSrc = canonicalUrl ? optimizedVideoUrl(canonicalUrl) : null;
+  const poster = canonicalUrl ? videoPosterUrl(canonicalUrl) : undefined;
+  const stills = stylePreviewImageUrls(style);
+  const { config } = style;
+  const tags = style.tags ?? [];
+
+  const configRows: Array<{ label: string; value: string }> = [
+    { label: 'Mood', value: config.mood },
+    { label: 'Art style', value: config.artStyle },
+    { label: 'Lighting', value: config.lighting },
+    { label: 'Camera', value: config.cameraWork },
+    { label: 'Color grading', value: config.colorGrading },
+  ].filter((row) => row.value.trim());
+
+  return (
+    <div className="flex min-h-0 flex-col">
+      <DialogHeader className="space-y-2 px-6 pt-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <DialogTitle className="text-xl">{style.name}</DialogTitle>
+          {style.category && (
+            <Badge variant="secondary">
+              {styleCategoryLabel(style.category)}
+            </Badge>
+          )}
+        </div>
+        {style.description && (
+          <DialogDescription className="text-sm leading-relaxed">
+            {style.description}
+          </DialogDescription>
+        )}
+      </DialogHeader>
+
+      <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto px-6 py-4 lg:grid-cols-[1.4fr_1fr]">
+        {/* Media: canonical video + the three preview stills */}
+        <div className="flex flex-col gap-4">
+          {videoSrc ? (
+            <div
+              className={cn(
+                'relative w-full overflow-hidden rounded-lg border bg-muted',
+                getAspectRatioClassName(aspectRatioOf(style))
+              )}
+            >
+              <video
+                src={videoSrc}
+                poster={poster}
+                className="absolute inset-0 h-full w-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                aria-label={`${style.name} sample video`}
+              />
+            </div>
+          ) : (
+            <div
+              className={cn(
+                'w-full overflow-hidden rounded-lg border',
+                getAspectRatioClassName(aspectRatioOf(style))
+              )}
+              style={{ background: getStyleGradient(config.colorPalette) }}
+            />
+          )}
+
+          {stills.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {stills.map((src, i) => (
+                <PreviewStill
+                  key={src}
+                  src={src}
+                  alt={`${style.name} preview ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Visual config */}
+        <div className="flex flex-col gap-4">
+          {config.colorPalette.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Palette
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {config.colorPalette.map((color) => (
+                  <span
+                    key={color}
+                    className="h-6 w-6 rounded-full border"
+                    style={{ backgroundColor: color }}
+                    title={color}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <dl className="flex flex-col gap-3">
+            {configRows.map((row) => (
+              <ConfigRow key={row.label} label={row.label} value={row.value} />
+            ))}
+          </dl>
+
+          {config.referenceFilms.length > 0 && (
+            <>
+              <Separator />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Reference films
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {config.referenceFilms.map((film) => (
+                    <Badge key={film} variant="outline">
+                      {film}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {tags.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Tags
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <Badge key={tag} variant="secondary">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
