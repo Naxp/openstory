@@ -22,6 +22,7 @@ import { Route as galleryRoute } from '@/routes/_app/gallery/index';
 import { Route as locationsRoute } from '@/routes/_app/locations/index';
 import { Route as sequencesRoute } from '@/routes/_app/sequences/index';
 import { Route as sequencesNewRoute } from '@/routes/_app/sequences/new';
+import { Route as stylesRoute } from '@/routes/_app/styles/index';
 import { Route as talentRoute } from '@/routes/_app/talent/index';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
@@ -29,6 +30,7 @@ import {
   Clapperboard,
   LifeBuoy,
   MapPin,
+  Palette,
   Plus,
   Users,
   Video,
@@ -38,6 +40,7 @@ import { UserSidebarFooter } from './user-sidebar-footer';
 
 const navLinks = [
   { to: sequencesRoute.to, label: 'Sequences', icon: Video },
+  { to: stylesRoute.to, label: 'Styles', icon: Palette },
   { to: talentRoute.to, label: 'Talent', icon: Users },
   { to: locationsRoute.to, label: 'Locations', icon: MapPin },
   { to: galleryRoute.to, label: 'Gallery', icon: Clapperboard },

@@ -2,10 +2,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import type { Style } from '@/types/database';
-import { AppImage } from '@/components/ui/app-image';
 import type { FC, KeyboardEvent } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { getStyleGradient } from './style-gradient';
+import { StyleHoverPreview } from './style-hover-preview';
 
 type StyleGridProps = {
   styles: Style[];
@@ -32,8 +31,6 @@ const StyleCard: FC<StyleCardProps> = ({
   tabIndex = -1,
   onKeyDown: onKeyDownProp,
 }) => {
-  const [imgError, setImgError] = useState(false);
-
   const handleClick = useCallback(() => {
     onSelect(style.id);
   }, [style.id, onSelect]);
@@ -84,24 +81,7 @@ const StyleCard: FC<StyleCardProps> = ({
       data-testid={`style-card-${style.id}`}
     >
       <CardContent className="p-0">
-        <div className="relative aspect-square overflow-hidden rounded-t-lg bg-muted">
-          {style.previewUrl && !imgError ? (
-            <AppImage
-              src={style.previewUrl}
-              alt={`${style.name} style preview`}
-              layout="fullWidth"
-              className="h-full w-full object-cover"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <div
-              className="w-full h-full"
-              style={{
-                background: getStyleGradient(style.config.colorPalette),
-              }}
-            />
-          )}
-        </div>
+        <StyleHoverPreview style={style} className="rounded-t-lg" />
         <div className="p-3">
           <h3
             className="text-center text-xs font-semibold uppercase tracking-wider"

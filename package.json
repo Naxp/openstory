@@ -41,6 +41,7 @@
     "styles:sample-videos:upload": "bun scripts/upload-style-sample-videos-to-r2.ts",
     "styles:sample-videos:seed:local": "bun scripts/seed-style-sample-videos.ts --local",
     "styles:sample-videos:seed:d1": "bun scripts/seed-style-sample-videos.ts --d1",
+    "styles:sample-videos:seed:sql": "bun scripts/seed-style-sample-videos.ts --sql",
     "upload:prompts": "bun scripts/upload-all-prompts.ts",
     "agent-harness": "bunx github:tombeckenham/agent-harness",
     "dev": "bun scripts/ensure-env.ts && bun run dev:app",
