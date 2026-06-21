@@ -211,6 +211,25 @@ describe('backfillScenes', () => {
     expect(allShots.every((s) => s.sceneId !== null)).toBe(true);
   });
 
+  it('adopts an orphan scene from an interrupted run instead of colliding', async () => {
+    // Simulate a run that died after inserting the scene but before pointing
+    // the shot at it: an orphan scene exists at (sequenceId, orderIndex) and
+    // the shot still has a null sceneId. The unique index would reject a
+    // duplicate insert, so the re-run must adopt the orphan.
+    const shot = await insertShot({ orderIndex: 0, metadata: sceneFixture() });
+    const orphan = buildSceneRow(sequenceId, 0, shot.metadata);
+    await db.insert(scenes).values(orphan);
+
+    const result = await backfillScenes(db);
+    // The orphan is reused, not re-created.
+    expect(result.createdScenes).toBe(0);
+    expect(await db.select().from(scenes)).toHaveLength(1);
+
+    const [reread] = await db.select().from(shots).where(eq(shots.id, shot.id));
+    expect(reread?.sceneId).toBe(orphan.id);
+    expect(reread?.shotNumber).toBe(1);
+  });
+
   it('does not write when dryRun is set', async () => {
     await insertShot({ orderIndex: 0, metadata: sceneFixture() });
     const result = await backfillScenes(db, { dryRun: true });

@@ -152,7 +152,15 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
   .handler(async ({ data, context }) => {
     const { sequence, teamId, user } = context;
 
-    const allFrames = await context.scopedDb.shots.listBySequence(sequence.id);
+    // Shots and scenes both key off `sequence.id` only — fetch in parallel.
+    // Scenes feed scene-level model resolution (#909): each shot renders with
+    // its scene's chosen video model (scene → sequence default). `data.model`,
+    // when present, is a sequence-wide override ("generate all" secondary action).
+    const [allFrames, scenes] = await Promise.all([
+      context.scopedDb.shots.listBySequence(sequence.id),
+      context.scopedDb.scenes.listBySequence(sequence.id),
+    ]);
+
     // Server determines eligible frames: thumbnail done, video pending/failed
     const eligibleFrames = allFrames.filter(
       (f) =>
@@ -165,10 +173,6 @@ export const batchGenerateMotionFn = createServerFn({ method: 'POST' })
       throw new Error('No eligible frames for motion generation');
     }
 
-    // Model resolution is scene-level (#909): each shot renders with its
-    // scene's chosen video model (scene → sequence default). `data.model`, when
-    // present, is a sequence-wide override ("generate all" secondary action).
-    const scenes = await context.scopedDb.scenes.listBySequence(sequence.id);
     const sceneById = new Map(scenes.map((s) => [s.id, s]));
     const modelForFrame = (frame: (typeof eligibleFrames)[number]) =>
       safeImageToVideoModel(

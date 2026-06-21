@@ -26,7 +26,6 @@ import type {
   StyleConfig,
 } from '@/lib/db/schema';
 import type { ReferenceImageDescription } from '@/lib/prompts/reference-image-prompt';
-import type { Json } from '@/types/database';
 import { z } from 'zod';
 import type { musicDesignResultSchema } from '../ai/response-schemas';
 
@@ -47,7 +46,7 @@ export interface SequenceWorkflowContext extends UserWorkflowContext {
  */
 export interface ImageWorkflowInput extends SequenceWorkflowContext {
   prompt: string;
-  style?: Json;
+  style?: StyleConfig;
   model?: keyof typeof IMAGE_MODELS;
   width?: number;
   height?: number;

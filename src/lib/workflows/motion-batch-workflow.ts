@@ -35,6 +35,7 @@ import { getGenerationChannel } from '@/lib/realtime';
 import { OpenStoryWorkflowEntrypoint } from '@/lib/workflow/base-workflow';
 import { spawnAndAwaitChild } from '@/lib/workflow/await-child';
 import { WorkflowValidationError } from '@/lib/workflow/errors';
+import { NonRetryableError } from 'cloudflare:workflows';
 import {
   groupShotsForRender,
   type RenderShot,
@@ -312,11 +313,11 @@ export class MotionBatchWorkflow extends OpenStoryWorkflowEntrypoint<BatchMotion
       ? await Promise.allSettled(musicAwaits)
       : null;
 
-    // Log per-frame motion failures for visibility; we don't throw here — the
-    // QStash original uses Promise.all + a single combined await, but parity
-    // with the rest of the CF batch surface (frame-images) is to allSettle
-    // and rely on the collect step below to validate that we have something
-    // mergeable.
+    // Log per-shot motion failures for visibility. We allSettle (vs the QStash
+    // original's Promise.all) for parity with the rest of the CF batch surface
+    // (shot-images) so one bad clip doesn't poison its siblings. Each rejected
+    // child has already written its own per-shot `frame_variants.status='failed'`
+    // row via onFailure; the aggregate total-failure guard runs after the loops.
     for (let i = 0; i < motionResults.length; i++) {
       const r = motionResults[i];
       if (r?.status === 'rejected') {
@@ -343,6 +344,25 @@ export class MotionBatchWorkflow extends OpenStoryWorkflowEntrypoint<BatchMotion
           );
         }
       }
+    }
+
+    // Aggregate total-failure guard. There is no server-side merge step
+    // (playback + the final MP4 are produced client-side by `<SequencePlayer>` /
+    // the Mediabunny browser export), so this workflow is the only place a
+    // TOTAL motion failure can be turned into a loud signal. If clips were
+    // expected and none rendered, throw so the base class onFailure emits
+    // `generation.failed` rather than letting the analyze pipeline report
+    // success with zero video. `NonRetryableError` fails the instance
+    // immediately — re-running deterministic failures (content rejections, a
+    // model outage) would just burn the budget again. Partial success is fine:
+    // the rendered clips are usable and each failed shot already shows its row.
+    const motionReady = motionResults.filter(
+      (r) => r.status === 'fulfilled'
+    ).length;
+    if (motionAwaits.length > 0 && motionReady === 0) {
+      throw new NonRetryableError(
+        `All ${motionAwaits.length} motion clip(s) failed for sequence ${sequenceId}; no video was produced.`
+      );
     }
 
     // Playback and the final MP4 are produced client-side by

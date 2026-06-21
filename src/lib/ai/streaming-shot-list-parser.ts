@@ -28,6 +28,11 @@ import {
   type LocationBibleEntry,
   locationBibleEntrySchema,
 } from './scene-analysis.schema';
+import {
+  collectComplete,
+  isRecord,
+  stripCodeFences,
+} from './streaming-scene-parser';
 
 const lenientOriginalScript = z.object({
   extract: z.string().catch(''),
@@ -81,24 +86,6 @@ export type StreamedShotListEvent =
   | { type: 'scene:updated'; scene: ShotListStreamedScene; index: number }
   | { type: 'characterBible'; bible: CharacterBibleEntry[] }
   | { type: 'locationBible'; bible: LocationBibleEntry[] };
-
-/** Strip markdown code fences some models wrap around JSON output. */
-function stripCodeFences(text: string): string {
-  return text.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
-function collectComplete<T>(items: unknown[], schema: z.ZodType<T>): T[] {
-  const out: T[] = [];
-  for (const item of items) {
-    const result = schema.safeParse(item);
-    if (result.success) out.push(result.data);
-  }
-  return out;
-}
 
 export function createStreamingShotListParser() {
   let lastEmittedSceneCount = 0;

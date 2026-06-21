@@ -14,6 +14,7 @@
  */
 
 import type { Scene } from '@/lib/ai/scene-analysis.schema';
+import type { RenderStrategy } from '@/lib/model/resolve-render-strategy';
 import { type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import {
   index,
@@ -100,9 +101,9 @@ export const scenes = snakeCase.table(
     videoGeneratedAt: integer({ mode: 'timestamp' }),
     videoError: text(),
     videoInputHash: text(),
-    // How the scene render is assembled (e.g. multi-shot vs per-shot). Free
-    // text until #910 defines the strategy enum.
-    renderStrategy: text(),
+    // How the scene render is assembled. NULL on legacy/pre-#910 rows is read
+    // as `per-shot` by `normalizeRenderStrategy`.
+    renderStrategy: text().$type<RenderStrategy>(),
     createdAt: integer({ mode: 'timestamp' })
       .$defaultFn(() => new Date())
       .notNull(),

@@ -94,7 +94,7 @@ export function stripCodeFences(text: string): string {
   return text.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
@@ -103,7 +103,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * validate. Used for mid-stream bible arrays where the trailing entry is often
  * still partial — we emit the entries that have completed so far.
  */
-function collectComplete<T>(items: unknown[], schema: z.ZodType<T>): T[] {
+export function collectComplete<T>(
+  items: unknown[],
+  schema: z.ZodType<T>
+): T[] {
   const out: T[] = [];
   for (const item of items) {
     const result = schema.safeParse(item);

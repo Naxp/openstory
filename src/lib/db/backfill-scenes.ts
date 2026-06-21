@@ -9,7 +9,7 @@ import type { Database } from '@/lib/db/client';
 import { generateId } from '@/lib/db/id';
 import type { NewScene } from '@/lib/db/schema';
 import { dbSceneId, scenes, shots } from '@/lib/db/schema';
-import { eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 const BACKFILL_BATCH_SIZE = 50;
 
@@ -82,12 +82,33 @@ export async function backfillScenes(
         continue;
       }
 
-      await db.insert(scenes).values(sceneRow);
+      // Find-or-create on the scene's natural key. The insert + shot-update
+      // below are two non-atomic writes; if a prior run died between them it
+      // left an orphan scene at this (sequenceId, orderIndex) and the shot
+      // still null. Re-running must ADOPT that orphan, not insert a duplicate —
+      // a second insert would collide on the `scenes_sequence_id_order_index`
+      // unique index and abort the whole backfill. Adopting makes the run
+      // self-healing instead.
+      const [existing] = await db
+        .select({ id: scenes.id })
+        .from(scenes)
+        .where(
+          and(
+            eq(scenes.sequenceId, shot.sequenceId),
+            eq(scenes.orderIndex, shot.orderIndex)
+          )
+        )
+        .limit(1);
+
+      const sceneId = existing?.id ?? sceneRow.id;
+      if (!existing) {
+        await db.insert(scenes).values(sceneRow);
+        createdScenes++;
+      }
       await db
         .update(shots)
-        .set({ sceneId: sceneRow.id, shotNumber: 1 })
+        .set({ sceneId, shotNumber: 1 })
         .where(eq(shots.id, shot.id));
-      createdScenes++;
     }
     log(
       `  …processed ${Math.min(i + batchSize, pending.length)}/${pending.length}`

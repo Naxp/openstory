@@ -448,32 +448,28 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     );
   }, [imageVariants, curSelectedFrameId]);
 
-  // Variant preview now tracks the scene's chosen models (#909): the prompts
-  // panel's Generate/Set state and previewed variant target the model the scene
-  // is set to render with, replacing the former per-shot override.
-  const effectiveImageModel = sceneImageModel;
-
+  // Variant preview tracks the scene's chosen models (#909): the prompts panel's
+  // Generate/Set state and previewed variant target the model the scene is set
+  // to render with, replacing the former per-shot override.
   const variantForSelectedModel = useMemo(() => {
     if (!selectedShotVariants) return undefined;
-    return selectedShotVariants.find((v) => v.model === effectiveImageModel);
-  }, [selectedShotVariants, effectiveImageModel]);
+    return selectedShotVariants.find((v) => v.model === sceneImageModel);
+  }, [selectedShotVariants, sceneImageModel]);
 
   // Video equivalent: the selected scene's video variant for the scene's chosen
   // video model. Excludes divergent / discarded alternates so only the primary
   // per-model row is matched.
-  const effectiveVideoModel: string | null = sceneVideoModel;
-
   const videoVariantForSelectedModel = useMemo(() => {
     if (!curSelectedFrameId) return undefined;
     return videoVariantsByFrame
       .get(curSelectedFrameId)
       ?.find(
         (v) =>
-          v.model === effectiveVideoModel &&
+          v.model === sceneVideoModel &&
           v.divergedAt === null &&
           v.discardedAt === null
       );
-  }, [videoVariantsByFrame, curSelectedFrameId, effectiveVideoModel]);
+  }, [videoVariantsByFrame, curSelectedFrameId, sceneVideoModel]);
 
   // The shots that make up the selected scene. Today every scene is a single
   // shot (#907 1:1), but the scene-granular coverage below aggregates across
@@ -539,10 +535,7 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
           selectedFrame.imageModel,
           DEFAULT_IMAGE_MODEL
         );
-        if (
-          effectiveImageModel !== frameImageModel &&
-          !variantForSelectedModel
-        ) {
+        if (sceneImageModel !== frameImageModel && !variantForSelectedModel) {
           return {
             ...none,
             playerBadgeMessage: 'Click Generate Image to create',
@@ -568,12 +561,10 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
           selectedFrame.motionModel,
           DEFAULT_VIDEO_MODEL
         );
-        // Only prompt when a specific model is picked (effectiveVideoModel) and
-        // differs from the frame's current one with no variant yet. A null
-        // (unknown) model means there's nothing specific to generate here.
+        // Prompt when the scene's video model differs from the frame's current
+        // one with no variant yet.
         if (
-          effectiveVideoModel &&
-          effectiveVideoModel !== frameVideoModel &&
+          sceneVideoModel !== frameVideoModel &&
           !videoVariantForSelectedModel
         ) {
           return {
@@ -588,9 +579,9 @@ export const ScenesView: React.FC<ScenesViewProps> = ({ sequenceId }) => {
     }, [
       selectedTab,
       selectedFrame,
-      effectiveImageModel,
+      sceneImageModel,
+      sceneVideoModel,
       variantForSelectedModel,
-      effectiveVideoModel,
       videoVariantForSelectedModel,
     ]);
 

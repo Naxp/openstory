@@ -7,9 +7,6 @@
 
 import type { Shot, Sequence, Style, User } from '@/lib/db/schema';
 
-// JSON type for metadata fields (compatible with Supabase Json type)
-export type Json = Record<string, unknown> | unknown[];
-
 // Table row types (SELECT results - use camelCase field names)
 export type { Shot, Sequence, Style };
 

@@ -649,6 +649,19 @@ export class AnalyzeScriptWorkflow extends OpenStoryWorkflowEntrypoint<AnalyzeSc
         const matchedFrame = shotMapping.find(
           (f) => f.analysisSceneId === scene.sceneId
         );
+        // On a persisted sequence every scene that produced an image must have
+        // a shot row in the mapping. A miss means image generation and shot
+        // persistence diverged — generating motion here would bill a clip that
+        // attaches to no shot row (empty shotId) and silently vanishes. Skip +
+        // warn, mirroring the missing-image branch above. The anonymous preview
+        // path has no `sequenceId` and legitimately carries empty shotIds, so it
+        // is exempt.
+        if (sequenceId && !matchedFrame) {
+          logger.warn(
+            `[AnalyzeScriptWorkflow:cf] Scene ${scene.sceneId} has no persisted shot mapping (index ${index}); skipping its motion`
+          );
+          return [];
+        }
         const shotId = matchedFrame?.shotId ?? '';
         const grouping = shotGroupingById[shotId];
 

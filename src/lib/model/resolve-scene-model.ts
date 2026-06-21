@@ -19,15 +19,11 @@ import {
   type TextToImageModel,
 } from '@/lib/ai/models';
 
-// Each resolver reads only its own field, so both are independently optional —
-// callers can pass a partial row (e.g. the middleware's PartialSequence, which
-// carries videoModel but not imageModel) without widening to `unknown`.
-type SceneModelSource = {
-  imageModel?: string | null;
-  videoModel?: string | null;
-};
-
-type SequenceModelSource = {
+// Each resolver reads only its own field, so both fields are independently
+// optional — callers can pass a partial row (e.g. the middleware's
+// PartialSequence, which carries videoModel but not imageModel) without widening
+// to `unknown`. The scene override and the sequence default have the same shape.
+type ModelSource = {
   imageModel?: string | null;
   videoModel?: string | null;
 };
@@ -38,8 +34,8 @@ type SequenceModelSource = {
  * loaded yet; the chain falls through to the next level.
  */
 export function resolveSceneImageModel(
-  scene: SceneModelSource | null | undefined,
-  sequence: SequenceModelSource | null | undefined
+  scene: ModelSource | null | undefined,
+  sequence: ModelSource | null | undefined
 ): TextToImageModel {
   return safeTextToImageModel(
     scene?.imageModel ?? sequence?.imageModel,
@@ -52,8 +48,8 @@ export function resolveSceneImageModel(
  * global default. Mirrors {@link resolveSceneImageModel}.
  */
 export function resolveSceneVideoModel(
-  scene: SceneModelSource | null | undefined,
-  sequence: SequenceModelSource | null | undefined
+  scene: ModelSource | null | undefined,
+  sequence: ModelSource | null | undefined
 ): ImageToVideoModel {
   return safeImageToVideoModel(
     scene?.videoModel ?? sequence?.videoModel,

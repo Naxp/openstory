@@ -21,6 +21,14 @@ import {
 type MotionDialogue = NonNullable<MotionPrompt['dialogue']>;
 type MotionAudio = NonNullable<MotionPrompt['audio']>;
 
+/**
+ * The single-shot no-cuts guard sentence Seedance's builder appends so it
+ * doesn't invent edits in a one-take scene. Exported so the multi-shot
+ * assembler can strip exactly this sentence (a multi-shot render must keep its
+ * cuts) without re-declaring the literal.
+ */
+export const NO_CUTS_GUARD = 'Single continuous shot, no cuts.';
+
 type AssembleOptions = {
   motionPrompt: MotionPrompt;
   model: ImageToVideoModel;
@@ -161,7 +169,7 @@ function buildSeedancePrompt(
   }
 
   // Seedance invents edits otherwise, conflicting with one-scene-one-take.
-  const guards = ['Single continuous shot, no cuts.'];
+  const guards = [NO_CUTS_GUARD];
   // Standard guard from the ByteDance prompt guide for scenes with characters
   if (characterTags && characterTags.length > 0) {
     guards.push('Avoid jitter and bent limbs.');

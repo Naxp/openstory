@@ -23,7 +23,7 @@ import {
   videoModelMultiShotSyntax,
 } from '@/lib/ai/models';
 import type { MotionPrompt } from '@/lib/ai/scene-analysis.schema';
-import { assembleMotionPrompt } from './assemble-motion-prompt';
+import { NO_CUTS_GUARD, assembleMotionPrompt } from './assemble-motion-prompt';
 
 /** One shot's structured motion prompt plus its (already snapped) duration. */
 export type MultiShotItem = {
@@ -69,8 +69,6 @@ function ordered(shots: readonly MultiShotItem[]): MultiShotItem[] {
  * its cuts. The guard is the last paragraph Seedance's builder appends; we drop
  * any paragraph that is exactly the guard sentence.
  */
-const NO_CUTS_GUARD = 'Single continuous shot, no cuts.';
-
 function shotBody(
   item: MultiShotItem,
   model: ImageToVideoModel,
