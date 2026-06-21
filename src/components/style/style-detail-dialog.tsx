@@ -9,11 +9,6 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import {
-  DEFAULT_ASPECT_RATIO,
-  getAspectRatioClassName,
-  type AspectRatio,
-} from '@/lib/constants/aspect-ratios';
-import {
   optimizedVideoUrl,
   videoPosterUrl,
 } from '@/lib/media/cloudflare-video';
@@ -22,7 +17,6 @@ import {
   styleCategoryLabel,
   stylePreviewImageUrls,
 } from '@/lib/style/style-assets';
-import { cn } from '@/lib/utils';
 import type { Style } from '@/types/database';
 import type { FC } from 'react';
 import { useState } from 'react';
@@ -33,19 +27,6 @@ type StyleDetailDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
-
-function aspectRatioOf(style: Style): AspectRatio {
-  switch (style.defaultAspectRatio) {
-    case '9:16':
-      return '9:16';
-    case '1:1':
-      return '1:1';
-    case '16:9':
-      return '16:9';
-    default:
-      return DEFAULT_ASPECT_RATIO;
-  }
-}
 
 /** A still that removes itself if the source 404s (some older styles render
  * fewer than three scenes), so the row never shows a broken image box. */
@@ -131,16 +112,13 @@ const StyleDetailContent: FC<{ style: Style }> = ({ style }) => {
         {/* Media: canonical video + the three preview stills */}
         <div className="flex flex-col gap-4">
           {videoSrc ? (
-            <div
-              className={cn(
-                'relative w-full overflow-hidden rounded-lg border bg-muted',
-                getAspectRatioClassName(aspectRatioOf(style))
-              )}
-            >
+            // Size by the clip's own ratio but cap the height so a portrait
+            // (9:16) sample can't blow the dialog out vertically.
+            <div className="flex justify-center">
               <video
                 src={videoSrc}
                 poster={poster}
-                className="absolute inset-0 h-full w-full object-cover"
+                className="max-h-[60vh] w-auto max-w-full rounded-lg border bg-muted object-contain"
                 autoPlay
                 muted
                 loop
@@ -151,10 +129,7 @@ const StyleDetailContent: FC<{ style: Style }> = ({ style }) => {
             </div>
           ) : (
             <div
-              className={cn(
-                'w-full overflow-hidden rounded-lg border',
-                getAspectRatioClassName(aspectRatioOf(style))
-              )}
+              className="aspect-video w-full overflow-hidden rounded-lg border"
               style={{ background: getStyleGradient(config.colorPalette) }}
             />
           )}
