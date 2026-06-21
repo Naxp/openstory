@@ -7,3 +7,9 @@
   - Task: `tasks/0001-update-agents-governance-standard.md`
   - Status: completed
   - Freshness: fresh
+
+- 2026-06-21 - 0002-desktop-migration-blueprint-and-phase1-setup
+  - File: `audits/2026-06-21-0002-desktop-migration-blueprint-audit.md`
+  - Task: `tasks/0002-desktop-migration-blueprint-and-phase1-setup.md`
+  - Status: completed
+  - Freshness: fresh
