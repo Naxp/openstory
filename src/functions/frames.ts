@@ -53,13 +53,17 @@ export const getFramesFn = createServerFn({ method: 'GET' })
  *
  * Team scoping is enforced by the join inside `sequences.listFramesByIds`,
  * so caller-supplied ids from another team return nothing rather than leak.
+ * `listFramesByIds` chunks the ids to respect D1's bound-parameter limit, so
+ * the cap here is only an abuse guard on request size — a team's full sequence
+ * list (which the sequences/eval pages send) used to overflow the old 500 cap
+ * once it grew past 500 sequences (#957).
  */
 export const getFramesForSequencesFn = createServerFn({ method: 'GET' })
   .middleware([authWithTeamMiddleware])
   .inputValidator(
     zodValidator(
       z.object({
-        sequenceIds: z.array(ulidSchema).max(500),
+        sequenceIds: z.array(ulidSchema).max(5000),
       })
     )
   )
