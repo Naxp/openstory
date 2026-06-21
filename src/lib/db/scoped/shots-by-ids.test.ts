@@ -1,0 +1,162 @@
+/**
+ * In-memory DB tests for `sequences.listShotsByIds` (#957).
+ *
+ * The sequences/eval list pages fetch shots for every sequence on a team in
+ * one batched call. Once a team grew past ~500 sequences the request tripped a
+ * `z.array().max(500)` cap, and the underlying `inArray` would overflow D1's
+ * 100-bound-parameter limit. `listShotsByIds` now chunks the ids; these tests
+ * cover a list larger than the chunk size to prove every shot still comes back
+ * grouped and in per-sequence order.
+ */
+
+import type { Database } from '@/lib/db/client';
+import { generateId } from '@/lib/db/id';
+import { sequences, shots, styles, teams } from '@/lib/db/schema';
+import { relations } from '@/lib/db/schema/relations';
+import { type Client, createClient } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
+import { migrate } from 'drizzle-orm/libsql/migrator';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createSequencesMethods } from './sequences';
+
+let client: Client;
+let db: Database;
+let teamId = '';
+
+async function seed() {
+  await db.delete(shots);
+  await db.delete(sequences);
+  await db.delete(styles);
+  await db.delete(teams);
+
+  teamId = generateId();
+  await db.insert(teams).values({ id: teamId, name: 'T', slug: 't' });
+  const [style] = await db
+    .insert(styles)
+    .values({
+      teamId,
+      name: 'default',
+      config: {
+        mood: 'neutral',
+        artStyle: 'cinematic',
+        lighting: 'natural',
+        colorPalette: ['#000', '#fff'],
+        cameraWork: 'static',
+        referenceFilms: [],
+        colorGrading: 'neutral',
+      },
+    })
+    .returning();
+  if (!style) throw new Error('test setup: style insert returned nothing');
+  return style.id;
+}
+
+/** Insert `count` sequences, each with 3 shots; returns the sequence ids. */
+async function seedSequences(
+  styleId: string,
+  count: number
+): Promise<string[]> {
+  const seqIds: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const seqId = generateId();
+    seqIds.push(seqId);
+    await db.insert(sequences).values({
+      id: seqId,
+      teamId,
+      title: `S${i}`,
+      styleId,
+    });
+    await db.insert(shots).values([
+      { sequenceId: seqId, orderIndex: 0 },
+      { sequenceId: seqId, orderIndex: 1 },
+      { sequenceId: seqId, orderIndex: 2 },
+    ]);
+  }
+  return seqIds;
+}
+
+beforeAll(async () => {
+  client = createClient({ url: ':memory:' });
+  db = drizzle({ client, relations });
+  await migrate(db, { migrationsFolder: './drizzle/migrations' });
+});
+
+afterAll(() => {
+  client.close();
+});
+
+let styleId = '';
+beforeEach(async () => {
+  styleId = await seed();
+});
+
+describe('listShotsByIds', () => {
+  it('returns [] for an empty input', async () => {
+    const methods = createSequencesMethods(db, teamId, generateId());
+    await expect(methods.listShotsByIds([])).resolves.toEqual([]);
+  });
+
+  it('returns every shot when the id list spans multiple chunks', async () => {
+    // 250 sequences > the 90-id chunk size, so the query fans out across 3
+    // batches. The old single-query path would also blow past D1's 100-param
+    // limit here.
+    const seqIds = await seedSequences(styleId, 250);
+    const methods = createSequencesMethods(db, teamId, generateId());
+
+    const result = await methods.listShotsByIds(seqIds);
+
+    expect(result).toHaveLength(250 * 3);
+    // Every requested sequence is represented with all 3 of its shots.
+    const bySeq = new Map<string, number[]>();
+    for (const shot of result) {
+      const existing = bySeq.get(shot.sequenceId) ?? [];
+      existing.push(shot.orderIndex);
+      bySeq.set(shot.sequenceId, existing);
+    }
+    expect(bySeq.size).toBe(250);
+    for (const seqId of seqIds) {
+      expect(bySeq.get(seqId)).toEqual([0, 1, 2]);
+    }
+  });
+
+  it('never leaks shots from another team', async () => {
+    const mySeqIds = await seedSequences(styleId, 2);
+
+    // A second team with its own sequence — its id is requested but must not
+    // resolve, because the join filters on teamId.
+    const otherTeamId = generateId();
+    await db.insert(teams).values({ id: otherTeamId, name: 'O', slug: 'o' });
+    const [otherStyle] = await db
+      .insert(styles)
+      .values({
+        teamId: otherTeamId,
+        name: 'default',
+        config: {
+          mood: 'neutral',
+          artStyle: 'cinematic',
+          lighting: 'natural',
+          colorPalette: ['#000', '#fff'],
+          cameraWork: 'static',
+          referenceFilms: [],
+          colorGrading: 'neutral',
+        },
+      })
+      .returning();
+    if (!otherStyle)
+      throw new Error('test setup: style insert returned nothing');
+    const otherSeqId = generateId();
+    await db.insert(sequences).values({
+      id: otherSeqId,
+      teamId: otherTeamId,
+      title: 'X',
+      styleId: otherStyle.id,
+    });
+    await db.insert(shots).values({ sequenceId: otherSeqId, orderIndex: 0 });
+
+    const methods = createSequencesMethods(db, teamId, generateId());
+    const result = await methods.listShotsByIds([...mySeqIds, otherSeqId]);
+
+    expect(result).toHaveLength(2 * 3);
+    expect(result.every((s) => s.sequenceId !== otherSeqId)).toBe(true);
+  });
+});

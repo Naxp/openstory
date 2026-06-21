@@ -29,6 +29,13 @@ type SequenceWithShots = Sequence & {
   style: Style | null;
 };
 
+// D1 caps a single query at 100 bound parameters. `listShotsByIds` binds one
+// param per sequence id plus the teamId filter, so each query must stay under
+// that ceiling. We chunk the ids well below 100 and union the results; without
+// this a team with enough sequences overflows the limit (and previously tripped
+// the 500-item request cap on `getShotsForSequencesFn` — see #957).
+const SHOTS_BY_IDS_BATCH = 90;
+
 function createSequencesReadMethods(db: Database, teamId: string) {
   return {
     list: async (): Promise<Sequence[]> => {
@@ -91,18 +98,31 @@ function createSequencesReadMethods(db: Database, teamId: string) {
      */
     listShotsByIds: async (sequenceIds: string[]): Promise<Shot[]> => {
       if (sequenceIds.length === 0) return [];
-      return await db
-        .select()
-        .from(shots)
-        .innerJoin(sequences, eq(shots.sequenceId, sequences.id))
-        .where(
-          and(
-            inArray(shots.sequenceId, sequenceIds),
-            eq(sequences.teamId, teamId)
-          )
+      // Chunk the ids to stay under D1's bound-parameter ceiling. Each chunk
+      // holds all of a sequence's shots (we split on sequence boundaries), so
+      // per-sequence orderIndex ordering is preserved; cross-sequence ordering
+      // is irrelevant — callers regroup by sequence id.
+      const batches: string[][] = [];
+      for (let i = 0; i < sequenceIds.length; i += SHOTS_BY_IDS_BATCH) {
+        batches.push(sequenceIds.slice(i, i + SHOTS_BY_IDS_BATCH));
+      }
+      const results = await Promise.all(
+        batches.map((batch) =>
+          db
+            .select()
+            .from(shots)
+            .innerJoin(sequences, eq(shots.sequenceId, sequences.id))
+            .where(
+              and(
+                inArray(shots.sequenceId, batch),
+                eq(sequences.teamId, teamId)
+              )
+            )
+            .orderBy(asc(shots.sequenceId), asc(shots.orderIndex))
+            .then((rows) => rows.map((row) => row.shots))
         )
-        .orderBy(asc(shots.sequenceId), asc(shots.orderIndex))
-        .then((rows) => rows.map((row) => row.shots));
+      );
+      return results.flat();
     },
   };
 }
