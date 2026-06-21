@@ -9,6 +9,7 @@ import {
 } from '@/hooks/use-sequences-with-frames';
 import { useAdminAllSequencesWithFrames } from '@/hooks/use-admin-support';
 import { useTeamDivergentSequenceVariants } from '@/hooks/use-sequence-variants';
+import { useStyles } from '@/hooks/use-styles';
 import { isSystemAdminFn } from '@/functions/gift-tokens';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
@@ -50,6 +51,7 @@ export type FilterState = {
   analysisModel: string | null;
   imageModel: string | null;
   aspectRatio: AspectRatio | null;
+  styleId: string | null;
 };
 
 export type SortCriteria = {
@@ -64,6 +66,7 @@ const defaultFilters: FilterState = {
   analysisModel: null,
   imageModel: null,
   aspectRatio: null,
+  styleId: null,
 };
 
 type EvalViewProps = {
@@ -99,6 +102,27 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
   const adminData = useAdminAllSequencesWithFrames(
     supportMode,
     supportMode ? filters.search : undefined
+  );
+
+  // Styles power the style filter dropdown and let search match a style's name.
+  // The list covers the team's styles plus public ones.
+  const { data: styles } = useStyles();
+  const styleNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const style of styles ?? []) {
+      map.set(style.id, style.name);
+    }
+    return map;
+  }, [styles]);
+  const styleOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All Styles' },
+      ...(styles ?? []).map((style) => ({
+        value: style.id,
+        label: style.name,
+      })),
+    ],
+    [styles]
   );
 
   const sequences: SequenceWithFrames[] = supportMode
@@ -137,9 +161,17 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
         sequences,
         filters,
         sortCriteria,
-        effectiveHideInternal ? internalDomains : []
+        effectiveHideInternal ? internalDomains : [],
+        styleNameById
       ),
-    [sequences, filters, sortCriteria, effectiveHideInternal, internalDomains]
+    [
+      sequences,
+      filters,
+      sortCriteria,
+      effectiveHideInternal,
+      internalDomains,
+      styleNameById,
+    ]
   );
 
   const handleLoadMore = supportMode
@@ -169,6 +201,7 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
         onViewModeChange={setViewMode}
         filters={filters}
         onFiltersChange={setFilters}
+        styleOptions={styleOptions}
         sortCriteria={sortCriteria}
         onSortChange={setSortCriteria}
         supportMode={supportMode}
@@ -245,7 +278,8 @@ function applyFiltersAndSort(
   sequences: SequenceWithFrames[],
   filters: FilterState,
   sortCriteria: SortCriteria[],
-  hideDomains: string[]
+  hideDomains: string[],
+  styleNameById: Map<string, string>
 ): SequenceWithFrames[] {
   let result = [...sequences];
 
@@ -264,6 +298,9 @@ function applyFiltersAndSort(
     const searchLower = filters.search.toLowerCase();
     result = result.filter((s) => {
       if (s.title.toLowerCase().includes(searchLower)) return true;
+      const styleName = s.styleId ? styleNameById.get(s.styleId) : undefined;
+      if (styleName && styleName.toLowerCase().includes(searchLower))
+        return true;
       const { name, email } = getCreatorIdentity(s);
       if (name && name.toLowerCase().includes(searchLower)) return true;
       if (email && email.toLowerCase().includes(searchLower)) return true;
@@ -290,6 +327,10 @@ function applyFiltersAndSort(
 
   if (filters.aspectRatio) {
     result = result.filter((s) => s.aspectRatio === filters.aspectRatio);
+  }
+
+  if (filters.styleId) {
+    result = result.filter((s) => s.styleId === filters.styleId);
   }
 
   // Apply multi-criteria sort
