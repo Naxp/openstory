@@ -3,33 +3,35 @@
  *
  * Pure data + URL/entry builders shared by the render script
  * (`scripts/generate-style-sample-videos.ts`) and the seed
- * (`scripts/seed-style-sample-videos.ts`). Deliberately free of fal/photon/
- * ffmpeg/LLM imports so the seed and unit tests stay lightweight (the enhance +
- * scene-split LLM logic lives in `sample-script.ts`).
+ * (`scripts/seed-style-sample-videos.ts`). Deliberately free of heavy imports
+ * so the seed and unit tests stay lightweight.
  *
- * Every style gets a CANONICAL sample: a per-category one-liner brief (below) is
- * run through the script-enhancer + a scene split, so each style gets a
- * style-appropriate ~15s script (same brief within a category ⇒ comparable).
- * The ~10 hero styles in BESPOKE_SCRIPTS also get a bespoke sample, from a
- * curated script tuned to show the style off.
+ * Every style gets a CANONICAL sample: a per-category one-liner brief (below)
+ * is enhanced server-side by the platform's script-enhancer, so each style
+ * gets a style-appropriate ~15s script (same brief within a category ⇒
+ * comparable). The ~10 hero styles in BESPOKE_SCRIPTS also get a bespoke
+ * sample, from a curated script tuned to show the style off. All samples
+ * render through the real OpenStory pipeline (`POST /api/v1/sequences`) so
+ * recurring people/characters stay consistent across shots.
  */
 import {
   StyleSampleVideoSchema,
   type StyleSampleVideo,
 } from '@/lib/db/schema/libraries';
+import { GENERATED_STYLE_BRIEFS } from '@/lib/style/style-briefs.generated';
 import { styleSlug } from '@/lib/style/style-slug';
 
-/** A single shot: a still to generate, then image-to-video to animate it. */
+/** A single curated shot, flattened into script prose via `beatsToScript`. */
 export type SampleBeat = {
-  /** Short id used for intermediate filenames (e.g. `wide`, `pour`). */
+  /** Short id naming the shot (e.g. `wide`, `pour`). */
   id: string;
-  /** Subject/scene description. Style `config` is blended in at render time. */
+  /** Subject/scene description. The style layer is applied by the pipeline. */
   imagePrompt: string;
-  /** Camera/motion description fed to the image-to-video model. */
+  /** Camera/motion description for the shot. */
   motionPrompt: string;
 };
 
-/** Nominal seconds per beat — the i2v duration we request per clip. */
+/** Nominal seconds per beat/shot — used for duration targets + cost estimates. */
 export const NOMINAL_BEAT_SECONDS = 5;
 
 /** Target length of a canonical sample (drives enhance scene count + seed metadata). */
@@ -40,32 +42,130 @@ export const CANONICAL_TARGET_SECONDS = 15;
  * style gets a script that suits it. Every category present in
  * `style-templates.ts` has an explicit entry (enforced by a unit test) — no
  * silent default that would render an off-brief sample.
+ *
+ * Every brief names a concrete subject AND an event — the first render round
+ * proved that a subject-less brief ("a new product launch") enhances into the
+ * same inert anticipation→reveal→logo mood piece for every style, and a
+ * 15-second sample where nothing happens is a boring sample. Scenes become
+ * motion clips, so the brief must describe visible motion.
+ *
+ * Every human subject is given an explicit gender and a short visual
+ * descriptor. Neutral nouns ("a courier", "a dancer") made the enhancer
+ * default to singular "they", which the image model rendered as androgynous
+ * figures AND gave the character-bible nothing to lock identity onto across
+ * cuts — the exact consistency #801 is about. The descriptor doubles as the
+ * bible's anchor, so name what the person looks like, not just what they do.
  */
-const CATEGORY_BRIEFS: Record<string, string> = {
-  commercial: 'a premium 15-second brand commercial',
-  ecommerce: 'a new product launch',
-  influencer: 'an honest product review spoken to camera',
-  animatic: 'a storyboard animatic for a new commercial',
-  animation: 'a playful animated brand story',
-  kids: "a fun, colorful kids' product ad",
-  corporate: 'a polished company brand film',
-  realestate: 'a luxury home tour',
-  // Narrative film genres (action, western, sci-fi, noir, horror, rom-com,
-  // award-season, documentary, Wes-Anderson) share one brief; each style's
-  // config makes the enhanced script genre-appropriate.
-  film: 'a cinematic short-film scene',
-  photography: 'a high-end photography showcase',
-  healthcare: 'a reassuring healthcare brand spot',
-  food: 'a signature dish at a new restaurant',
-  fitness: 'an energizing fitness brand spot',
-  edtech: 'an upbeat learning-app promo',
-  automotive: 'a new car reveal',
-  nonprofit: 'an inspiring nonprofit story',
-  travel: 'a dream getaway',
+export const CATEGORY_BRIEFS: Record<string, string> = {
+  commercial:
+    'a premium brand spot: a woman in a flowing red dress sprints through a dark warehouse, bursts through a curtain of golden dust, and lands in slow motion as light floods the space',
+  ecommerce:
+    'a product launch where the product assembles itself mid-air — components fly in and snap together in slow motion, and the finished product drops onto the counter with a satisfying bounce',
+  influencer:
+    'an honest review spoken to camera: a young man with tousled hair unboxes the product, fumbles it in surprise at how light it is, catches it one-handed, and cracks up laughing',
+  animatic:
+    'a storyboard animatic of a heist gone sideways — a woman in a sharp black suit grabs the case, vaults a desk, and dives through closing elevator doors',
+  animation:
+    'a playful animated story: a small robot chases its runaway wheel downhill through a street market, bouncing off awnings, and catches it at the lip of a fountain',
+  kids: 'a kids’ ad where a juice box rockets off the table, loops around the kitchen trailing rainbow fizz, and sticks the landing in a lunchbox just as it snaps shut',
+  corporate:
+    'a brand film following one package across the world in three cuts — a warehouse robot lifts it, a cargo drone carries it through a storm, and a man in a courier uniform hands it over at a sunlit door',
+  realestate:
+    'a luxury home tour at golden hour — an elegant woman in a flowing floor-length champagne gown walks through the property: across the terrace past the still infinity pool, in through the open glass doors, and into the living room as the pendant lights bloom on one by one',
+  // Narrative film genres get per-style briefs in STYLE_BRIEF_OVERRIDES (a
+  // shared "cinematic scene" brief enhanced into the same figure-standing-in-
+  // rain mood piece for every genre — action had no action). This entry is
+  // the guarded fallback for a future film style without an override.
+  film: 'a cinematic scene where something decisive happens — a chase, a confrontation, or an escape; never a person standing still',
+  photography:
+    'a photography showcase built on motion — a woman model with sharp features turns into a burst of strobe flashes, fabric mid-swirl, each flash freezing a different pose',
+  healthcare:
+    'a recovery story in three beats — an older man grips parallel bars in physical therapy, takes his first unassisted steps, then jogs the hospital corridor past applauding staff',
+  food: 'the making of a signature dish — a woman chef works a flaming pan, sauce pours in slow motion, and she cuts through the finished dish as steam escapes',
+  fitness:
+    'one rep at the limit — a broad-shouldered man chalks up, drives the barbell overhead in slow motion as chalk dust flies, and drops it with a floor-shaking bounce',
+  edtech:
+    'a learning montage — a young woman sketches an equation that lifts off the page into floating diagrams around her, then snaps back into the notebook as she nails the answer',
+  automotive:
+    'a car reveal in motion — the car drifts through a wet hangar in a controlled slide, headlights blazing through fog, and stops dead inches from the camera',
+  nonprofit:
+    'a hands-in-the-dirt story — a group of volunteers plant a treeline at dawn in quick cuts, a young girl waters the first sapling, and the camera lifts to reveal a whole green field',
+  travel:
+    'a getaway in three jumps — a man dives off a cliff into turquoise water, a woman weaves a scooter through a market at dusk, and a paper lantern rises from the beach into the night sky',
 };
 
-/** The brief used to enhance a style's canonical script. Throws on an unmapped category. */
-export function briefForStyle(style: { category: string | null }): string {
+/**
+ * Per-style brief overrides (keyed by style slug), consulted BEFORE the
+ * generated per-style briefs (`style-briefs.generated.ts`) and the category
+ * fallback. Two kinds of entry live here:
+ *
+ * 1. Creative-direction overrides that intentionally reshape the generated
+ *    brief: `perfume-editorial` (sultry register), `product-ad` /
+ *    `ugc-unboxing` (put a real on-camera person in frame, not faceless
+ *    hands), `animated` (a physical poster, not a hologram), `beach-ritual`
+ *    (a new style that has no generated brief yet).
+ * 2. Single-shot review labels for styles whose real render is the verbatim
+ *    `CANONICAL_SCRIPT_OVERRIDES` below (`mood-only-frames`, `360-turntable`,
+ *    `restaurant-menu-hero`) — the entry here is only the review-tool BRIEF
+ *    label, kept matching so it doesn't show the generated multi-cut text.
+ *
+ * `documentary` ships a full hand-written script via CANONICAL_SCRIPT_OVERRIDES
+ * (`enhance: 'off'`), so it needs no brief here.
+ */
+export const STYLE_BRIEF_OVERRIDES: Record<string, string> = {
+  // Creative-direction override: perfume advertising trades on allure, so the
+  // generated "woman reaches into the haze" brief read too chaste. This pushes
+  // the canonical render toward the sultry, sensual register the genre expects.
+  'perfume-editorial':
+    'A sultry high-fashion perfume film in warm, low-key light. A strikingly beautiful woman in a liquid-gold silk slip reclines against deep velvet, bare shoulders and collarbone glowing; she draws a faceted amber bottle slowly along the line of her neck, lips parted, eyes half-closed, as backlit mist drifts past — then turns a slow, smouldering look straight to camera while a sheer curtain billows behind her.',
+  // Creative-direction override: the generated briefs for these two were
+  // faceless "hands only" product shots — boring, and they never exercise the
+  // character-consistency pipeline. Put a real on-camera woman (face visible,
+  // recurring across all three scenes) front and centre.
+  'product-ad':
+    'A woman with sleek dark hair and a cream linen shirt unscrews a frosted-glass serum bottle on a sunlit bathroom shelf, dispenses a glossy drop onto her fingertip, and presses it across her cheek as warm late-afternoon light catches the dewy texture.',
+  'ugc-unboxing':
+    'A bubbly young woman with a messy bun and chipped pink nails films herself on her phone, grinning to camera as she tears open a cardboard box, peels back tissue paper, and lifts out a sleek skincare bottle to show it off.',
+  // The generated brief asked for a "holographic wanted-poster", which fights
+  // the visual-prompt generator's hard NO-HOLOGRAPHIC-SCREENS rule and rendered
+  // as a blank blue rift. Use a physical paper poster instead.
+  animated:
+    'A grizzled male bounty hunter in a tattered crimson coat strides through a rain-slicked neon alley, then halts before a weathered paper wanted-poster nailed to a wall, recognition crossing his scarred face as its torn edges lift in the wind.',
+  // New style (no generated brief yet): pin the generate-style-briefs.ts output
+  // here so it renders on-brief instead of falling back to the off-style
+  // commercial category brief. Regenerate the full set to retire this.
+  'beach-ritual':
+    'A tanned woman with sun-bleached wavy hair in a coral swimsuit wades out of the turquoise surf at golden hour, pushing her wet hair back and laughing as she lifts a frosty bottle from the wet sand, the handheld camera tracking her toward weathered timber with lens flares dancing.',
+  // Single-shot review labels — the verbatim render lives in
+  // CANONICAL_SCRIPT_OVERRIDES; kept matching so the review BRIEF isn't the
+  // generated multi-cut text.
+  'mood-only-frames':
+    'a single continuous mood frame in one charcoal-and-amber palette — incense smoke curls up through a hard diagonal shaft of light as it slowly intensifies, one unbroken locked shot, no scene change',
+  '360-turntable':
+    'a single continuous 360 turntable pass — one pair of premium wireless earbuds in an open charging case makes one unbroken slow revolution on a seamless white pedestal, the same case throughout, no cuts',
+  'restaurant-menu-hero':
+    'a single continuous signature-dish hero — one unbroken overhead shot as a ladle pours glossy amber jus across a plated sliced duck breast and a hand lowers a final micro-herb garnish, the same dish throughout, no cuts',
+};
+
+/**
+ * The brief used to enhance a style's canonical script. Per-style override
+ * first, then the category brief. Throws on an unmapped category.
+ */
+export function briefForStyle(style: {
+  name: string;
+  category: string | null;
+}): string {
+  const slug = styleSlug(style.name);
+  // Hand-written overrides (film genres + the single-shot product fixes) win.
+  const override = STYLE_BRIEF_OVERRIDES[slug];
+  if (override) return override;
+  // Then the per-style brief derived from this style's OWN description+config
+  // (generate-style-briefs.ts) — replaces the too-coarse category bucket that
+  // gave e.g. the "Car Talk" driving-monologue style a product-unboxing brief.
+  const generated = GENERATED_STYLE_BRIEFS[slug];
+  if (generated) return generated;
+  // Category brief is the last-resort fallback (only hit by a new style not yet
+  // in the generated set).
   const brief = style.category ? CATEGORY_BRIEFS[style.category] : undefined;
   if (!brief) {
     throw new Error(
@@ -73,6 +173,63 @@ export function briefForStyle(style: { category: string | null }): string {
     );
   }
   return brief;
+}
+
+/**
+ * Hand-written canonical scripts, keyed by style slug — sent verbatim
+ * (`enhance: 'off'`) INSTEAD of the platform enhancing the per-category brief,
+ * for styles where that brief is a poor fit. `documentary` scored ~4.3 with
+ * the shared film brief (anti-narrative), so it gets an observational portrait
+ * that plays to the style.
+ */
+export const CANONICAL_SCRIPT_OVERRIDES: Record<
+  string,
+  { enhancedScript: string }
+> = {
+  documentary: {
+    // NOTE: the scene-splitter's ONE-SHOT rule needs explicit cut markers
+    // ("Cut to:", sequential framings) to produce multiple frames — plain
+    // continuous prose collapses to a single scene/shot.
+    enhancedScript:
+      'An observational documentary portrait. INT. CLUTTERED VIOLIN WORKSHOP - EARLY MORNING. ' +
+      'Elena, a violin maker in her sixties — grey hair tied back, worn canvas apron over a dark linen shirt — works alone at a bench by the window. ' +
+      'Handheld close shot: her hands plane the spruce top of an unfinished violin, pale wood shavings curling away from the blade, dust drifting in the window light.\n\n' +
+      'Cut to: a handheld medium close-up. Elena lifts the unvarnished violin body to the window light and turns it slowly, checking the curve of the arching with her thumb.\n\n' +
+      'Cut to: a wide shot. Elena sits back on her stool, the violin resting on her knee, and looks at it in silence — the workshop quiet around her, morning light across the bench.',
+  },
+  // Single-hero-object styles. With NO recurring person to anchor, the
+  // character-bible can't keep the product consistent, so multi-scene versions
+  // morphed the hero object across cuts (earbuds→briefcase, duck→a different
+  // duck, smoke→an unrelated street). Written as continuous prose with NO cut
+  // markers so the splitter keeps them to ONE scene → one image → nothing to
+  // morph between. (Brief copies live in STYLE_BRIEF_OVERRIDES for the review
+  // label only; these scripts are what render, verbatim.)
+  '360-turntable': {
+    enhancedScript:
+      'A premium product turntable shot. A single pair of matte-black wireless earbuds nestled in their open charging case, centered on a seamless white pedestal under soft, even three-point studio light, the brushed-metal hinge catching one clean specular highlight. ' +
+      'In one continuous, unbroken locked-camera shot the turntable rotates the case through a single slow full revolution — the very same case throughout, its matte shell and the two earbuds never changing shape or finish — the traveling highlight sweeping across the hinge and lid as each face turns to camera and the case settles back exactly where it began. No cuts, no scene change, one steady rotation.',
+  },
+  'restaurant-menu-hero': {
+    enhancedScript:
+      'A signature-dish restaurant hero shot. A sliced duck breast fanned in five even pieces over a single swipe of glossy amber jus on a matte charcoal ceramic plate, lit by warm directional restaurant light, shallow depth of field. ' +
+      'In one continuous, unbroken overhead shot a ladle pours a thin ribbon of that same amber jus, which pools and spreads slowly across the plate, fine steam curling upward, as a single hand lowers one last micro-herb garnish onto the duck and the plate turns a few degrees to camera — the same dish the whole time, the duck slices, the amber sauce colour and the garnish never changing. No cuts, no second dish, one held shot.',
+  },
+  'mood-only-frames': {
+    enhancedScript:
+      'A single atmospheric mood frame in a charcoal-and-amber palette. A dark, near-empty room with one hard diagonal shaft of warm light falling across suspended dust; a slow ribbon of incense smoke rises into the beam. ' +
+      'In one continuous, unbroken locked shot the smoke twists and blooms upward as the light gradually intensifies and a sheer curtain at the edge of frame breathes inward on a faint draft — the same room and the same palette throughout, pure evolving mood. No cuts, no scene change, no figures.',
+  },
+};
+
+/**
+ * Flatten curated beats into prose the real pipeline can scene-split — the
+ * API takes a script rather than per-shot prompts, so its scene split decides
+ * the final shots.
+ */
+export function beatsToScript(beats: SampleBeat[]): string {
+  return beats
+    .map((beat, i) => `Shot ${i + 1}: ${beat.imagePrompt} ${beat.motionPrompt}`)
+    .join('\n\n');
 }
 
 /**

@@ -23,7 +23,11 @@ import { buildRegenerateShotSnapshot } from '@/lib/workflows/regenerate-shots-sn
 import { createServerFn } from '@tanstack/react-start';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { frameAccessMiddleware, sequenceAccessMiddleware } from './middleware';
+import {
+  authWithTeamMiddleware,
+  frameAccessMiddleware,
+  sequenceAccessMiddleware,
+} from './middleware';
 
 import { getLogger } from '@/lib/observability/logger';
 
@@ -38,6 +42,29 @@ export const getShotsFn = createServerFn({ method: 'GET' })
   .middleware([sequenceAccessMiddleware])
   .handler(async ({ context }) => {
     return context.scopedDb.shots.listBySequence(context.sequence.id);
+  });
+
+/**
+ * Batched variant of `getShotsFn` for list-style pages that need shots for
+ * many sequences at once. The sequences list page used to fire one
+ * `getShotsFn` per row; with 50+ sequences this saturated iOS Chrome's
+ * connection pool, queued every subsequent navigation request, and killed
+ * the WebProcess (root cause of the "Can't open this page" report).
+ *
+ * Team scoping is enforced by the join inside `sequences.listShotsByIds`,
+ * so caller-supplied ids from another team return nothing rather than leak.
+ */
+export const getShotsForSequencesFn = createServerFn({ method: 'GET' })
+  .middleware([authWithTeamMiddleware])
+  .inputValidator(
+    zodValidator(
+      z.object({
+        sequenceIds: z.array(ulidSchema).max(500),
+      })
+    )
+  )
+  .handler(async ({ data, context }) => {
+    return context.scopedDb.sequences.listShotsByIds(data.sequenceIds);
   });
 
 export const getShotFn = createServerFn({ method: 'GET' })

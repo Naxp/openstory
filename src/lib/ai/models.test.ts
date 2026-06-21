@@ -10,9 +10,22 @@ import {
   safeTextToImageModel,
   videoModelMaxDurationSeconds,
   videoModelMultiShotSyntax,
+  videoModelSupportsAudio,
   videoModelSupportsEndFrame,
   videoModelSupportsMultiShot,
 } from './models';
+
+describe('videoModelSupportsAudio', () => {
+  it('returns true for audio-capable video models', () => {
+    expect(videoModelSupportsAudio('seedance_v2')).toBe(true);
+    expect(videoModelSupportsAudio('kling_v3_pro')).toBe(true);
+    expect(videoModelSupportsAudio('veo3_1')).toBe(true);
+  });
+
+  it('returns false for models without audio', () => {
+    expect(videoModelSupportsAudio('grok_imagine_video_1_5')).toBe(false);
+  });
+});
 
 describe('Model Validation', () => {
   describe('isValidTextToImageModel', () => {

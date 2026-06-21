@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
-import { useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useSequences } from './use-sequences';
-import { shotKeys } from './use-shots';
-import { getShotsFn } from '@/functions/shots';
+import { getShotsForSequencesFn } from '@/functions/shots';
 import type { Sequence, Shot } from '@/types/database';
 
 export type SequenceWithShots = Sequence & {
@@ -14,9 +13,12 @@ export type SequenceWithShots = Sequence & {
 };
 
 /**
- * Fetches all sequences and their shots in parallel.
- * Returns sequences as soon as they resolve so the UI can render rows
- * progressively; shots are reported via `shotsLoadingMap` per sequence.
+ * Fetches all sequences and their shots. Previously this fanned out one
+ * `getShotsFn` per sequence via `useQueries`, which crashed iOS Chrome's
+ * WebProcess once teams accumulated ~50+ sequences (the parallel server-fn
+ * round-trips saturated the connection pool — see the
+ * `claude/mobile-sequence-navigation-dmLJn` branch history for the wrangler
+ * tail). Now one batched call returns every shot, grouped client-side.
  */
 export function useSequencesWithShots() {
   const {
@@ -25,37 +27,54 @@ export function useSequencesWithShots() {
     error: seqError,
   } = useSequences();
 
-  const shotsQueries = useQueries({
-    queries: (sequences || []).map((seq: Sequence) => ({
-      queryKey: shotKeys.list(seq.id),
-      queryFn: async (): Promise<Shot[]> => {
-        const data = await getShotsFn({ data: { sequenceId: seq.id } });
-        return data;
-      },
-      staleTime: 5 * 60 * 1000,
-      enabled: !!sequences && sequences.length > 0,
-    })),
+  const sequenceIds = useMemo(
+    () => (sequences ?? []).map((s) => s.id),
+    [sequences]
+  );
+
+  const {
+    data: shotsBySequenceId,
+    isLoading: shotsLoading,
+    error: shotsError,
+  } = useQuery({
+    queryKey: ['shots', 'by-sequences', [...sequenceIds].sort()],
+    queryFn: async (): Promise<Map<string, Shot[]>> => {
+      if (sequenceIds.length === 0) return new Map();
+      const allShots = await getShotsForSequencesFn({
+        data: { sequenceIds },
+      });
+      const map = new Map<string, Shot[]>();
+      for (const shot of allShots) {
+        const existing = map.get(shot.sequenceId) ?? [];
+        existing.push(shot);
+        map.set(shot.sequenceId, existing);
+      }
+      return map;
+    },
+    enabled: sequenceIds.length > 0,
+    staleTime: 5 * 60 * 1000,
   });
 
   const data = useMemo<SequenceWithShots[]>(() => {
     if (!sequences) return [];
-
-    return sequences.map((seq: Sequence, i: number) => ({
+    return sequences.map((seq) => ({
       ...seq,
-      shots: shotsQueries[i]?.data ?? [],
+      shots: shotsBySequenceId?.get(seq.id) ?? [],
     }));
-  }, [sequences, shotsQueries]);
+  }, [sequences, shotsBySequenceId]);
 
+  // Single batch query means a single in-flight signal — every row reflects
+  // it identically. Kept as a per-id map so callers (EvalSequencesMobile,
+  // EvalMatrix) can render row-level skeletons without a behavior change.
   const shotsLoadingMap = useMemo<Record<string, boolean>>(() => {
     const map: Record<string, boolean> = {};
-    (sequences ?? []).forEach((seq, i) => {
-      const q = shotsQueries[i];
-      map[seq.id] = Boolean(q?.isLoading);
-    });
+    for (const seq of sequences ?? []) {
+      map[seq.id] = shotsLoading;
+    }
     return map;
-  }, [sequences, shotsQueries]);
+  }, [sequences, shotsLoading]);
 
-  const error = seqError || shotsQueries.find((q) => q.error)?.error;
+  const error = seqError || shotsError;
 
   return {
     data,
