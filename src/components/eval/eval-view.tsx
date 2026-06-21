@@ -104,8 +104,8 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     supportMode ? filters.search : undefined
   );
 
-  // Styles power the style filter dropdown and let search match a style's name.
-  // The list covers the team's styles plus public ones.
+  // Styles let search match a style's name and resolve ids → names for the
+  // filter dropdown. The list covers the team's styles plus public ones.
   const { data: styles } = useStyles();
   const styleNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -114,16 +114,6 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     }
     return map;
   }, [styles]);
-  const styleOptions = useMemo(
-    () => [
-      { value: 'all', label: 'All Styles' },
-      ...(styles ?? []).map((style) => ({
-        value: style.id,
-        label: style.name,
-      })),
-    ],
-    [styles]
-  );
 
   const sequences: SequenceWithFrames[] = supportMode
     ? adminData.data
@@ -133,6 +123,22 @@ export const EvalView: React.FC<EvalViewProps> = ({ initialUserFilter }) => {
     ? adminData.framesLoadingMap
     : ownData.framesLoadingMap;
   const error = supportMode ? adminData.error : ownData.error;
+
+  // Only offer styles that actually appear in the loaded sequences — listing
+  // every team/public style would clutter the filter with options that match
+  // nothing. Fall back to the raw styleId when a name isn't resolvable (e.g. a
+  // cross-team style in support mode) so the option still filters correctly.
+  const styleOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const seq of sequences) {
+      if (!seq.styleId || seen.has(seq.styleId)) continue;
+      seen.set(seq.styleId, styleNameById.get(seq.styleId) ?? seq.styleId);
+    }
+    const options = [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    return [{ value: 'all', label: 'All Styles' }, ...options];
+  }, [sequences, styleNameById]);
 
   // Team-scoped divergence flags so own-data rows show a "variants available"
   // dot. In support mode rows belong to other teams, so the flag is irrelevant.
